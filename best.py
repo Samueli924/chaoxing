@@ -9,6 +9,9 @@ import json
 import small_tools
 import get_user
 import check_file
+import j_updates
+
+__version__ ='0.0.2'
 
 mp4 = {}
 """
@@ -33,6 +36,7 @@ jobs[0] = objectid , jobs[1] = jobid
 finished = ''
 class Learn_XueXiTong():
     def __init__(self):
+        j_updates.check(__version__)
         self.session = requests.session()
         small_tools.check_path('saves')
         self.usernm,self.passwd = get_user.determine_user_file()
@@ -70,6 +74,8 @@ class Learn_XueXiTong():
             user['userid'] = cookie['_uid']
         else:
             print('登录有误，请检查您的账号密码,按回车键退出')
+            with open('saves//user_info.json', 'w') as file:
+                print('已删除错误信息')
             input()
             exit()
     def prework(self):
@@ -229,6 +235,7 @@ class Learn_XueXiTong():
 
     def do_mp4(self):
         global finished
+        finished_num = 0
         path = os.path.join(str(self.usernm),str(course['courseid']))
         try:
             with open(os.path.join(path, 'finished_list.json'),'r') as f:
@@ -255,6 +262,7 @@ class Learn_XueXiTong():
         for item in mp4:
             if str(mp4[item][5][0]) in finished:
                 print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
+                finished_num += 1
             else:
                 playingtime = 0
                 retry_time = 0
@@ -280,12 +288,13 @@ class Learn_XueXiTong():
                         mm = int(mp4[item][2] / 60)
                         ss = int(mp4[item][2]) % 60
                         percent = int(playingtime) / int(mp4[item][2])
-                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%}'.format(mp4[item][0],mm,ss,playingtime,percent))
+                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
                         if resq.json()['isPassed'] == True:
                             print('视频任务{}完成'.format(mp4[item][0]))
                             with open(os.path.join(path, 'finished_list.json'),'a') as f:
                                 f.write(str(mp4[item][5][0])+'\n')
                             finished += str(mp4[item][5][0])
+                            finished_num += 1
                             rt = random.randint(1, 3)
                             break
                         time.sleep(60)
@@ -294,7 +303,7 @@ class Learn_XueXiTong():
                     except:
                         if retry_time < 6:
                             rt = random.randint(1, 3)
-                            print('502验证，等待{}秒后尝试第{}/5次'.format(rt,retry_time))
+                            print('等待{}秒后验证第{}/5次'.format(rt,retry_time))
                             retry_time += 1
                             time.sleep(rt)
                         else:
