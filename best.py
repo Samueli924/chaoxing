@@ -40,7 +40,7 @@ ppt_finished = ''
 
 class Learn_XueXiTong():
     def __init__(self):
-        # j_updates.check(__version__)
+        j_updates.check(__version__)
         self.session = requests.session()
         small_tools.check_path('saves')
         self.usernm,self.passwd = get_user.determine_user_file()
