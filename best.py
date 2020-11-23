@@ -9,7 +9,10 @@ import json
 import small_tools
 import get_user
 import check_file
+import j_updates
 
+__version__ ='0.0.4'
+__author__ = 'Samuel Chen'
 mp4 = {}
 """
 mp4[item] = [filename, dtoken, duration, crc, key], job = objectid
@@ -30,8 +33,14 @@ jobs = {}
 """
 jobs[0] = objectid , jobs[1] = jobid
 """
+finished = ''
+
+ppt_finished = ''
+
+
 class Learn_XueXiTong():
     def __init__(self):
+        # j_updates.check(__version__)
         self.session = requests.session()
         small_tools.check_path('saves')
         self.usernm,self.passwd = get_user.determine_user_file()
@@ -69,6 +78,8 @@ class Learn_XueXiTong():
             user['userid'] = cookie['_uid']
         else:
             print('登录有误，请检查您的账号密码,按回车键退出')
+            with open('saves//user_info.json', 'w') as file:
+                print('已删除错误信息')
             input()
             exit()
     def prework(self):
@@ -227,6 +238,17 @@ class Learn_XueXiTong():
 
 
     def do_mp4(self):
+        global finished
+        finished_num = 0
+        path = os.path.join(str(self.usernm),str(course['courseid']))
+        try:
+            with open(os.path.join(path, 'finished_list.json'),'r') as f:
+                finished = f.read()
+        except:
+            f = open(os.path.join(path, 'finished_list.json'), 'w')
+            f.close()
+            finished = ''
+
         header = {
             'Accept': '*/*',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -240,40 +262,105 @@ class Learn_XueXiTong():
             'Sec-Fetch-Site': 'same-origin',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
             }
+        head = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
         print('*'*30+'\n'+'*'*30)
+
         for item in mp4:
-            playingtime = 0
-            while True:
-                try:
-                    t1 = time.time() * 1000
-                    jsoncallback = 'jsonp0' + str(int(random.random() * 100000000000000000))
-                    refer = 'http://i.mooc.chaoxing.com'
-                    version = str('1605853642425')
-                    url0 = 'https://passport2.chaoxing.com/api/monitor?version='+version+'&refer='+refer+'&jsoncallback='+jsoncallback+'&t='+str(t1)
-                    head = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-                    }
-                    rep = self.session.get(url0,headers=header)
-                    t = str(int(t1))
-                    code = '[{}][{}][{}][{}][{}][{}][{}][{}]'.format(str(course['clazzid']),str(user['userid']),str(mp4[item][5][1]),str(mp4[item][5][0]),str(int(playingtime)*1000),"d_yHJ!$pdA~5",str(int(mp4[item][2])*1000),'0_'+str(mp4[item][2]))
-                    coded = ''.join(code).encode()
-                    enc = hashlib.md5(coded).hexdigest()
-                    url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/'+str(course['cpi'])+'/'+str(mp4[item][1])+'?clazzId='+str(course['clazzid'])+'&playingTime='+str(playingtime)+'&duration='+str(mp4[item][2])+'&clipTime=0_'+str(mp4[item][2])+'&objectId='+str(mp4[item][5][0])+'&otherInfo=nodeId_'+str(mp4[item][6])+'-cpi_'+str(course['cpi'])+'&jobid='+str(mp4[item][5][1])+'&userid='+str(user['userid'])+'&isdrag=0&view=pc&enc='+str(enc)+'&rt=0.9&dtype=Video&_t='+str(t)
-                    resq = self.session.get(url,headers=header,verify=False)
-                    mm = int(mp4[item][2] / 60)
-                    ss = int(mp4[item][2]) % 60
-                    percent = int(playingtime) / int(mp4[item][2])
-                    print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%}'.format(mp4[item][0],mm,ss,playingtime,percent))
-                    if resq.json()['isPassed'] == True:
-                        print('视频任务{}完成'.format(mp4[item][0]))
-                        rt = random.randint(1, 3)
-                        break
-                    time.sleep(60)
-                    playingtime += 60
-                except:
-                    print('出现错误，正在重试')
-            print('等待{}秒后开始下一个任务'.format(rt))
-            time.sleep(rt)
+            if str(mp4[item][5][0]) in finished:
+                print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
+                finished_num += 1
+            else:
+                playingtime = 0
+                retry_time = 0
+                job_done = 0
+                while True:
+                    try:
+                        t1 = time.time() * 1000
+                        jsoncallback = 'jsonp0' + str(int(random.random() * 100000000000000000))
+                        refer = 'http://i.mooc.chaoxing.com'
+                        version = str('1605853642425')
+                        url0 = 'https://passport2.chaoxing.com/api/monitor?version='+version+'&refer='+refer+'&jsoncallback='+jsoncallback+'&t='+str(t1)
+                        rep = self.session.get(url0,headers=header)
+                        if job_done >= 3:
+                            url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
+                                mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
+                                course['clazzid']) + '&enc=' + str(course['enc'])
+                            resq = self.session.get(url, headers=head).content.decode('utf-8')
+                            url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
+                                  re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
+                            resq = self.session.get(url, headers=head).text
+                            if 'success' in resq:
+                                print('添加日志成功')
+                                job_done = 0
+                            else:
+                                print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
+                                input()
+                                exit()
+                            self.get_score()
+                        t = str(int(t1))
+                        if int(playingtime) > int(mp4[item][2]):
+                            playingtime = int(mp4[item][2])
+                        code = '[{}][{}][{}][{}][{}][{}][{}][{}]'.format(str(course['clazzid']),str(user['userid']),str(mp4[item][5][1]),str(mp4[item][5][0]),str(int(playingtime)*1000),"d_yHJ!$pdA~5",str(int(mp4[item][2])*1000),'0_'+str(mp4[item][2]))
+                        coded = ''.join(code).encode()
+                        enc = hashlib.md5(coded).hexdigest()
+                        url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/'+str(course['cpi'])+'/'+str(mp4[item][1])+'?clazzId='+str(course['clazzid'])+'&playingTime='+str(playingtime)+'&duration='+str(mp4[item][2])+'&clipTime=0_'+str(mp4[item][2])+'&objectId='+str(mp4[item][5][0])+'&otherInfo=nodeId_'+str(mp4[item][6])+'-cpi_'+str(course['cpi'])+'&jobid='+str(mp4[item][5][1])+'&userid='+str(user['userid'])+'&isdrag=0&view=pc&enc='+str(enc)+'&rt=0.9&dtype=Video&_t='+str(t)
+                        resq = self.session.get(url,headers=header,verify=False)
+                        mm = int(mp4[item][2] / 60)
+                        ss = int(mp4[item][2]) % 60
+                        percent = int(playingtime) / int(mp4[item][2])
+                        if resq.json()['isPassed'] == True:
+                            print('视频任务{}完成'.format(mp4[item][0]))
+                            with open(os.path.join(path, 'finished_list.json'),'a') as f:
+                                f.write(str(mp4[item][5][0])+'\n')
+                            finished += str(mp4[item][5][0])
+                            finished_num += 1
+                            rt = random.randint(1, 3)
+                            job_done += 1
+                            break
+                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
+                        time.sleep(60)
+                        playingtime += 60
+                        retry_time = 0
+                    except:
+                        if retry_time < 6:
+                            rt = random.randint(1, 3)
+                            print('等待{}秒后验证第{}/5次'.format(rt,retry_time))
+                            retry_time += 1
+                            time.sleep(rt)
+                        else:
+                            print('重试超时，请检查您的网络情况')
+                            input('按回车键退出程序')
+                            exit()
+                print('等待{}秒后开始下一个任务'.format(rt))
+                time.sleep(rt)
+
+    def get_openc(self):
+        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
+            course['courseid'], course['clazzid'], course['cpi'])
+        header = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
+        resq = self.session.get(url,headers=header)
+        course['openc'] = re.findall("openc : '(.*?)'",resq.text)[0]
+
+
+        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(course['courseid'],course['clazzid'],course['cpi'])
+        resq = self.session.get(url,headers=header)
+        course['enc'] = re.findall('&enc=(.*?)&',str(resq.url))[0]
+
+    def get_score(self):
+        print('正在查询您的当前总分')
+        url = 'https://mooc1-1.chaoxing.com/moocAnalysis/statistics-std?courseId={}&classId={}&ut=s&enc={}&cpi={}&openc={}'.format(course['courseid'],course['clazzid'],course['enc'],course['cpi'],course['openc'])
+        header = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
+        resq = self.session.get(url,headers=header)
+        content = resq.text.replace('\r','').replace('\n','').replace(' ','')
+        result = float(re.findall('<th>我的成绩（(.*?)）',content)[0])
+        print('您的当前总分为：' + str(result))
+
 
 
     def main(self):
@@ -286,6 +373,7 @@ class Learn_XueXiTong():
             jobs = j['job']
         else:
             self.prework()
+        self.get_openc()
         self.do_mp4()
 
 
