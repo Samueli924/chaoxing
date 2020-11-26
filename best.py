@@ -11,16 +11,11 @@ import get_user
 import check_file
 import j_updates
 
-<<<<<<< HEAD
 
 __version__ ='0.1.0'
 __author__ = 'Samuel Chen'
 
 
-=======
-__version__ ='0.0.4'
-__author__ = 'Samuel Chen'
->>>>>>> 6ac15df72f707ccee967ada694d44a9e743a49c4
 mp4 = {}
 """
 mp4[item] = [filename, dtoken, duration, crc, key], job = objectid
@@ -44,11 +39,8 @@ jobs[0] = objectid , jobs[1] = jobid
 finished = ''
 
 ppt_finished = ''
-<<<<<<< HEAD
 chapter_finished = ''
 chapters = []
-=======
->>>>>>> 6ac15df72f707ccee967ada694d44a9e743a49c4
 
 
 class Learn_XueXiTong():
@@ -279,11 +271,7 @@ class Learn_XueXiTong():
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
         }
         print('*'*30+'\n'+'*'*30)
-<<<<<<< HEAD
         job_done = 0
-=======
-
->>>>>>> 6ac15df72f707ccee967ada694d44a9e743a49c4
         for item in mp4:
             if str(mp4[item][5][0]) in finished:
                 print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
@@ -291,11 +279,7 @@ class Learn_XueXiTong():
             else:
                 playingtime = 0
                 retry_time = 0
-<<<<<<< HEAD
 
-=======
-                job_done = 0
->>>>>>> 6ac15df72f707ccee967ada694d44a9e743a49c4
                 while True:
                     try:
                         t1 = time.time() * 1000
@@ -487,32 +471,6 @@ class Learn_XueXiTong():
                     total = 0
                     print('开始读取后续章节')
 
-    def get_openc(self):
-        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
-            course['courseid'], course['clazzid'], course['cpi'])
-        header = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-        }
-        resq = self.session.get(url,headers=header)
-        course['openc'] = re.findall("openc : '(.*?)'",resq.text)[0]
-
-
-        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(course['courseid'],course['clazzid'],course['cpi'])
-        resq = self.session.get(url,headers=header)
-        course['enc'] = re.findall('&enc=(.*?)&',str(resq.url))[0]
-
-    def get_score(self):
-        print('正在查询您的当前总分')
-        url = 'https://mooc1-1.chaoxing.com/moocAnalysis/statistics-std?courseId={}&classId={}&ut=s&enc={}&cpi={}&openc={}'.format(course['courseid'],course['clazzid'],course['enc'],course['cpi'],course['openc'])
-        header = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-        }
-        resq = self.session.get(url,headers=header)
-        content = resq.text.replace('\r','').replace('\n','').replace(' ','')
-        result = float(re.findall('<th>我的成绩（(.*?)）',content)[0])
-        print('您的当前总分为：' + str(result))
-
-
 
     def main(self):
         global mp4,ppt,course,jobs,chapters
@@ -528,6 +486,7 @@ class Learn_XueXiTong():
         self.get_openc()
         self.do_mp4()
         self.get_ppt_detail()
+
 
 a = Learn_XueXiTong()
 a.main()
