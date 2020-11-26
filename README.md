@@ -1,6 +1,12 @@
 ﻿# fxxk_chaoxing
 超星学习通/超星尔雅/泛雅超星/mooc1-1.chaoxing/刷任务点
+<<<<<<< HEAD
 每日 git api调用次数有限，所以请不要不停重复运行本程序
+=======
+
+直接下载可执行程序exe文件
+https://github.com/xz454867105/fxxk_chaoxing/releases
+>>>>>>> 6ac15df72f707ccee967ada694d44a9e743a49c4
 # 相关库
 import requests
 import time
