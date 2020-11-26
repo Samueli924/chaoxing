@@ -26,9 +26,22 @@ def check_course_file(usernm):
             c = json.loads(course_dump.read())
         with open(os.path.join(path, 'job_list.json'), 'r') as job_dump:
             jj = json.loads(job_dump.read())
+        l = []
+        for item in m:
+            if m[item][6] in l:
+                pass
+            else:
+                l.append(m[item][6])
+        for item in p:
+            if p[item][5] in l:
+                pass
+            else:
+                l.append(p[item][5])
         print('课程内容加载完毕')
         j['mp4'] = m
         j['ppt'] = p
         j['course'] = c
         j['job'] = jj
+        j['chapter'] = l
         return j
+
