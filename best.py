@@ -11,7 +11,10 @@ import get_user
 import check_file
 import j_updates
 
-__version__ ='0.0.3'
+
+__version__ ='0.1.0'
+__author__ = 'Samuel Chen'
+
 
 mp4 = {}
 """
@@ -34,6 +37,12 @@ jobs = {}
 jobs[0] = objectid , jobs[1] = jobid
 """
 finished = ''
+
+ppt_finished = ''
+chapter_finished = ''
+chapters = []
+
+
 class Learn_XueXiTong():
     def __init__(self):
         j_updates.check(__version__)
@@ -258,7 +267,11 @@ class Learn_XueXiTong():
             'Sec-Fetch-Site': 'same-origin',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
             }
+        head = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
         print('*'*30+'\n'+'*'*30)
+        job_done = 0
         for item in mp4:
             if str(mp4[item][5][0]) in finished:
                 print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
@@ -266,6 +279,7 @@ class Learn_XueXiTong():
             else:
                 playingtime = 0
                 retry_time = 0
+
                 while True:
                     try:
                         t1 = time.time() * 1000
@@ -273,10 +287,23 @@ class Learn_XueXiTong():
                         refer = 'http://i.mooc.chaoxing.com'
                         version = str('1605853642425')
                         url0 = 'https://passport2.chaoxing.com/api/monitor?version='+version+'&refer='+refer+'&jsoncallback='+jsoncallback+'&t='+str(t1)
-                        head = {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-                        }
                         rep = self.session.get(url0,headers=header)
+                        if job_done >= 3:
+                            url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
+                                mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
+                                course['clazzid']) + '&enc=' + str(course['enc'])
+                            resq = self.session.get(url, headers=head).content.decode('utf-8')
+                            url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
+                                  re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
+                            resq = self.session.get(url, headers=head).text
+                            if 'success' in resq:
+                                print('添加日志成功')
+                                job_done = 0
+                            else:
+                                print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
+                                input()
+                                exit()
+                            self.get_score()
                         t = str(int(t1))
                         if int(playingtime) > int(mp4[item][2]):
                             playingtime = int(mp4[item][2])
@@ -288,7 +315,6 @@ class Learn_XueXiTong():
                         mm = int(mp4[item][2] / 60)
                         ss = int(mp4[item][2]) % 60
                         percent = int(playingtime) / int(mp4[item][2])
-                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
                         if resq.json()['isPassed'] == True:
                             print('视频任务{}完成'.format(mp4[item][0]))
                             with open(os.path.join(path, 'finished_list.json'),'a') as f:
@@ -296,7 +322,9 @@ class Learn_XueXiTong():
                             finished += str(mp4[item][5][0])
                             finished_num += 1
                             rt = random.randint(1, 3)
+                            job_done += 1
                             break
+                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
                         time.sleep(60)
                         playingtime += 60
                         retry_time = 0
@@ -312,20 +340,152 @@ class Learn_XueXiTong():
                             exit()
                 print('等待{}秒后开始下一个任务'.format(rt))
                 time.sleep(rt)
+        print('MP4任务全部完成')
+    def get_openc(self):
+        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
+            course['courseid'], course['clazzid'], course['cpi'])
+        header = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
+        resq = self.session.get(url,headers=header)
+        course['openc'] = re.findall("openc : '(.*?)'",resq.text)[0]
+
+
+        url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(course['courseid'],course['clazzid'],course['cpi'])
+        resq = self.session.get(url,headers=header)
+        course['enc'] = re.findall('&enc=(.*?)&',str(resq.url))[0]
+
+    def get_score(self):
+        try:
+            print('正在查询您的当前总分')
+            url = 'https://mooc1-1.chaoxing.com/moocAnalysis/statistics-std?courseId={}&classId={}&ut=s&enc={}&cpi={}&openc={}'.format(course['courseid'],course['clazzid'],course['enc'],course['cpi'],course['openc'])
+            header = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+            }
+            resq = self.session.get(url,headers=header)
+            content = resq.text.replace('\r','').replace('\n','').replace(' ','')
+            result = float(re.findall('<th>我的成绩（(.*?)）',content)[0])
+            print('您的当前总分为：' + str(result))
+        except:
+            print('无法查询总分')
+
+
+    def get_ppt_detail(self):
+        global ppt_finished,chapter_finished
+        path = os.path.join(str(self.usernm),str(course['courseid']),'ppt_detail.json')
+        path2 = os.path.join(str(self.usernm),str(course['courseid']),'ppt_done.json')
+        path3 = os.path.join(str(self.usernm),str(course['courseid']),'chapter_done.json')
+        f = open(path,'w')
+        f.close()
+        if os.path.exists(path2):
+            with open(path2,'r') as f:
+                ppt_finished = f.read()
+        else:
+            f = open(path2,'w')
+            f.close()
+        if os.path.exists(path3):
+            with open(path3,'r') as f:
+                chapter_finished = f.read()
+        else:
+            f = open(path3,'w')
+            f.close()
+        self.load_ppt()
+        input('ppt学习结束，按回车键退出')
+
+
+    def learn_ppt(self,objectid,jtoken):
+        global ppt_finished
+        path2 = os.path.join(str(self.usernm),str(course['courseid']),'ppt_done.json')
+
+        rt = random.randint(2, 6)
+        header = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
+        print('开始任务'+str(objectid))
+        url = 'https://mooc1-1.chaoxing.com/ananas/job/document?jobid='+str(ppt[objectid][4][1])+'&knowledgeid='+str(ppt[objectid][5])+'&courseid='+str(course['courseid'])+'&clazzid='+str(course['clazzid'])+'&jtoken='+str(jtoken)+'&_dc='+str(int((time.time()-10)*1000))
+        resq = self.session.get(url,headers=header)
+        result = resq.json()['msg']
+        if result == '考核点已经完成' or result == '添加考核点成功':
+            print('PPT任务{}完成,{}秒后开始下一项'.format(str(objectid),rt))
+            with open(path2,'a') as f:
+                f.write(objectid+'\n')
+            ppt_finished += str(objectid+'\n')
+            time.sleep(rt)
+            return 1
+        else:
+            print(result)
+            print('任务失败，重试中')
+            return 0
+
+
+
+    def load_ppt(self):
+        global chapter_finished
+        path = os.path.join(str(self.usernm), str(course['courseid']), 'ppt_detail.json')
+        path2 = os.path.join(str(self.usernm),str(course['courseid']),'ppt_done.json')
+        path3 = os.path.join(str(self.usernm),str(course['courseid']),'chapter_done.json')
+        header = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        }
+        total = 0
+        for item in sorted(chapters):
+            if item in chapter_finished:
+                print('章节{}已完成，跳过'.format(item))
+            else:
+                i = 0
+                while True:
+                    url = 'https://mooc1-1.chaoxing.com/knowledge/cards?clazzid='+str(course['clazzid'])+'&courseid='+str(course['courseid'])+'&knowledgeid='+str(item)+'&num='+str(i)+'&ut=s&cpi='+str(course['cpi'])+'&v=20160407-1'
+                    resq = self.session.get(url,headers=header).text
+                    result = re.findall('mArg = (.*?);',resq)[1]
+                    if result != '$mArg':
+                        print('{}章{}页读取完毕，查看下一页'.format(item,i))
+                        with open(path,'a') as f:
+                            f.write(result+'\n\n')
+                        i += 1
+                    else:
+                        print('{}章读取完毕，开始读取下一章'.format(item))
+                        chapter_finished += item+'\n'
+                        with open(path3,'a') as f:
+                            f.write(item+'\n')
+                        total += 1
+                        break
+                time.sleep(1)
+                if total == 5:
+                    with open(path,'r') as f:
+                        tmp_ppt = f.read()
+                    result = re.findall('\{"jobid":".*?,"jtoken":"(.*?)".*?,"objectid":"(.*?)",.*?},',tmp_ppt)
+                    retry = 0
+                    for item in result:
+                        if item[1] in ppt_finished:
+                            print('任务{}已完成，跳过'.format(item[1]))
+                        else:
+                            if self.learn_ppt(item[1],item[0]):
+                                pass
+                            else:
+                                retry += 1
+                            if retry > 1:
+                                input('重试失败，请检查网络情况,按回车键退出')
+                                exit()
+                    f = open(path,'w')
+                    f.close()
+                    total = 0
+                    print('开始读取后续章节')
 
 
     def main(self):
-        global mp4,ppt,course,jobs
+        global mp4,ppt,course,jobs,chapters
         j = check_file.check_course_file(self.usernm);
         if j:
             mp4 = j['mp4']
             ppt = j['ppt']
             course = j['course']
             jobs = j['job']
+            chapters = j['chapter']
         else:
             self.prework()
+        self.get_openc()
         self.do_mp4()
-
+        self.get_ppt_detail()
 
 a = Learn_XueXiTong()
 a.main()
