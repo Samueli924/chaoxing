@@ -12,7 +12,7 @@ import check_file
 import j_updates
 
 
-__version__ ='0.1.0'
+__version__ ='0.1.1'
 __author__ = 'Samuel Chen'
 
 
