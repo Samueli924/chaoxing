@@ -45,11 +45,17 @@ chapters = []
 
 class Learn_XueXiTong():
     def __init__(self):
-        j_updates.check(__version__)
+        try:
+            j_updates.check(__version__)
+        except:
+            print('检查更新失败，当日API接口次数已达上限，请明日再检查更新\n跳过检查更新')
+        self.remind()
         self.session = requests.session()
         small_tools.check_path('saves')
         self.usernm,self.passwd = get_user.determine_user_file()
         self.login()
+    def remind(self):
+        print('程序作者：SamuelChen\n联系作者：github.com/xz454867105\n若使用满意请给该github项目Star或Fork以支持作者，谢谢\n项目链接：github.com/xz454867105/fxxk_chaoxing')
     def login(self):
         global user
         header = {'Accept-Language': 'zh_CN',
@@ -473,19 +479,22 @@ class Learn_XueXiTong():
 
 
     def main(self):
-        global mp4,ppt,course,jobs,chapters
-        j = check_file.check_course_file(self.usernm);
-        if j:
-            mp4 = j['mp4']
-            ppt = j['ppt']
-            course = j['course']
-            jobs = j['job']
-            chapters = j['chapter']
-        else:
-            self.prework()
-        self.get_openc()
-        self.do_mp4()
-        self.get_ppt_detail()
+        try:
+            global mp4,ppt,course,jobs,chapters
+            j = check_file.check_course_file(self.usernm);
+            if j:
+                mp4 = j['mp4']
+                ppt = j['ppt']
+                course = j['course']
+                jobs = j['job']
+                chapters = j['chapter']
+            else:
+                self.prework()
+            self.get_openc()
+            self.do_mp4()
+            self.get_ppt_detail()
+        except:
+            input('出现未知错误，请访问Github.com/xz454867105/fxxk_chaoxing提出issues或直接联系作者xz454867105\n按回车退出程序')
 
 
 a = Learn_XueXiTong()
