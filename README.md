@@ -8,7 +8,7 @@
 直接下载可执行程序exe文件
 https://github.com/xz454867105/fxxk_chaoxing/releases
 
-#多开版（新版，存在BUG，支持多线程，多用户多开）
+# 多开版（新版，存在BUG，支持多线程，多用户多开）
 https://github.com/xz454867105/chaoxing_Multi
 
 # 注释
