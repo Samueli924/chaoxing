@@ -1,6 +1,8 @@
-﻿# fxxk_chaoxing
+# fxxk_chaoxing
 
 # --20210323更新版本已修复此前学习通更新的BUG，可正常使用--
+
+# 喜欢使用的朋友请给个Star
 
 超星学习通/超星尔雅/泛雅超星/mooc1-1.chaoxing/刷任务点
 
