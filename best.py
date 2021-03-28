@@ -10,9 +10,9 @@ import small_tools
 import get_user
 import check_file
 import j_updates
+import load_config
 
-
-__version__ ='0.1.2'
+__version__ ='0.1.5'
 __author__ = 'Samuel Chen'
 
 
@@ -42,13 +42,15 @@ ppt_finished = ''
 chapter_finished = ''
 chapters = []
 
+speed = load_config.load()
+
 
 class Learn_XueXiTong():
     def __init__(self):
-        try:
-            j_updates.check(__version__)
-        except:
-            print('检查更新失败，当日API接口次数已达上限，请明日再检查更新\n跳过检查更新')
+        # try:
+        #     j_updates.check(__version__)
+        # except:
+        #     print('检查更新失败，当日API接口次数已达上限，请明日再检查更新\n跳过检查更新')
         self.remind()
         self.session = requests.session()
         small_tools.check_path('saves')
@@ -318,6 +320,7 @@ class Learn_XueXiTong():
                         enc = hashlib.md5(coded).hexdigest()
                         url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/'+str(course['cpi'])+'/'+str(mp4[item][1])+'?clazzId='+str(course['clazzid'])+'&playingTime='+str(playingtime)+'&duration='+str(mp4[item][2])+'&clipTime=0_'+str(mp4[item][2])+'&objectId='+str(mp4[item][5][0])+'&otherInfo=nodeId_'+str(mp4[item][6])+'-cpi_'+str(course['cpi'])+'&jobid='+str(mp4[item][5][1])+'&userid='+str(user['userid'])+'&isdrag=0&view=pc&enc='+str(enc)+'&rt=0.9&dtype=Video&_t='+str(t)
                         resq = self.session.get(url,headers=header,verify=False)
+                        # print(resq.text)
                         mm = int(mp4[item][2] / 60)
                         ss = int(mp4[item][2]) % 60
                         percent = int(playingtime) / int(mp4[item][2])
@@ -331,7 +334,7 @@ class Learn_XueXiTong():
                             job_done += 1
                             break
                         print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
-                        time.sleep(60)
+                        time.sleep(int(float(60)*float(1/speed)))
                         playingtime += 60
                         retry_time = 0
                     except:
@@ -341,7 +344,7 @@ class Learn_XueXiTong():
                             retry_time += 1
                             time.sleep(rt)
                         else:
-                            print('重试超时，请检查您的网络情况')
+                            print('重试超时，请检查您的网络情况或检查此课程是否已经结课')
                             input('按回车键退出程序')
                             exit()
                 print('等待{}秒后开始下一个任务'.format(rt))
@@ -350,11 +353,15 @@ class Learn_XueXiTong():
     def get_openc(self):
         url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
             course['courseid'], course['clazzid'], course['cpi'])
+        print(url)
         header = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
         }
         resq = self.session.get(url,headers=header)
-        course['openc'] = re.findall("openc : '(.*?)'",resq.text)[0]
+        try:
+            course['openc'] = re.findall("openc : '(.*?)'",resq.text)[0]
+        except:
+            course['openc'] = re.findall('&openc=(.*?)"',resq.text)[0]
 
 
         url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(course['courseid'],course['clazzid'],course['cpi'])
@@ -491,10 +498,17 @@ class Learn_XueXiTong():
             else:
                 self.prework()
             self.get_openc()
+            print('当前倍速设置为{}倍速，请在config/general.json中设置'.format(speed))
+            print('建议使用倍数1倍，高倍数存在一定风险')
+            if speed > 1:
+                print('使用大于1倍速造成的一切后果由用户自己承担')
+                input('确认知晓请点击回车键')
             self.do_mp4()
             self.get_ppt_detail()
         except:
             input('出现未知错误，请访问Github.com/xz454867105/fxxk_chaoxing提出issues或直接联系作者xz454867105\n按回车退出程序')
+
+
 
 
 a = Learn_XueXiTong()
