@@ -5,15 +5,21 @@
 # 喜欢使用的朋友请给个Star
 
 超星学习通/超星尔雅/泛雅超星/mooc1-1.chaoxing/刷任务点
-
-
 =======
 
 直接下载可执行程序exe文件（版本较落后，建议使用代码）
 https://github.com/xz454867105/fxxk_chaoxing/releases
 
-# 多用户多开版（新版，存在BUG，支持多线程，多用户多开， 不支持多课程）
+# 作者其他刷课项目
+## 单开命令行版（稳定开发版，BUG少）
+https://github.com/xz454867105/fxxk_chaoxing
+## 多用户Pyqt版（Beta版，存在较多BUG）
 https://github.com/xz454867105/chaoxing_Multi
+## 升级版chaoxing（开发中，尚未开放）
+https://github.com/xz454867105/chaoxing_pro
+## 智慧树Selenium版(稳定开发版，BUG少)
+https://github.com/xz454867105/fxxk_zhihuishu
+
 
 # 注释
 ## 本代码安全不封号
