@@ -1,3 +1,5 @@
+[![SamuelChen's github stats](https://github-readme-stats.vercel.app/api?username=xz454867105&show_icons=true&theme=gruvbox)](https://github.com/anuraghazra/github-readme-stats)
+
 # fxxk_chaoxing
 
 # --20210328更新版本添加了多倍速功能（多倍速有风险，使用请谨慎）--
