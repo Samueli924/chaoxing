@@ -11,6 +11,8 @@ import get_user
 import check_file
 import j_updates
 import load_config
+from math import ceil
+
 
 __version__ ='0.1.5'
 __author__ = 'Samuel Chen'
@@ -287,7 +289,7 @@ class Learn_XueXiTong():
             else:
                 playingtime = 0
                 retry_time = 0
-
+                print('开始任务{}'.format(str(mp4[item][0])))
                 while True:
                     try:
                         t1 = time.time() * 1000
@@ -333,8 +335,15 @@ class Learn_XueXiTong():
                             rt = random.randint(1, 3)
                             job_done += 1
                             break
-                        print('视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0],mm,ss,playingtime,percent,str(finished_num),str(len(mp4))))
-                        time.sleep(int(float(60)*float(1/speed)))
+
+                        self.show_status(speed,mp4[item][0],mm,ss,playingtime,str(finished_num),str(len(mp4)))
+
+                        # print(
+                        #     '视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0], mm, ss, playingtime,
+                        #                                                              percent, str(finished_num),
+                        #                                                              str(len(mp4))), end="\r",
+                        #     flush=True)
+                        # time.sleep(int(float(60)*float(1/speed)))
                         playingtime += 60
                         retry_time = 0
                     except:
@@ -485,6 +494,21 @@ class Learn_XueXiTong():
                     print('开始读取后续章节')
 
 
+    def show_status(self,speed, name, totalmin, totalsec, done, job_done, totaljob):
+        # print('开始任务{}'.format(name))
+        wait_time = int(60 / (float(60) * float(1 / speed)))
+        goal = done + 60
+        while done < goal:
+            cont = ceil(int(done) / (int(totalmin) * 60 + int(totalsec)) * 5)
+            cont_detail = '*' * cont + '-' * (20 - cont)
+            status = '{}秒/{}秒'.format(done, (int(totalmin) * 60 + int(totalsec)))
+            print('视频任务{}   {}  {}  总任务{}/{}'.format(name, cont_detail, status, job_done, totaljob), end='\r',
+                  flush=True)
+            time.sleep(1)
+            done += 1
+
+
+
     def main(self):
         try:
             global mp4,ppt,course,jobs,chapters
@@ -507,6 +531,8 @@ class Learn_XueXiTong():
             self.get_ppt_detail()
         except:
             input('出现未知错误，请访问Github.com/xz454867105/fxxk_chaoxing提出issues或直接联系作者xz454867105\n按回车退出程序')
+
+
 
 
 
