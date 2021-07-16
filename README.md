@@ -1,65 +1,38 @@
-[![SamuelChen's github stats](https://github-readme-stats.vercel.app/api?username=xz454867105&show_icons=true&theme=gruvbox)](https://github.com/anuraghazra/github-readme-stats)
-# <center><font color=white size=6 align=center> :computer: 超星学习通自动化</font></center>
-# 喜欢使用的朋友请给个Star
+<center><font color=white size=6 align=center face="微软雅黑"> :computer: 超星学习通自动化</font></center>
 
-超星学习通/超星尔雅/泛雅超星/mooc1-1.chaoxing/刷任务点
-=======
+<font color=white size=3 face="微软雅黑">:star: 觉得有帮助的朋友可以给个**Star**</font>
 
-直接下载可执行程序exe文件（版本较落后，建议使用代码）
-https://github.com/xz454867105/fxxk_chaoxing/releases
+<center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
-# 作者其他刷课项目
-## 单开命令行版（稳定开发版，BUG少）
-https://github.com/xz454867105/fxxk_chaoxing
-## 多用户Pyqt版（Beta版，存在较多BUG）
-https://github.com/xz454867105/chaoxing_Multi
-## 升级版chaoxing（开发中，尚未开放）
-https://github.com/xz454867105/chaoxing_pro
-## 智慧树Selenium版(稳定开发版，BUG少)
-https://github.com/xz454867105/fxxk_zhihuishu
+<font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件</font>  
+  
+<font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
+<font color=white size=3 align=center face="微软雅黑">2. python best.py 运行代码</font>
 
-# 注释
-## 本代码安全不封号
+<font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件</font>
 
-## 考虑到了超星学习通的心跳检测刷课方式，本代码的所需时间等于视频的实际观看时间
+<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载最新版本exe文件</font>
 
-## 将代码运行或直接运行exe文件即可自动开始发送看视频GET请求
+<font color=white size=3 align=center face="微软雅黑">2. 双击exe文件允许启动</font>
 
-# 相关库
-import requests
-import time
-import hashlib
-import re
-import os
-import random
-from urllib.parse import unquote
-import json
+<center><font color=white size=6 align=center face="微软雅黑"> :lock: 作者所有相关项目</font></center>
 
+<font color=white size=3 face="微软雅黑">（当前）[单开命令行版](https://github.com/xz454867105/fxxk_chaoxing)（稳定开发版，BUG少）  
+<font color=white size=3 face="微软雅黑">[多用户Pyqt版](https://github.com/xz454867105/chaoxing_Multi)（Beta版，存在较多BUG）  
+<font color=white size=3 face="微软雅黑">[智慧树Selenium版](https://github.com/xz454867105/fxxk_zhihuishu)（稳定开发版，BUG少）  
+<font color=white size=3 face="微软雅黑">[[升级版chaoxing](https://github.com/xz454867105/chaoxing_pro)(开发中，尚未开放)
 
-# 使用方法
-## git clone 至本地后 cd进目录
-## 命令行运行'python best.py'
-## 输入账号密码
-## 选择课程
-## 开始自动刷任务点
+<center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
+<font color=white size=3 color=red face="微软雅黑">:one: 程序使用协议自动化，而非github其他的浏览器插件或selenium库自动化，占用资源小且安全有效</font>  
 
-# 实现方式
-全程使用requests库
-模拟安卓端登录
-读取课程数据
-模拟浏览器发送看视频GET请求
+<font color=white size=3 color=red face="微软雅黑">:two: 考虑到了超星学习通的心跳检测刷课方式，本代码的所需时间等于视频的实际观看时间</font>   
 
-# 已实现功能
-自动看所有的视频任务点
-自动看所有的ppt任务点
+<font color=white size=3 color=red face="微软雅黑">注：在0.1.2版本中加入了多倍速的功能，建议不要使用</font>   
 
+<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码仅用于学习交流学习通自动化协议</font>   
 
-# 注意事项
-由于超星加入了心跳时间，故此代码的看视频时间和现实所需时间是一致的，可以将代码挂在任意平台运行
-代码运行过程中会在当前路径生成配置文件，所以请放入单独一个文件夹中
-更新后请放置于同一目录运行以使用本地配置文档
-# 本代码仅用于学习交流
-# 欢迎issue &pull requests
+<font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
+
 
