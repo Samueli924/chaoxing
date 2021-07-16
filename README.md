@@ -1,7 +1,5 @@
 [![SamuelChen's github stats](https://github-readme-stats.vercel.app/api?username=xz454867105&show_icons=true&theme=gruvbox)](https://github.com/anuraghazra/github-readme-stats)
-
-# fxxk_chaoxing
-
+# <center><font color=white size=6 align=center> :computer: 超星学习通自动化</font></center>
 # 喜欢使用的朋友请给个Star
 
 超星学习通/超星尔雅/泛雅超星/mooc1-1.chaoxing/刷任务点
