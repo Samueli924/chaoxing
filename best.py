@@ -284,12 +284,12 @@ class Learn_XueXiTong():
         job_done = 0
         for item in mp4:
             if str(mp4[item][5][0]) in finished:
-                print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
+                self.normal_print('视频任务{}已完成，跳过'.format(str(mp4[item][0])))
                 finished_num += 1
             else:
                 playingtime = 0
                 retry_time = 0
-                print('开始任务{}'.format(str(mp4[item][0])))
+                self.normal_print('开始任务{}'.format(str(mp4[item][0])))
                 while True:
                     try:
                         t1 = time.time() * 1000
@@ -307,10 +307,10 @@ class Learn_XueXiTong():
                                   re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
                             resq = self.session.get(url, headers=head).text
                             if 'success' in resq:
-                                print('添加日志成功')
+                                self.normal_print('添加日志成功')
                                 job_done = 0
                             else:
-                                print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
+                                self.normal_print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
                                 input()
                                 exit()
                             self.get_score()
@@ -327,7 +327,7 @@ class Learn_XueXiTong():
                         ss = int(mp4[item][2]) % 60
                         percent = int(playingtime) / int(mp4[item][2])
                         if resq.json()['isPassed'] == True:
-                            print('视频任务{}完成'.format(mp4[item][0]))
+                            self.regulate_print('视频任务{}   进度100%      完成观看        '.format(mp4[item][0]))
                             with open(os.path.join(path, 'finished_list.json'),'a') as f:
                                 f.write(str(mp4[item][5][0])+'\n')
                             finished += str(mp4[item][5][0])
@@ -349,16 +349,16 @@ class Learn_XueXiTong():
                     except:
                         if retry_time < 6:
                             rt = random.randint(1, 3)
-                            print('等待{}秒后验证第{}/5次'.format(rt,retry_time))
+                            self.regulate_print('等待{}秒后验证第{}/5次'.format(rt,retry_time))
                             retry_time += 1
                             time.sleep(rt)
                         else:
-                            print('重试超时，请检查您的网络情况或检查此课程是否已经结课')
+                            self.normal_print('重试超时，请检查您的网络情况或检查此课程是否已经结课')
                             input('按回车键退出程序')
                             exit()
-                print('等待{}秒后开始下一个任务'.format(rt))
+                self.normal_print('等待{}秒后开始下一个任务'.format(rt))
                 time.sleep(rt)
-        print('MP4任务全部完成')
+        self.normal_print('MP4任务全部完成')
     def get_openc(self):
         url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
             course['courseid'], course['clazzid'], course['cpi'])
@@ -379,7 +379,7 @@ class Learn_XueXiTong():
 
     def get_score(self):
         try:
-            print('正在查询您的当前总分')
+            self.normal_print('正在查询您的当前总分')
             url = 'https://mooc1-1.chaoxing.com/moocAnalysis/statistics-std?courseId={}&classId={}&ut=s&enc={}&cpi={}&openc={}'.format(course['courseid'],course['clazzid'],course['enc'],course['cpi'],course['openc'])
             header = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
@@ -387,9 +387,9 @@ class Learn_XueXiTong():
             resq = self.session.get(url,headers=header)
             content = resq.text.replace('\r','').replace('\n','').replace(' ','')
             result = float(re.findall('<th>我的成绩（(.*?)）',content)[0])
-            print('您的当前总分为：' + str(result))
+            self.regulate_print('您的当前总分为：' + str(result))
         except:
-            print('无法查询总分')
+            self.regulate_print('无法查询总分')
 
 
     def get_ppt_detail(self):
@@ -502,12 +502,25 @@ class Learn_XueXiTong():
             cont = ceil(int(done) / (int(totalmin) * 60 + int(totalsec)) * 5)
             cont_detail = '*' * cont + '-' * (20 - cont)
             status = '{}秒/{}秒'.format(done, (int(totalmin) * 60 + int(totalsec)))
-            print('视频任务{}   {}  {}  总任务{}/{}'.format(name, cont_detail, status, job_done, totaljob), end='\r',
-                  flush=True)
+            self.regulate_print('视频任务{}   {}  {}  总任务{}/{}'.format(name, cont_detail, status, job_done, totaljob))
             time.sleep(1)
             done += 1
 
+    def regulate_print(self,content):
+        l = len(content)
+        if l < 80:
+            content = content + (80 - l) * ' '
+        else:
+            content = content
+        print(content, end='\r', flush=True)
 
+    def normal_print(self,content):
+        l = len(content)
+        if l < 80:
+            content = content + (80 - l) * ' '
+        else:
+            content = content
+        print(content)
 
     def main(self):
         try:
