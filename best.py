@@ -313,7 +313,7 @@ class Learn_XueXiTong():
                                 self.normal_print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
                                 input()
                                 exit()
-                            self.get_score()
+                            # self.get_score()
                         t = str(int(t1))
                         if int(playingtime) > int(mp4[item][2]):
                             playingtime = int(mp4[item][2])
@@ -542,8 +542,9 @@ class Learn_XueXiTong():
                 input('确认知晓请点击回车键')
             self.do_mp4()
             self.get_ppt_detail()
-        except:
-            input('出现未知错误，请访问Github.com/xz454867105/fxxk_chaoxing提出issues或直接联系作者xz454867105\n按回车退出程序')
+        except Exception as e:
+            print(e)
+            input('出现未知错误，请截图后访问Github.com/xz454867105/fxxk_chaoxing提出issues或直接联系作者xz454867105\n按回车退出程序')
 
 
 
