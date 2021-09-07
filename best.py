@@ -197,14 +197,17 @@ class Learn_XueXiTong():
             'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 5.1.1; SM-G9350 Build/LMY48Z) com.chaoxing.mobile/ChaoXingStudy_3_5.21_android_phone_206_1 (SM-G9350; Android 5.1.1; zh_CN)_19698145335.21'
         }
         req = self.session.get(url, headers=header)
-        content = str(json.loads(req.text)['data'][0]['card']['data']).replace('&quot;', '')
-        result = re.findall('{objectid:(.*?),.*?,_jobid:(.*?),', content)
-        jobs[lesson_id] = result
-        print('在章节{}中找到{}个任务点'.format(lesson_id,len(result)))
-        cookie = requests.utils.dict_from_cookiejar(self.session.cookies)
-        user['fid'] = cookie['fid']
-        user['userid'] = cookie['_uid']
-
+        try:
+            content = str(json.loads(req.text)['data'][0]['card']['data']).replace('&quot;', '')
+            result = re.findall('{objectid:(.*?),.*?,_jobid:(.*?),', content)
+            jobs[lesson_id] = result
+            print('在章节{}中找到{}个任务点'.format(lesson_id,len(result)))
+            cookie = requests.utils.dict_from_cookiejar(self.session.cookies)
+            user['fid'] = cookie['fid']
+            user['userid'] = cookie['_uid']
+        except Exception as e:
+            print('错误类型:{}'.format(e.__class__.__name__))
+            print('错误明细:{}'.format(e))
 
     def determine_job_type(self,chapter,item,fid):
         url = 'https://mooc1-api.chaoxing.com/ananas/status/' + item[0]
