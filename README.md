@@ -32,6 +32,8 @@
 <font color=white size=3 color=red face="微软雅黑">注：在0.1.2版本中加入了多倍速的功能，建议不要使用</font>   
 
 <font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码仅用于学习交流学习通自动化协议</font>   
+  
+<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/fxxk_chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
 
 <font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
 
