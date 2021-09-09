@@ -4,13 +4,13 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
-### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件</font>  
+### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件（推荐！！！）</font>  
   
 <font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
 <font color=white size=3 align=center face="微软雅黑">2. python best.py 运行代码</font>
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件</font>
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件（可能落后源文件存在BUG）</font>
 
 <font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载最新版本exe文件</font>
 
