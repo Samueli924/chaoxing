@@ -8,7 +8,9 @@
   
 <font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
-<font color=white size=3 align=center face="微软雅黑">2. python best.py 运行代码</font>
+<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements安装相关依赖</font>
+
+<font color=white size=3 align=center face="微软雅黑">3. python best.py 运行代码</font>
 
 ### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件（可能落后源文件存在BUG）</font>
 
