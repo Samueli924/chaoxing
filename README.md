@@ -18,13 +18,6 @@
 
 <font color=white size=3 align=center face="微软雅黑">2. 双击exe文件允许启动</font>
 
-## <center><font color=white size=6 align=center face="微软雅黑"> :lock: 作者所有相关项目</font></center>
-
-<font color=white size=3 face="微软雅黑">（当前）[单开命令行版](https://github.com/xz454867105/fxxk_chaoxing)（稳定开发版，BUG少）  
-<font color=white size=3 face="微软雅黑">[多用户Pyqt版](https://github.com/xz454867105/chaoxing_Multi)（Beta版，存在较多BUG）  
-<font color=white size=3 face="微软雅黑">[智慧树Selenium版](https://github.com/xz454867105/fxxk_zhihuishu)（稳定开发版，BUG少）  
-<font color=white size=3 face="微软雅黑">[[升级版chaoxing](https://github.com/xz454867105/chaoxing_pro)(开发中，尚未开放)
-
 ## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
 <font color=white size=3 color=red face="微软雅黑">:one: 程序使用协议自动化，而非github其他的浏览器插件或selenium库自动化，占用资源小且安全有效</font>  
