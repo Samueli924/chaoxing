@@ -2,6 +2,12 @@
 
 <font color=white size=3 face="微软雅黑">:star: 觉得有帮助的朋友可以给个**Star**</font>
 
+## <center><font color=white size=6 align=center face="微软雅黑">:exclamation: 更新通知</font></center>
+
+<font color=white size=3 face="微软雅黑">:grinning: 20210918更新内容： 代码完全重构，方便阅读、修改</font>
+
+<font color=white size=3 face="微软雅黑">:sunglasses: 旧版代码在main分支，新版代码在dev分支，请自行切换</font>
+
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
 ### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件（推荐！！！）</font>  
@@ -31,5 +37,3 @@
 <font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/fxxk_chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
 
 <font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
-
-
