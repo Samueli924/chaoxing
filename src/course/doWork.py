@@ -1,11 +1,15 @@
+import hashlib
 import json
+import random
+import re
+import time
 from os.path import exists
-import time, random, re, hashlib
-from rich.console import Console
-# from rich.table import Table
 
+from rich.console import Console
+from rich.progress import Progress
 
 console = Console()
+
 
 def do_mp4(usernm, course, session, mp4):
     """
@@ -16,18 +20,22 @@ def do_mp4(usernm, course, session, mp4):
     :param mp4: mp4任务点信息
     :return:
     """
-    speed = 1
+    with open('config/speed.conf', 'r') as f:
+        speed = json.loads(f.read())['speed']
+    console.log("当前倍速[red] 1 倍速[/red],如果要多倍速播放，请在'config/speed.conf'中修改配置")
+    console.log("推荐使用 1 倍速，使用多倍速存在风险")
     finished_num = 0
     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
     if exists('{}/finishedinfo.json'.format(course_path)):
         with open('{}/finishedinfo.json'.format(course_path), 'r') as f:
             finished = f.read()
     else:
-        with open('{}/finishedinfo.json'.format(course_path), 'w') as f:
+        with open('{}/finishedinfo.json'.format(course_path), 'w'):
             pass
         finished = ''
     with open('saves/{}/userinfo.json'.format(usernm), 'r') as f:
         user = json.loads(f.read())
+
     header = {
         'Accept': '*/*',
         'Accept-Encoding': 'gzip, deflate, br',
@@ -39,105 +47,100 @@ def do_mp4(usernm, course, session, mp4):
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/86.0.4240.198 Safari/537.36',
     }
     head = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/86.0.4240.198 Safari/537.36',
     }
     # print('*' *30 +'\n ' +'*' *30)
     job_done = 0
     for item in mp4:
         if str(mp4[item][5][0]) in finished:
-            print('跳过视频任务{}'.format(str(mp4[item][0])))
+            console.log("视频任务{}[yellow]记录已完成[/yellow]，跳过".format(str(mp4[item][0])))
             finished_num += 1
         else:
             playingtime = 0
             retry_time = 0
-            print('开始任务{}'.format(str(mp4[item][0])))
-            while True:
-                try:
-                    t1 = time.time() * 1000
-                    jsoncallback = 'jsonp0' + str(int(random.random() * 100000000000000000))
-                    refer = 'http://i.mooc.chaoxing.com'
-                    version = str('1605853642425')
-                    url0 = 'https://passport2.chaoxing.com/api/monitor?version=' + version + '&refer=' + refer + '&jsoncallback=' + jsoncallback + '&t=' + str \
-                        (t1)
-                    rep = session.get(url0, headers=header)
-                    if job_done >= 3:
-                        url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
-                            mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
-                            course['clazzid']) + '&enc=' + str(course['enc'])
-                        resq = session.get(url, headers=head).content.decode('utf-8')
-                        url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
-                              re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
-                        resq = session.get(url, headers=head).text
-                        if 'success' in resq:
-                            print('添加日志成功')
-                            job_done = 0
+            console.log("[yellow]开始任务[/yellow]{}".format(str(mp4[item][0])))
+            with Progress() as progress:
+                watching = progress.add_task("[red]正在播放", total=100)
+                while True:
+                    try:
+                        t1 = time.time() * 1000
+                        jsoncallback = 'jsonp0' + str(int(random.random() * 100000000000000000))
+                        refer = 'http://i.mooc.chaoxing.com'
+                        version = str('1605853642425')
+                        url0 = 'https://passport2.chaoxing.com/api/monitor?version=' + version + '&refer=' + refer + \
+                               '&jsoncallback=' + jsoncallback + '&t=' + str(t1)
+                        session.get(url0, headers=header)
+                        if job_done >= 3:
+                            url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
+                                mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
+                                course['clazzid']) + '&enc=' + str(course['enc'])
+                            resq = session.get(url, headers=head).content.decode('utf-8')
+                            url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
+                                  re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
+                            resq = session.get(url, headers=head).text
+                            if 'success' in resq:
+                                console.log("添加[yellow]日志[/yellow]成功")
+                                job_done = 0
+                            else:
+                                console.log("[red]添加日志失败[/red]，请检查[yellow]网络连接[/yellow],[red]按回车键退出[/red]")
+                                input()
+                                exit()
+                            # self.get_score()
+                        t = str(int(t1))
+                        if int(playingtime) > int(mp4[item][2]):
+                            playingtime = int(mp4[item][2])
+                        code = '[{}][{}][{}][{}][{}][{}][{}][{}]'.format(str(course['clazzid']), str(user['userid'])
+                                                                         , str(mp4[item][5][1]), str(mp4[item][5][0])
+                                                                         , str(int(playingtime) * 1000), "d_yHJ!$pdA~5"
+                                                                         , str(int(mp4[item][2]) * 1000)
+                                                                         , '0_' + str(mp4[item][2]))
+                        coded = ''.join(code).encode()
+                        enc = hashlib.md5(coded).hexdigest()
+                        url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/' + str(course['cpi']) + '/' + str \
+                            (mp4[item][1]) + '?clazzId=' + str(course['clazzid']) + '&playingTime=' + str \
+                                  (playingtime) + '&duration=' + str(mp4[item][2]) + '&clipTime=0_' + str \
+                                  (mp4[item][2]) + '&objectId=' + str(mp4[item][5][0]) + '&otherInfo=nodeId_' + str \
+                                  (mp4[item][6]) + '-cpi_' + str(course['cpi']) + '&jobid=' + str \
+                                  (mp4[item][5][1]) + '&userid=' + str(user['userid']) + '&isdrag=0&view=pc&enc=' + str \
+                                  (enc) + '&rt=0.9&dtype=Video&_t=' + str(t)
+                        resq = session.get(url, headers=header, verify=False)
+                        if resq.json()['isPassed']:
+                            console.log('视频任务{}完成观看'.format(mp4[item][0]))
+                            with open('{}/finishedinfo.json'.format(course_path), 'a') as f:
+                                f.write(str(mp4[item][5][0]) + '\n')
+                            finished += str(mp4[item][5][0])
+                            finished_num += 1
+                            rt = random.randint(1, 3)
+                            job_done += 1
+                            break
+                        progress_per_second = float(100) / float(mp4[item][2])
+                        wait = 0
+                        while wait < int(float(60) * float(1 / speed)):
+                            progress.update(watching, advance=progress_per_second)
+                            time.sleep(1)
+                        playingtime += 60
+                        retry_time = 0
+                    except Exception:
+                        if retry_time < 6:
+                            rt = random.randint(1, 3)
+                            console.log('等待{}秒后验证第[red bold]{}/5[/red bold]次'.format(rt, retry_time))
+                            retry_time += 1
+                            time.sleep(rt)
                         else:
-                            print('添加日志失败，请检查网络连接或联系管理员,按任意键退出')
-                            input()
+                            console.log('重试超时，请检查您的[red]网络情况[/red]或检查此课程是否[red]已经结课[/red]')
+                            console.input("请按回车键[red]退出[/red]")
                             exit()
-                        # self.get_score()
-                    t = str(int(t1))
-                    if int(playingtime) > int(mp4[item][2]):
-                        playingtime = int(mp4[item][2])
-                    code = '[{}][{}][{}][{}][{}][{}][{}][{}]'.format(str(course['clazzid']), str(user['userid'])
-                                                                     , str(mp4[item][5][1]), str(mp4[item][5][0])
-                                                                     , str(int(playingtime) * 1000), "d_yHJ!$pdA~5"
-                                                                     , str(int(mp4[item][2]) * 1000)
-                                                                     , '0_' + str(mp4[item][2]))
-                    coded = ''.join(code).encode()
-                    enc = hashlib.md5(coded).hexdigest()
-                    url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/' + str(course['cpi']) + '/' + str \
-                        (mp4[item][1]) + '?clazzId=' + str(course['clazzid']) + '&playingTime=' + str \
-                              (playingtime) + '&duration=' + str(mp4[item][2]) + '&clipTime=0_' + str \
-                              (mp4[item][2]) + '&objectId=' + str(mp4[item][5][0]) + '&otherInfo=nodeId_' + str \
-                              (mp4[item][6]) + '-cpi_' + str(course['cpi']) + '&jobid=' + str \
-                              (mp4[item][5][1]) + '&userid=' + str(user['userid']) + '&isdrag=0&view=pc&enc=' + str \
-                              (enc) + '&rt=0.9&dtype=Video&_t=' + str(t)
-                    resq = session.get(url, headers=header, verify=False)
-                    # print(resq.text)
-                    mm = int(mp4[item][2] / 60)
-                    ss = int(mp4[item][2]) % 60
-                    percent = int(playingtime) / int(mp4[item][2])
-                    # print(resq.text)
-                    if resq.json()['isPassed'] == True:
-                        print('视频任务{}   进度100%      完成观看        '.format(mp4[item][0]))
-                        with open('{}/finishedinfo.json'.format(course_path), 'a') as f:
-                            f.write(str(mp4[item][5][0]) + '\n')
-                        finished += str(mp4[item][5][0])
-                        finished_num += 1
-                        rt = random.randint(1, 3)
-                        job_done += 1
-                        break
-
-                    # self.show_status(speed ,mp4[item][0] ,mm ,ss ,playingtime ,str(finished_num) ,str(len(mp4)))
-
-                    print(
-                        '视频任务“{}”总时长{}分钟{}秒，已看{}秒，完成度{:.2%},共完成视频任务{}/{}'.format(mp4[item][0], mm, ss, playingtime,
-                                                                                 percent, str(finished_num),
-                                                                                 str(len(mp4))), end="\r",
-                        flush=True)
-                    time.sleep(int(float(60) * float(1 / speed)))
-                    playingtime += 60
-                    retry_time = 0
-                except:
-                    if retry_time < 6:
-                        rt = random.randint(1, 3)
-                        print('等待{}秒后验证第{}/5次'.format(rt, retry_time))
-                        retry_time += 1
-                        time.sleep(rt)
-                    else:
-                        print('重试超时，请检查您的网络情况或检查此课程是否已经结课')
-                        input('按回车键退出程序')
-                        exit()
-            print('等待{}秒后开始下一个任务'.format(rt))
+            console.print('当前[yellow]任务完成[/yellow]，等待{}秒后开始[blue]下一任务[/blue]'.format(rt))
             time.sleep(rt)
-    print('MP4任务全部完成')
+    console.log("MP4任务[yellow]全部完成[/yellow]")
 
 
-def do_ppt(session,mp4,ppt,usernm, course):
+def do_ppt(session, mp4, ppt, usernm, course):
     """
     完成所有的ppt任务点
     :param session: 网络session
@@ -150,14 +153,14 @@ def do_ppt(session,mp4,ppt,usernm, course):
     ppt_detail_path = 'saves/{}/{}/pptdetail.json'.format(usernm, course['courseid'])
     ppt_done_path = 'saves/{}/{}/pptdone.json'.format(usernm, course['courseid'])
     chapter_done_path = 'saves/{}/{}/chapterdone.json'.format(usernm, course['courseid'])
-    with open(ppt_detail_path, 'w') as f:
+    with open(ppt_detail_path, 'w'):
         pass
 
     if exists(ppt_done_path):
         with open(ppt_done_path, 'r') as f:
             ppt_done = f.read()
     else:
-        with open(ppt_done_path, 'w') as f:
+        with open(ppt_done_path, 'w'):
             pass
         ppt_done = ''
 
@@ -165,7 +168,7 @@ def do_ppt(session,mp4,ppt,usernm, course):
         with open(chapter_done_path, 'r') as f:
             chapter_done = f.read()
     else:
-        with open(chapter_done_path, 'w') as f:
+        with open(chapter_done_path, 'w'):
             pass
         chapter_done = ''
 
@@ -181,12 +184,11 @@ def do_ppt(session,mp4,ppt,usernm, course):
         else:
             chapters.append(ppt[item][5])
 
-
-    load_ppt(session,course,ppt_done,chapter_done,chapters,usernm,ppt)
+    load_ppt(session, course, ppt_done, chapter_done, chapters, usernm, ppt)
     input('ppt学习结束，按回车键退出')
 
 
-def learn_ppt(objectid, jtoken,ppt_done,usernm,course,ppt,session):
+def learn_ppt(objectid, jtoken, ppt_done, usernm, course, ppt, session):
     ppt_done_path = 'saves/{}/{}/pptdone.json'.format(usernm, course['courseid'])
     rt = random.randint(2, 6)
     header = {
@@ -211,7 +213,7 @@ def learn_ppt(objectid, jtoken,ppt_done,usernm,course,ppt,session):
         return 0
 
 
-def load_ppt(session,course,ppt_done,chapter_done,chapters,usernm,ppt):
+def load_ppt(session, course, ppt_done, chapter_done, chapters, usernm, ppt):
     ppt_detail_path = 'saves/{}/{}/pptdetail.json'.format(usernm, course['courseid'])
 
     chapter_done_path = 'saves/{}/{}/chapterdone.json'.format(usernm, course['courseid'])
@@ -248,11 +250,11 @@ def load_ppt(session,course,ppt_done,chapter_done,chapters,usernm,ppt):
                     tmp_ppt = f.read()
                 result = re.findall('{"jobid":".*?,"jtoken":"(.*?)".*?,"objectid":"(.*?)",.*?},', tmp_ppt)
                 retry = 0
-                for item in result:
-                    if item[1] in ppt_done:
-                        print('任务{}已完成，跳过'.format(item[1]))
+                for i in result:
+                    if i[1] in ppt_done:
+                        print('任务{}已完成，跳过'.format(i[1]))
                     else:
-                        if learn_ppt(item[1], item[0],ppt_done,usernm,course,ppt,session):
+                        if learn_ppt(i[1], i[0], ppt_done, usernm, course, ppt, session):
                             pass
                         else:
                             retry += 1
