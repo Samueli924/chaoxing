@@ -6,6 +6,8 @@
 
 <font color=white size=3 face="微软雅黑">:grinning: 20210918更新内容： 代码完全重构，方便阅读、修改</font>
 
+<font color=white size=3 face="微软雅黑">:sunglasses: 旧版代码在main分支，新版代码在dev分支，请自行切换</font>
+
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
 ### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件（推荐！！！）</font>  
