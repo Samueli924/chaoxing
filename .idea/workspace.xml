@@ -1,17 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="9d64290f-4e34-4952-99e7-82a7d2b51fb1" name="Default Changelist" comment="添加捕捉异常并输出">
-      <change afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/course/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/course/foreWork.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/path/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/path/pathCheck.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/user/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/user/getUser.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/fxxk_chaoxing.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/fxxk_chaoxing.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="9d64290f-4e34-4952-99e7-82a7d2b51fb1" name="Default Changelist" comment="1.2.1">
+      <change afterPath="$PROJECT_DIR$/src/course/doWork.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/course/foreWork.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/course/foreWork.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -55,7 +49,7 @@
     <property name="node.js.selected.package.eslint" value="(autodetect)" />
     <property name="node.js.selected.package.tslint" value="(autodetect)" />
   </component>
-  <component name="RunManager" selected="Python.main">
+  <component name="RunManager" selected="Python.doWork">
     <configuration name="best" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="fxxk_chaoxing" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -70,6 +64,28 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/best.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="doWork" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="fxxk_chaoxing" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/course" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/course/doWork.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -124,6 +140,7 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.doWork" />
         <item itemvalue="Python.main" />
         <item itemvalue="Python.best" />
         <item itemvalue="Python.test" />
@@ -142,6 +159,7 @@
       <workItem from="1630906320631" duration="7000" />
       <workItem from="1631003429082" duration="106000" />
       <workItem from="1631004429062" duration="631000" />
+      <workItem from="1631929553901" duration="7480000" />
     </task>
     <task id="LOCAL-00001" summary="添加捕捉异常并输出">
       <created>1630840747312</created>
@@ -150,7 +168,14 @@
       <option name="project" value="LOCAL" />
       <updated>1630840747312</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="1.2.1">
+      <created>1631894115814</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1631894115814</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -166,14 +191,18 @@
         </entry>
       </map>
     </option>
+    <option name="oldMeFiltersMigrated" value="true" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="添加捕捉异常并输出" />
-    <option name="LAST_COMMIT_MESSAGE" value="添加捕捉异常并输出" />
+    <MESSAGE value="1.2.1" />
+    <option name="LAST_COMMIT_MESSAGE" value="1.2.1" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/fxxk_chaoxing$main.coverage" NAME="main Coverage Results" MODIFIED="1631893127896" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/fxxk_chaoxing$main.coverage" NAME="main Coverage Results" MODIFIED="1631893952823" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/fxxk_chaoxing$test.coverage" NAME="test Coverage Results" MODIFIED="1631004806974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/fxxk_chaoxing$best.coverage" NAME="best Coverage Results" MODIFIED="1631004879604" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/user_info_json$doWork.coverage" NAME="doWork Coverage Results" MODIFIED="1631932985610" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/course" />
+    <SUITE FILE_PATH="coverage/user_info_json$main.coverage" NAME="main Coverage Results" MODIFIED="1631931141512" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
