@@ -31,5 +31,5 @@ def check_file(path):
     if len(_path) != 1:
         # 路径有多级
         check_path('/'.join(_path[:-1]))
-    with open(path, 'w') as f:
+    with open(path, 'w'):
         pass
