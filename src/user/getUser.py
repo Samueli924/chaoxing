@@ -35,17 +35,13 @@ def get_data(usernm, passwd):
     :return: 发送登录POST请求的data参数
     """
     data = ''
-    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; ' \
-            'name="uname"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n '
+    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; name="uname"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'
     data += usernm + '\r\n'
-    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; ' \
-            'name="code"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n '
+    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; name="code"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'
     data += passwd + '\r\n'
-    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; ' \
-            'name="loginType"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n '
+    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; name="loginType"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'
     data += '1\r\n'
-    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; ' \
-            'name="roleSelect"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n '
+    data += '--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6\r\nContent-Disposition: form-data; name="roleSelect"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'
     data += 'true\r\n--vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6--\r\n'
     return data
 
@@ -62,15 +58,12 @@ def login(usernm, passwd):
               'Content-Type': 'multipart/form-data; boundary=vfV33Hae5dKmSaPrHidgXv4ZK-3gOyNn-jid8-6',
               'Host': 'passport2.chaoxing.com',
               'Connection': 'Keep-Alive',
-              'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 5.1.1; SM-G9350 Build/LMY48Z) '
-                            'com.chaoxing.mobile/ChaoXingStudy_3_5.21_android_phone_206_1 (SM-G9350; Android 5.1.1; '
-                            'zh_CN)_1969814533 '
+              'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 5.1.1; SM-G9350 Build/LMY48Z) com.chaoxing.mobile/ChaoXingStudy_3_5.21_android_phone_206_1 (SM-G9350; Android 5.1.1; zh_CN)_1969814533'
               }
     console.log("正在开始尝试[yellow]登录账号[/yellow]")
     session = requests.session()
     tsp, enc = get_encoded_token()
-    post_url = 'http://passport2.chaoxing.com/xxt/loginregisternew?' + 'token=4faa8662c59590c6f43ae9fe5b002b42' + \
-               '&_time=' + tsp + '&inf_enc=' + enc
+    post_url = 'http://passport2.chaoxing.com/xxt/loginregisternew?' + 'token=4faa8662c59590c6f43ae9fe5b002b42' + '&_time=' + tsp + '&inf_enc=' + enc
     resp = session.post(post_url, data=get_data(usernm, passwd), headers=header)
     result = resp.json()
     if result['status']:
