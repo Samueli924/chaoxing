@@ -5,6 +5,8 @@ from rich.table import Table
 import re,json,requests
 import requests.utils
 
+
+console = Console()
 def find_courses(usernm,session):
     """
     获取用户的所有课程列表
@@ -12,14 +14,13 @@ def find_courses(usernm,session):
     :param session: requests.session()对象
     :return:
     """
-    console = Console()
+    console.log("开始获取用户的所有[yellow]课程信息[/yellow]")
     course = {}
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("序号", style="dim")
     table.add_column("课程名")
     table.add_column("记录")
     chapterids = []
-    print("正在获取课程")
     header = {'Accept-Encoding': 'gzip',
               'Accept-Language': 'zh_CN',
               'Host': 'mooc1-api.chaoxing.com',
@@ -34,32 +35,36 @@ def find_courses(usernm,session):
     for item in channelList:
         try:
             if exists('saves/{}/{}'.format(usernm,str(item['content']['course']['data'][0]['id']))):
-                table.add_row(str(channelList.index(item)), item['content']['course']['data'][0]['name'],"存在")
+                table.add_row(str(channelList.index(item)+1), item['content']['course']['data'][0]['name'],"存在")
             else:
-                table.add_row(str(channelList.index(item)), item['content']['course']['data'][0]['name'],"无")
+                table.add_row(str(channelList.index(item)+1), item['content']['course']['data'][0]['name'],"无")
         except:
             pass
+    console.rule("所有课程信息",align="center")
     console.print(table)
-    num = int(input('请输入你要选择的课程序号'))
+    num = int(console.input("请输入你要选择的[red]课程序号[/red]\n")) - 1
     channelList_json = channelList[num]
     course['cpi'] = channelList_json['cpi']
     course['clazzid'] = channelList_json['content']['id']
     course['courseid'] = channelList_json['content']['course']['data'][0]['id']
-    print("课程名称:" + channelList[num]['content']['course']['data'][0]['name'])
-    print("讲师：" + channelList[num]['content']['course']['data'][0]['teacherfactor'])
+    console.log("[yellow]课程名称[/yellow]:" + channelList[num]['content']['course']['data'][0]['name'])
+    console.log("[yellow]讲师[/yellow]：" + channelList[num]['content']['course']['data'][0]['teacherfactor'])
     # print(exists('saves/{}/{}'.format(usernm,course['courseid'])))
     # print('saves/{}/{}'.format(usernm,course['courseid']))
     # input()
     if exists('saves/{}/{}'.format(usernm,course['courseid'])):
-        num = str(input('存在本地保存的课程记录，是否读取本地记录?(1.读取记录,2.不读取)'))
+        num = str(console.input('存在本地保存的课程记录，是否读取本地记录?(1.[red]读取记录[/red],2.[red]不读取[/red])'))
         if num == '1':
+            console.log("正在读取[red]本地[/red]课程记录")
             course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
             with open('{}/courseinfo.json'.format(course_path),'r') as f:
                 course = json.loads(f.read())
             with open('{}/chapterid.json'.format(course_path),'r') as f:
                 chapterids = json.loads(f.read())
+            console.log("[red]本地[/red]课程记录读取成功")
             return chapterids, course,True
         elif num == '2':
+            console.log("正在尝试[red]在线[/red]读取课程记录")
             url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid=' + str(
                 course['courseid']) + '&clazzid=' + str(course['clazzid']) + '&vc=1&cpi=' + str(course['cpi'])
             resp = session.get(url, headers=header)
@@ -73,8 +78,10 @@ def find_courses(usernm,session):
                 json.dump(course,f)
             with open('{}/chapterid.json'.format(course_path),'w') as f:
                 json.dump(chapterids,f)
+            console.log("[red]在线[/red]课程记录读取成功")
             return chapterids,course,False
     else:
+        console.log("正在尝试[red]在线[/red]读取课程记录")
         url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid=' + str(
             course['courseid']) + '&clazzid=' + str(course['clazzid']) + '&vc=1&cpi=' + str(course['cpi'])
         resp = session.get(url, headers=header)
@@ -88,6 +95,7 @@ def find_courses(usernm,session):
             json.dump(course, f)
         with open('{}/chapterid.json'.format(course_path), 'w') as f:
             json.dump(chapterids, f)
+        console.log("[red]在线[/red]课程记录读取成功")
         return chapterids, course, False
 
 def find_objectives(usernm,chapterids,course_id,session):
@@ -114,13 +122,15 @@ def find_objectives(usernm,chapterids,course_id,session):
             content = str(json.loads(resp.text)['data'][0]['card']['data']).replace('&quot;', '')
             result = re.findall('{objectid:(.*?),.*?,_jobid:(.*?),', content)
             jobs[lesson_id] = result
-            print('在章节{}中找到{}个任务点'.format(lesson_id,len(result)))
+            console.log('在章节{}中找到[yellow bold]{}[/yellow bold]个任务点'.format(lesson_id,len(result)))
         except Exception as e:
-            print('错误类型:{}'.format(e.__class__.__name__))
-            print('错误明细:{}'.format(e))
+            console.log('错误类型:{}'.format(e.__class__.__name__))
+            console.log('错误明细:{}'.format(e))
     course_path = 'saves/{}/{}'.format(usernm,course_id)
+    console.log("正在向[red]本地[/red]保存任务点记录")
     with open('{}/jobsinfo.json'.format(course_path) ,'w') as f:
         json.dump(jobs,f)
+    console.log("[red]本地[/red]保存记录成功")
     return jobs
 
 
@@ -132,6 +142,7 @@ def detect_job_type(jobs,usernm,course_id):
     :param course_id: 课程编号
     :return:
     """
+    console.log("正在尝试识别[yellow]任务点类型[/yellow]")
     total = ''
     mp4 = {}
     ppt = {}
@@ -155,7 +166,7 @@ def detect_job_type(jobs,usernm,course_id):
                 ppt[item[0]] = rtn['detail']
             else:
                 pass
-    print('共加载任务点{}个'.format(len(mp4)+len(ppt)))
+    console.log('共加载任务点[yellow]{}[/yellow]个'.format(len(mp4)+len(ppt)))
     course_path = 'saves/{}/{}'.format(usernm, course_id)
     with open('{}/mp4info.json'.format(course_path),'w') as f:
         json.dump(mp4,f)
@@ -186,7 +197,7 @@ def job_type(chapter,item,content):
             object_mp4.append(item)
             object_mp4.append(chapter)
             # mp4[item[0]] = object_mp4
-            print('添加mp4任务' + content['filename'] + '成功')
+            console.log('添加mp4任务[yellow]{}[/yellow]成功'.format(content['filename']))
             return {'type':'mp4','detail':object_mp4}
         elif 'ppt' in filename:
             object_ppt = []
@@ -197,13 +208,13 @@ def job_type(chapter,item,content):
             object_ppt.append(item)
             object_ppt.append(chapter)
             # ppt[item[0]] = object_ppt
-            print('添加ppt任务' + content['filename'] + '成功')
+            console.log('添加ppt任务[yellow]{}[/yellow]成功'.format(content['filename']))
             return {'type': 'ppt', 'detail': object_ppt}
         else:
-            print('未检测出任务类型，已跳过')
+            console.log('[red]未检测出任务类型[/red]')
             return {'type': 'none'}
     except Exception as e:
-        print('任务点识别失败',e)
+        console.log('[red]任务点识别失败[/red]:{}'.format(e))
         return {'type': 'none'}
 
 def get_openc(usernm,course,session):
@@ -224,7 +235,7 @@ def get_openc(usernm,course,session):
         course['openc'] = re.findall("openc : '(.*?)'",resp.text)[0]
     except:
         course['openc'] = re.findall('&openc=(.*?)"',resp.text)[0]
-    print('成功获取openc参数:{}'.format(course['openc']))
+    console.log('成功获取[yellow]openc参数[/yellow]:{}'.format(course['openc']))
     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
     with open('{}/courseinfo.json'.format(course_path), 'w') as f:
         json.dump(course,f)
@@ -240,13 +251,13 @@ def get_forework_done(usernm,session):
     """
     chapterids, course, isLocal = find_courses(usernm, session)
     if not isLocal:
-        print('开始在线获取课程信息')
+        console.log("开始[red]在线[/red]获取课程所有信息")
         jobs = find_objectives(usernm, chapterids, course['courseid'], session)
         mp4, ppt = detect_job_type(jobs, usernm, course['courseid'])
         course = get_openc(usernm, course, session)
         return jobs,course,mp4,ppt
     else:
-        print('开始读取本地记录文件')
+        console.log('开始读取[red]本地[/red]记录文件')
         course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
         with open('{}/jobsinfo.json'.format(course_path), 'r') as f:
             jobs = json.loads(f.read())
