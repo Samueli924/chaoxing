@@ -6,7 +6,7 @@ from os import listdir
 from rich.console import Console
 from rich.table import Table
 
-
+console = Console()
 def get_encoded_token():
     """
     通过逆向得到的超星学习通登录加密算法，根据当前时间戳计算得出加密结果并返回
@@ -54,24 +54,27 @@ def login(usernm, passwd):
               'Connection': 'Keep-Alive',
               'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 5.1.1; SM-G9350 Build/LMY48Z) com.chaoxing.mobile/ChaoXingStudy_3_5.21_android_phone_206_1 (SM-G9350; Android 5.1.1; zh_CN)_1969814533'
               }
+    console.log("正在开始尝试[yellow]登录账号[/yellow]")
     session = requests.session()
     tsp, enc = get_encoded_token()
     post_url = 'http://passport2.chaoxing.com/xxt/loginregisternew?' + 'token=4faa8662c59590c6f43ae9fe5b002b42' + '&_time=' + tsp + '&inf_enc=' + enc
     resp = session.post(post_url, data=get_data(usernm, passwd), headers=header)
     result = resp.json()
     if result['status']:
-        print('登录成功')
+        console.log("[yellow]登录成功[/yellow]")
         pathCheck.check_file('saves/{}/userinfo.json'.format(usernm))
         cookie = requests.utils.dict_from_cookiejar(resp.cookies)
         user['usernm'] = usernm
         user['passwd'] = passwd
         user['userid'] = cookie['_uid']
         user['fid'] = cookie['fid']
+        console.log("正在[red]本地[/red]保存账户信息")
         with open('saves/{}/userinfo.json'.format(usernm), 'w') as f:
             json.dump(user, f)
+        console.log("[yellow]账户信息[/yellow]保存成功")
     else:
-        print('登录失败，请检查你的账号密码,按回车键退出')
-        input()
+        console.input("[red]登录失败[/red],请检查你的[red]账号密码[/red]是否正确,按回车键退出")
+        # print('登录失败，请检查你的账号密码,按回车键退出')
         exit()
     return session
 
@@ -81,8 +84,10 @@ def get_user_from_input():
     用户输入账号与密码
     :return:
     """
-    usernm = input("请输入您的账号")
-    passwd = input("请输入您的密码")
+    # usernm = input("请输入您的账号")
+    # passwd = input("请输入您的密码")
+    usernm = console.input("请输入你的[yellow]账号[/yellow]\n")
+    passwd = console.input("请输入你的[yellow]密码[/yellow]\n")
     return usernm, passwd
 
 
@@ -91,6 +96,7 @@ def get_user_from_disk():
     获取本地记录的用户信息
     :return:
     """
+    console.log("正在尝试从[bold red]本地[/bold red]获取用户信息")
     pathCheck.check_path('saves')
     folders = listdir('saves')
     return folders
@@ -101,16 +107,17 @@ def get_session():
     获取session的总入口
     :return: 用户名(str),和 requests.session()对象
     """
-    console = Console()
     folders = get_user_from_disk()
     if folders:
-        table = Table(show_header=True, header_style="bold magenta")
+        console.log("[bold red]本地[/bold red]存在用户信息")
+        console.rule("[bold red]本地[/bold red]用户信息")
+        table = Table(show_header=True, header_style="bold magenta", caption_justify= 'center')
         table.add_column("序号", style="dim")
         table.add_column("用户名")
         for i in range(1, len(folders) + 1):
             table.add_row(str(i), folders[i - 1])
         console.print(table)
-        num = str(input('请输入你要载入的账号记录序号，若要新建请输入0'))
+        num = str(console.input("请输入你要读取的[yellow bold]账号序号[/yellow bold],若要[bold italic]新建[/bold italic]请输入[yellow]0[/yellow]\n"))
         if num == '0':
             usernm, passwd = get_user_from_input()
             session = login(usernm, passwd)
@@ -121,10 +128,10 @@ def get_session():
                 session = login(user['usernm'], user['passwd'])
                 return user['usernm'], session
         else:
-            print('你的输入有误，请检查后重新输入,按回车键退出程序')
-            input()
+            console.input('你的输入有误，请检查后重新输入,按[red]回车键[/red]退出程序')
             exit()
     else:
+        console.log("[red]本地[/red]不存在用户数据，请新建用户")
         usernm, passwd = get_user_from_input()
         session = login(usernm, passwd)
         return usernm, session

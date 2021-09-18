@@ -1,8 +1,12 @@
 import json
 from os.path import exists
 import time, random, re, hashlib
+from rich.console import Console
+from rich.table import Table
 
 
+
+console = Console()
 def do_mp4(usernm, course, session, mp4):
     """
     完成所有的MP4任务点
