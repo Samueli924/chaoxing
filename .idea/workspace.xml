@@ -2,7 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="9d64290f-4e34-4952-99e7-82a7d2b51fb1" name="Default Changelist" comment="2.0.0">
-      <change beforePath="$PROJECT_DIR$/src/show/mdshow.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/show/mdshow.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -161,7 +162,7 @@
       <workItem from="1630906320631" duration="7000" />
       <workItem from="1631003429082" duration="106000" />
       <workItem from="1631004429062" duration="631000" />
-      <workItem from="1631929553901" duration="17770000" />
+      <workItem from="1631929553901" duration="17852000" />
     </task>
     <task id="LOCAL-00001" summary="添加捕捉异常并输出">
       <created>1630840747312</created>
@@ -233,7 +234,21 @@
       <option name="project" value="LOCAL" />
       <updated>1631947490444</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="2.0.0">
+      <created>1631947500281</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1631947500281</updated>
+    </task>
+    <task id="LOCAL-00012" summary="2.0.0">
+      <created>1631947505445</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1631947505445</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
