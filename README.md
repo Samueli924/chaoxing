@@ -14,7 +14,7 @@
 
 <font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements安装相关依赖</font>
 
-<font color=white size=3 align=center face="微软雅黑">3. python best.py 运行代码</font>
+<font color=white size=3 align=center face="微软雅黑">3. python main.py 运行代码</font>
 
 ### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件（可能落后源文件存在BUG）</font>
 
@@ -24,9 +24,11 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
-<font color=white size=3 color=red face="微软雅黑">:one: 程序使用协议自动化，而非github其他的浏览器插件或selenium库自动化，占用资源小且安全有效</font>  
+<font color=white size=3 color=red face="微软雅黑">:one: 程序在python 3.6的环境下开发完成，建议使用Python 3.6运行本程序</font>  
 
-<font color=white size=3 color=red face="微软雅黑">:two: 考虑到了超星学习通的心跳检测刷课方式，本代码的所需时间等于视频的实际观看时间</font>   
+<font color=white size=3 color=red face="微软雅黑">2️⃣: 程序使用协议自动化，而非github其他的浏览器插件或selenium库自动化，占用资源小且安全有效</font>  
+
+<font color=white size=3 color=red face="微软雅黑">3️⃣: 考虑到了超星学习通的心跳检测刷课方式，本代码的所需时间等于视频的实际观看时间</font>   
 
 <font color=white size=3 color=red face="微软雅黑">注：在0.1.2版本中加入了多倍速的功能，建议不要使用</font>   
 
