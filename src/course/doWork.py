@@ -21,14 +21,16 @@ def show_status(speed, name, totalmin, totalsec, done, job_done, totaljob):
     :return:
     """
     # print('开始任务{}'.format(name))
-    wait_time = int(60 / (float(60) * float(1 / speed)))
+    wait_time = float((float(60) * float(1 / speed)) / 60)
     goal = done + 60
     while done < goal:
-        cont = ceil(int(done) / (int(totalmin) * 60 + int(totalsec)) * 5)
+        cont = int(done) / (int(totalmin) * 60 + int(totalsec))
+        cont = round(cont, 2)
+        cont = ceil(cont * 20)
         cont_detail = '*' * cont + '-' * (20 - cont)
         status = '{}秒/{}秒'.format(done, (int(totalmin) * 60 + int(totalsec)))
         rprint.regulate_print('视频任务{}   [dodger_blue2]{}[/dodger_blue2]  [yellow2]{}[/yellow2]  总任务[bright_cyan]{}[/bright_cyan]/[bright_cyan]{}[/bright_cyan]'.format(name, cont_detail, status, job_done, totaljob))
-        time.sleep(1)
+        time.sleep(wait_time)
         done += 1
 
 def do_mp4(usernm, course, session, mp4):
