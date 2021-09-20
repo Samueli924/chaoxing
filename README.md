@@ -12,7 +12,7 @@
   
 <font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
-<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements安装相关依赖</font>
+<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements.txt安装相关依赖</font>
 
 <font color=white size=3 align=center face="微软雅黑">3. python main.py 运行代码</font>
 
