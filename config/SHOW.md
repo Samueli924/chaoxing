@@ -4,16 +4,16 @@
 欢迎使用 **fxxk_chaoxing**库
 
 
-库地址: https://github.com/xz454867105/fxxk_chaoxing
+库地址: https://github.com/xz454867105/chaoxing
 
 
-本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/fxxk_chaoxing/blob/main/LICENSE)开源协议，使用、修改、发行本代码请遵守协议要求
+本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/chaoxing/blob/main/LICENSE)开源协议，使用、修改、发行本代码请遵守协议要求
 
 
-若你觉得这段代码对您有帮助，请访问[我的GITHUB页面](https://github.com/xz454867105/fxxk_chaoxing)给我点亮一个Star
+若你觉得这段代码对您有帮助，请访问[我的GITHUB页面](https://github.com/xz454867105/chaoxing)给我点亮一个Star
 
 
-若你在使用这段代码的过程中遇到任何问题，请访问[我的GITHUB页面](https://github.com/xz454867105/fxxk_chaoxing)提出issues
+若你在使用这段代码的过程中遇到任何问题，请访问[我的GITHUB页面](https://github.com/xz454867105/chaoxing)提出issues
 
 ---
 # 注意事项
