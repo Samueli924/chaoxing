@@ -17,6 +17,7 @@ assignees: ''
  - 系统：[比如:Windows,macOS,Linux(精确到发行版本名)]
  - Python环境版本:[比如:Python2,Python3.6,Python3.8]
  - 运行方式: [比如:源代码运行,可执行文件exe运行,打包bat文件运行]
+ - 代码版本:[比如0.5.0,1.0.0]
 
 
 **其他内容**
