@@ -6,6 +6,10 @@
 
 <font color=white size=3 face="微软雅黑">:grinning: 20210918更新内容： 代码完全重构，方便阅读、修改</font>
 
+## <center><font color=white size=6 align=center face="微软雅黑">:smile: 其他项目</font></center>
+
+<font color=white size=3 face="微软雅黑">:blush: [智慧树无人值守自动化完成共享课视频任务点](https://github.com/xz454867105/zhihuishu)</font>
+
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
 ### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件（推荐！！！）</font>  
