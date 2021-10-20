@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 import src.user.getUser as getUser
 import src.course.foreWork as foreWork
 import src.course.doWork as doWork
