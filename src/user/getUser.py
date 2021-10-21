@@ -1,10 +1,11 @@
 # -*- coding:utf-8 -*-
+import base64
 import hashlib
 import json
 import requests
 import time
 from os import listdir
-
+from base64 import b64encode
 import requests.utils
 from rich.console import Console
 from rich.table import Table
@@ -86,6 +87,42 @@ def login(usernm, passwd):
     return session
 
 
+def newLogin(usernm,passwd):
+    user = {}
+    url = 'https://passport2-api.chaoxing.com/fanyalogin'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+    console.log("正在开始尝试[yellow]登录账号[/yellow]")
+    session = requests.session()
+    data = {
+        'fid': '-1',
+        'uname': str(usernm),
+        'password': b64encode(passwd.encode('utf8')),
+        'refer': 'http%3A%2F%2Fi.mooc.chaoxing.com',
+        't': 'true',
+        'forbidotherlogin': '0',
+    }
+    resp = session.post(url,headers=headers,data=data)
+    if resp.json()['status']:
+        console.log("[yellow]登录成功[/yellow]")
+        pathCheck.check_file('saves/{}/userinfo.json'.format(usernm))
+        cookie = requests.utils.dict_from_cookiejar(resp.cookies)
+        user['usernm'] = usernm
+        user['passwd'] = passwd
+        user['userid'] = cookie['_uid']
+        user['fid'] = cookie['fid']
+        console.log("正在[red]本地[/red]保存账户信息")
+        with open('saves/{}/userinfo.json'.format(usernm), 'w') as f:
+            json.dump(user, f)
+        console.log("[yellow]账户信息[/yellow]保存成功")
+    else:
+        console.input("[red]登录失败[/red],请检查你的[red]账号密码[/red]是否正确,按回车键退出")
+        # print('登录失败，请检查你的账号密码,按回车键退出')
+        exit()
+    return session
+
 def get_user_from_input():
     """
     用户输入账号与密码
@@ -128,12 +165,12 @@ def get_session():
             "请输入你要读取的[yellow bold]账号序号[/yellow bold],若要[bold italic]新建[/bold italic]请输入[yellow]0[/yellow]\n"))
         if num == '0':
             usernm, passwd = get_user_from_input()
-            session = login(usernm, passwd)
+            session = newLogin(usernm, passwd)
             return usernm, session
         elif 1 <= int(num) <= len(folders):
             with open('saves/{}/userinfo.json'.format(folders[int(num) - 1]), 'r') as f:
                 user = json.loads(f.read())
-                session = login(user['usernm'], user['passwd'])
+                session = newLogin(user['usernm'], user['passwd'])
                 return user['usernm'], session
         else:
             console.input('你的输入有误，请检查后重新输入,按[red]回车键[/red]退出程序')
@@ -141,5 +178,5 @@ def get_session():
     else:
         console.log("[red]本地[/red]不存在用户数据，请新建用户")
         usernm, passwd = get_user_from_input()
-        session = login(usernm, passwd)
+        session = newLogin(usernm, passwd)
         return usernm, session
