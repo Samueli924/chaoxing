@@ -105,21 +105,28 @@ def newLogin(usernm,passwd):
         'forbidotherlogin': '0',
     }
     resp = session.post(url,headers=headers,data=data)
-    if resp.json()['status']:
-        console.log("[yellow]登录成功[/yellow]")
-        pathCheck.check_file('saves/{}/userinfo.json'.format(usernm))
-        cookie = requests.utils.dict_from_cookiejar(resp.cookies)
-        user['usernm'] = usernm
-        user['passwd'] = passwd
-        user['userid'] = cookie['_uid']
-        user['fid'] = cookie['fid']
-        console.log("正在[red]本地[/red]保存账户信息")
-        with open('saves/{}/userinfo.json'.format(usernm), 'w') as f:
-            json.dump(user, f)
-        console.log("[yellow]账户信息[/yellow]保存成功")
+    if resp.status_code == 200:
+        if resp.json()['status']:
+            console.log("[yellow]登录成功[/yellow]")
+            pathCheck.check_file('saves/{}/userinfo.json'.format(usernm))
+            cookie = requests.utils.dict_from_cookiejar(resp.cookies)
+            user['usernm'] = usernm
+            user['passwd'] = passwd
+            user['userid'] = cookie['_uid']
+            user['fid'] = cookie['fid']
+            console.log("正在[red]本地[/red]保存账户信息")
+            with open('saves/{}/userinfo.json'.format(usernm), 'w') as f:
+                json.dump(user, f)
+            console.log("[yellow]账户信息[/yellow]保存成功")
+        else:
+            console.input("[red]登录失败[/red],请检查你的[red]账号密码[/red]是否正确,按回车键退出")
+            # print('登录失败，请检查你的账号密码,按回车键退出')
+            exit()
     else:
-        console.input("[red]登录失败[/red],请检查你的[red]账号密码[/red]是否正确,按回车键退出")
-        # print('登录失败，请检查你的账号密码,按回车键退出')
+        console.log("登录失败，登录返回状态码[red]{}[/red]".format(resp.status_code))
+        console.log("返回内容：\n")
+        console.log(resp.text)
+        console.input("请在仓库Issue页面提出反馈，按回车键退出")
         exit()
     return session
 
