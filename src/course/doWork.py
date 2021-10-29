@@ -45,7 +45,7 @@ def do_mp4(usernm, course, session, mp4):
     """
     with open('config/speed.conf', 'r') as f:
         speed = json.loads(f.read())['speed']
-    console.log("当前倍速[red] 1 倍速[/red],如果要多倍速播放，请在'config/speed.conf'中修改配置")
+    console.log("当前倍速[red] {} 倍速[/red],如果要多倍速播放，请在'config/speed.conf'中修改配置".format(speed))
     console.log("推荐使用 1 倍速，使用多倍速存在风险")
     finished_num = 0
     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
