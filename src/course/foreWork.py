@@ -134,7 +134,7 @@ def find_objectives(usernm, chapterids, course_id, session):
         resp = session.get(url, headers=header)
         try:
             content = str(json.loads(resp.text)['data'][0]['card']['data']).replace('&quot;', '')
-            result = re.findall('{objectid:(.*?),.*?,_jobid:(.*?),', content)
+            result = re.findall('[{,]objectid:(.*?)[},].*?[{,]_jobid:(.*?)[},]', content)
             jobs[lesson_id] = result
             console.log('在章节{}中找到[yellow bold]{}[/yellow bold]个任务点'.format(lesson_id, len(result)))
         except Exception as e:
