@@ -13,7 +13,7 @@ import src.path.pathCheck as pathCheck
 console = Console()
 
 
-def find_courses(usernm, session):
+def find_courses(usernm, session, courseid):
     """
     获取用户的所有课程列表
     :param usernm: 用户名
@@ -22,10 +22,6 @@ def find_courses(usernm, session):
     """
     console.log("开始获取用户的所有[yellow]课程信息[/yellow]")
     course = {}
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("序号", style="dim")
-    table.add_column("课程名")
-    table.add_column("记录")
     chapterids = []
     header = {'Accept-Encoding': 'gzip',
               'Accept-Language': 'zh_CN',
@@ -37,57 +33,74 @@ def find_courses(usernm, session):
               }
     my_course = session.get("http://mooc1-api.chaoxing.com/mycourse?rss=1&mcode=", headers=header)
     result = my_course.json()
-    # print(result)
-    # input()
     channelList = result['channelList']
-    for item in channelList:
-        try:
-            if exists('saves/{}/{}'.format(usernm, str(item['content']['course']['data'][0]['id']))):
-                table.add_row(str(channelList.index(item) + 1), item['content']['course']['data'][0]['name'], "存在")
-            else:
-                table.add_row(str(channelList.index(item) + 1), item['content']['course']['data'][0]['name'], "无")
-        except Exception:
-            pass
-    console.rule("所有课程信息", align="center")
-    console.print(table)
-    num = int(console.input("请输入你要选择的[red]课程序号[/red]\n")) - 1
-    channelList_json = channelList[num]
+
+
+    if not courseid:
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("序号", style="dim")
+        table.add_column("课程名")
+        table.add_column("记录")
+        for item in channelList:
+            try:
+                if exists('saves/{}/{}'.format(usernm, str(item['content']['course']['data'][0]['id']))):
+                    table.add_row(str(channelList.index(item) + 1), item['content']['course']['data'][0]['name'], "存在")
+                else:
+                    table.add_row(str(channelList.index(item) + 1), item['content']['course']['data'][0]['name'], "无")
+            except Exception:
+                pass
+        console.rule("所有课程信息", align="center")
+        console.print(table)
+        num = int(console.input("请输入你要选择的[red]课程序号[/red]\n")) - 1
+        channelList_json = channelList[num]
+    else:
+        found = False
+        for item in channelList:
+            if str(item['content']['course']['data'][0]['id']) == str(courseid):
+                channelList_json = item
+                found = True
+                break
+        if not found:
+            console.log("不存在课程{}，请检查配置文件".format(courseid))
+            console.input("点击回车键退出程序")
+            exit()
     course['cpi'] = channelList_json['cpi']
     course['clazzid'] = channelList_json['content']['id']
     course['courseid'] = channelList_json['content']['course']['data'][0]['id']
-    console.log("[yellow]课程名称[/yellow]:" + channelList[num]['content']['course']['data'][0]['name'])
-    console.log("[yellow]讲师[/yellow]：" + channelList[num]['content']['course']['data'][0]['teacherfactor'])
+    console.log("[yellow]课程名称[/yellow]:" + channelList_json['content']['course']['data'][0]['name'])
+    console.log("[yellow]讲师[/yellow]：" + channelList_json['content']['course']['data'][0]['teacherfactor'])
     # print(exists('saves/{}/{}'.format(usernm,course['courseid'])))
     # print('saves/{}/{}'.format(usernm,course['courseid']))
     # input()
     if exists('saves/{}/{}'.format(usernm, course['courseid'])):
-        num = str(console.input('存在本地保存的课程记录，是否读取本地记录?(1.[red]读取记录[/red],2.[red]不读取[/red])'))
-        if num == '1':
-            console.log("正在读取[red]本地[/red]课程记录")
-            course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
-            with open('{}/courseinfo.json'.format(course_path), 'r') as f:
-                course = json.loads(f.read())
-            with open('{}/chapterid.json'.format(course_path), 'r') as f:
-                chapterids = json.loads(f.read())
-            console.log("[red]本地[/red]课程记录读取成功")
-            return chapterids, course, True
-        elif num == '2':
-            console.log("正在尝试[red]在线[/red]读取课程记录")
-            url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid=' + str(
-                course['courseid']) + '&clazzid=' + str(course['clazzid']) + '&vc=1&cpi=' + str(course['cpi'])
-            resp = session.get(url, headers=header)
-            content = resp.text
-            for chapter in re.findall('\?chapterId=(.*?)&', content):
-                chapterids.append(str(chapter))
-            course['enc'] = re.findall("&clazzid=.*?&enc=(.*?)'", content)[0]
-            course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
-            pathCheck.check_path(course_path)
-            with open('{}/courseinfo.json'.format(course_path), 'w') as f:
-                json.dump(course, f)
-            with open('{}/chapterid.json'.format(course_path), 'w') as f:
-                json.dump(chapterids, f)
-            console.log("[red]在线[/red]课程记录读取成功")
-            return chapterids, course, False
+        # num = str(console.input('存在本地保存的课程记录，是否读取本地记录?(1.[red]读取记录[/red],2.[red]不读取[/red])'))
+        console.log("读取本地课程记录，如果在后续代码中出现错误，请删除程序目录下的saves文件夹重新运行")
+        # if num == '1':
+        # console.log("正在读取[red]本地[/red]课程记录")
+        course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
+        with open('{}/courseinfo.json'.format(course_path), 'r') as f:
+            course = json.loads(f.read())
+        with open('{}/chapterid.json'.format(course_path), 'r') as f:
+            chapterids = json.loads(f.read())
+        console.log("[red]本地[/red]课程记录读取成功")
+        return chapterids, course, True
+        # elif num == '2':
+        #     console.log("正在尝试[red]在线[/red]读取课程记录")
+        #     url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid=' + str(
+        #         course['courseid']) + '&clazzid=' + str(course['clazzid']) + '&vc=1&cpi=' + str(course['cpi'])
+        #     resp = session.get(url, headers=header)
+        #     content = resp.text
+        #     for chapter in re.findall('\?chapterId=(.*?)&', content):
+        #         chapterids.append(str(chapter))
+        #     course['enc'] = re.findall("&clazzid=.*?&enc=(.*?)'", content)[0]
+        #     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
+        #     pathCheck.check_path(course_path)
+        #     with open('{}/courseinfo.json'.format(course_path), 'w') as f:
+        #         json.dump(course, f)
+        #     with open('{}/chapterid.json'.format(course_path), 'w') as f:
+        #         json.dump(chapterids, f)
+        #     console.log("[red]在线[/red]课程记录读取成功")
+        #     return chapterids, course, False
     else:
         console.log("正在尝试[red]在线[/red]读取课程记录")
         url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid=' + str(
@@ -257,14 +270,14 @@ def get_openc(usernm, course, session):
     return course
 
 
-def get_forework_done(usernm, session):
+def get_forework_done(usernm, session,courseid):
     """
     整合上述所有函数的内容
     :param usernm: 用户名
     :param session: requests.session()
     :return:
     """
-    chapterids, course, isLocal = find_courses(usernm, session)
+    chapterids, course, isLocal = find_courses(usernm, session,courseid)
     if not isLocal:
         console.log("开始[red]在线[/red]获取课程所有信息")
         jobs = find_objectives(usernm, chapterids, course['courseid'], session)

@@ -7,7 +7,7 @@ console = Console()
 
 def print_md(isallow=True):
     if isallow:
-        with open("config/SHOW.md",'rb') as readme:
+        with open("warning.md",'rb') as readme:
             markdown = Markdown(readme.read().decode('utf8'))
         console.print(markdown)
         console.input("\n\n请阅读[red]使用须知[/red]，阅读完成后[red]按回车键[/red]继续")
