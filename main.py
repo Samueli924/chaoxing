@@ -70,7 +70,7 @@ if __name__ == '__main__':
     else:
         speed = 1
         # daily = 0
-    doWork.do_mp4(usernm, course, session, mp4, speed)
+    doWork.do_mp4(usernm, course, session, mp4, int(speed))
 
 
     # 开始完成PPT任务点
