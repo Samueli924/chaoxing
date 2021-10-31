@@ -4,7 +4,7 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:exclamation: 更新通知</font></center>
 
-<font color=white size=3 face="微软雅黑">:grinning: 20210918更新内容： 代码完全重构，方便阅读、修改</font>
+<font color=white size=3 face="微软雅黑">:grinning: 20211031更新内容： 添加配置文件运行形式，方便服务器使用</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:smile: 其他项目</font></center>
 
@@ -12,19 +12,46 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
-### <font color=white size=4 align=center face="微软雅黑">:floppy_disk: 一. 使用源文件（推荐！！！）</font>  
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 一. 使用源文件直接运行</font>  
   
 <font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
 <font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements.txt安装相关依赖</font>
 
-<font color=white size=3 align=center face="微软雅黑">3. python main.py 运行代码</font>
+<font color=white size=3 align=center face="微软雅黑">3. 执行 python main.py 运行代码</font>
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用打包exe文件（可能落后源文件存在BUG）</font>
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用配置文件运行（推荐！！！）</font>
 
-<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载最新版本exe文件</font>
+<font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
 
-<font color=white size=3 align=center face="微软雅黑">2. 双击exe文件允许启动</font>
+<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements.txt安装相关依赖</font>
+
+<font color=white size=3 align=center face="微软雅黑">3. 修改配置文件config.ini里的内容</font>
+
+    [user]
+    usernm = 1XXXXXXXXXX9 # 手机号/用户名
+    passwd = 2XXXXXXXXXXX # 用户密码
+    courseid = XXXXXXXXX  # 课程ID编号（如果不知道ID，可以先直接运行代码，选择课程后在saves文件夹里找到课程文件夹，文件夹名即为课程ID）
+
+    [play]
+    showmd = True # 是否展示程序运行初的注意事项MD内容
+    speed = 1 # 视频播放倍速，推荐一倍速
+
+<font color=white size=3 align=center face="微软雅黑">4. 假如存在，删除程序目录下的saves文件夹</font>
+
+<font color=white size=3 align=center face="微软雅黑">5. 执行 python main.py -c 运行代码</font>
+
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 三. windows使用打包文件（老版本）</font>
+
+<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载2.X版本打包文件</font>
+
+<font color=white size=3 align=center face="微软雅黑">2. 解压文件，使用bat文件运行</font>
+
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 四. windows使用exe文件（老版本）</font>
+
+<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载1.X版本exe文件</font>
+
+<font color=white size=3 align=center face="微软雅黑">2. 直接运行exe文件</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
