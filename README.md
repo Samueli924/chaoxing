@@ -41,3 +41,7 @@
 <font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/fxxk_chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
 
 <font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
+
+## <center><font color=white size=6 align=center face="微软雅黑"> :smile: CONTRIBUTORS</font></center>
+
+<font color=white size=3 color=red face="微软雅黑">:one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/xz454867105/chaoxing/pull/33)</font>
