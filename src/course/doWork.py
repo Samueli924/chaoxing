@@ -34,7 +34,7 @@ def show_status(speed, name, totalmin, totalsec, done, job_done, totaljob):
         time.sleep(wait_time)
         done += 1
 
-def do_mp4(usernm, course, session, mp4):
+def do_mp4(usernm, course, session, mp4, speed):
     """
     完成所有的MP4任务点
     :param usernm: 用户名
@@ -43,8 +43,7 @@ def do_mp4(usernm, course, session, mp4):
     :param mp4: mp4任务点信息
     :return:
     """
-    with open('config/speed.conf', 'r') as f:
-        speed = json.loads(f.read())['speed']
+
     console.log("当前倍速[red] {} 倍速[/red],如果要多倍速播放，请在'config/speed.conf'中修改配置".format(speed))
     console.log("推荐使用 1 倍速，使用多倍速存在风险")
     finished_num = 0

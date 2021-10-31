@@ -153,37 +153,40 @@ def get_user_from_disk():
     return folders
 
 
-def get_session():
+def get_session(usernm,passwd):
     """
     获取session的总入口
     :return: 用户名(str),和 requests.session()对象
     """
-    folders = get_user_from_disk()
-    if folders:
-        console.log("[bold red]本地[/bold red]存在用户信息")
-        console.rule("[bold red]本地[/bold red]用户信息")
-        table = Table(show_header=True, header_style="bold magenta", caption_justify='center')
-        table.add_column("序号", style="dim")
-        table.add_column("用户名")
-        for i in range(1, len(folders) + 1):
-            table.add_row(str(i), folders[i - 1])
-        console.print(table)
-        num = str(console.input(
-            "请输入你要读取的[yellow bold]账号序号[/yellow bold],若要[bold italic]新建[/bold italic]请输入[yellow]0[/yellow]\n"))
-        if num == '0':
-            usernm, passwd = get_user_from_input()
-            session = newLogin(usernm, passwd)
-            return usernm, session
-        elif 1 <= int(num) <= len(folders):
-            with open('saves/{}/userinfo.json'.format(folders[int(num) - 1]), 'r') as f:
-                user = json.loads(f.read())
-                session = newLogin(user['usernm'], user['passwd'])
-                return user['usernm'], session
+    if not usernm and not passwd:
+        folders = get_user_from_disk()
+        if folders:
+            console.log("[bold red]本地[/bold red]存在用户信息")
+            console.rule("[bold red]本地[/bold red]用户信息")
+            table = Table(show_header=True, header_style="bold magenta", caption_justify='center')
+            table.add_column("序号", style="dim")
+            table.add_column("用户名")
+            for i in range(1, len(folders) + 1):
+                table.add_row(str(i), folders[i - 1])
+            console.print(table)
+            num = str(console.input(
+                "请输入你要读取的[yellow bold]账号序号[/yellow bold],若要[bold italic]新建[/bold italic]请输入[yellow]0[/yellow]\n"))
+            if num == '0':
+                usernm, passwd = get_user_from_input()
+                session = newLogin(usernm, passwd)
+                return usernm, session
+            elif 1 <= int(num) <= len(folders):
+                with open('saves/{}/userinfo.json'.format(folders[int(num) - 1]), 'r') as f:
+                    user = json.loads(f.read())
+                    session = newLogin(user['usernm'], user['passwd'])
+                    return user['usernm'], session
+            else:
+                console.input('你的输入有误，请检查后重新输入,按[red]回车键[/red]退出程序')
+                exit()
         else:
-            console.input('你的输入有误，请检查后重新输入,按[red]回车键[/red]退出程序')
-            exit()
-    else:
-        console.log("[red]本地[/red]不存在用户数据，请新建用户")
-        usernm, passwd = get_user_from_input()
-        session = newLogin(usernm, passwd)
-        return usernm, session
+            console.log("[red]本地[/red]不存在用户数据，请新建用户")
+            usernm, passwd = get_user_from_input()
+
+
+    session = newLogin(usernm, passwd)
+    return usernm, session
