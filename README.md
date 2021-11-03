@@ -41,7 +41,7 @@
 
 <font color=white size=3 align=center face="微软雅黑">5. 执行 python main.py -c 运行代码</font>
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 三. windows使用打包文件（老版本）</font>
+### <font color=white size=4 align=center face="微软雅黑">:bulb: 三. windows使用打包文件</font>
 
 <font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载2.X版本打包文件</font>
 
