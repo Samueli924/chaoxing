@@ -4,7 +4,7 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:exclamation: 更新通知</font></center>
 
-<font color=white size=3 face="微软雅黑">:grinning: 20211031更新内容： 添加配置文件运行形式，方便服务器使用</font>
+<font color=white size=3 face="微软雅黑">:grinning: 20211103更新内容： 添加配置文件运行形式，上传了最新的exe可执行文件[Release](https://github.com/xz454867105/chaoxing/releases/tag/2.0.4)</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:smile: 其他项目</font></center>
 
@@ -45,13 +45,7 @@
 
 <font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载2.X版本打包文件</font>
 
-<font color=white size=3 align=center face="微软雅黑">2. 解压文件，使用bat文件运行</font>
-
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 四. windows使用exe文件（老版本）</font>
-
-<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载1.X版本exe文件</font>
-
-<font color=white size=3 align=center face="微软雅黑">2. 直接运行exe文件</font>
+<font color=white size=3 align=center face="微软雅黑">2. 解压文件，直接双击exe文件启动（无配置文件启动）或重复 二 中的步骤再命令行使用 ./chaoxing.exe -c 启动（配置文件启动）</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
