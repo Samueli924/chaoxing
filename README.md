@@ -45,7 +45,7 @@
 
 <font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载2.X版本打包文件</font>
 
-<font color=white size=3 align=center face="微软雅黑">2. 解压文件，直接双击exe文件启动（无配置文件启动）或重复 二 中的步骤再命令行使用 ./chaoxing.exe -c 启动（配置文件启动）</font>
+<font color=white size=3 align=center face="微软雅黑">2. 解压文件，直接双击exe文件启动（无配置文件启动）或重复 二 中的 3,4 步骤再命令行使用 ./chaoxing.exe -c 启动（配置文件启动）</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
 
