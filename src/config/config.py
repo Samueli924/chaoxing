@@ -45,7 +45,7 @@ def get_params():
     config = has_config()
     if config:
         console.log("启动方式：[yellow]配置文件启动[/yellow]")
-        get_config(config)
+        return get_config(config)
     else:
         console.log("启动方式：[yellow]无配置文件启动[/yellow]")
         return True, '', '', '', 1
