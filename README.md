@@ -4,11 +4,11 @@
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:exclamation: 更新通知</font></center>
 
-<font color=white size=3 face="微软雅黑">:grinning: 20211103更新内容： 添加配置文件运行形式，上传了最新的exe可执行文件[Release](https://github.com/xz454867105/chaoxing/releases/tag/2.0.4)</font>
+<font color=white size=3 face="微软雅黑">:grinning: 20211103更新内容： 添加配置文件运行形式，上传了最新的exe可执行文件[Release](https://github.com/Samueli924/chaoxing/releases/tag/2.0.4)</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:smile: 其他项目</font></center>
 
-<font color=white size=3 face="微软雅黑">:blush: [智慧树无人值守自动化完成共享课视频任务点](https://github.com/xz454867105/zhihuishu)</font>
+<font color=white size=3 face="微软雅黑">:blush: [智慧树无人值守自动化完成共享课视频任务点](https://github.com/Samueli924/zhihuishu)</font>
 
 ## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
 
@@ -43,7 +43,7 @@
 
 ### <font color=white size=4 align=center face="微软雅黑">:bulb: 三. windows使用打包文件</font>
 
-<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/xz454867105/fxxk_chaoxing/releases)页面下载2.X版本打包文件</font>
+<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/Samueli924/chaoxing/releases)页面下载2.X版本打包文件</font>
 
 <font color=white size=3 align=center face="微软雅黑">2. 解压文件，直接双击exe文件启动（无配置文件启动）或重复 二 中的 3,4 步骤再命令行使用 ./chaoxing.exe -c 启动（配置文件启动）</font>
 
@@ -59,10 +59,10 @@
 
 <font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码仅用于学习交流学习通自动化协议</font>   
   
-<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/xz454867105/fxxk_chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
+<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
 
 <font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
 
 ## <center><font color=white size=6 align=center face="微软雅黑"> :smile: CONTRIBUTORS</font></center>
 
-<font color=white size=3 color=red face="微软雅黑">:one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/xz454867105/chaoxing/pull/33)</font>
+<font color=white size=3 color=red face="微软雅黑">:one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)</font>
