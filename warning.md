@@ -1,7 +1,7 @@
 
 ---
 # 使用须知
-欢迎使用 **fxxk_chaoxing**库
+欢迎使用 **chaoxing**库
 
 
 库地址: https://github.com/Samueli924/chaoxing
