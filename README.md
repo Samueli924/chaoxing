@@ -32,14 +32,14 @@
 
 3. 修改配置文件config.ini里的内容如下
 
-    [user]
-    usernm = 1XXXXXXXXXX9 # 手机号/用户名
-    passwd = 2XXXXXXXXXXX # 用户密码
-    courseid = XXXXXXXXX  # 课程ID编号（如果不知道ID，可以先直接运行代码，选择课程后在saves文件夹里找到课程文件夹，文件夹名即为课程ID）   
+    >[user]
+    >usernm = 1XXXXXXXXXX9 # 手机号/用户名
+    >passwd = 2XXXXXXXXXXX # 用户密码
+    >courseid = XXXXXXXXX  # 课程ID编号（如果不知道ID，可以先直接运行代码，选择课程后在saves文件夹里找到课程文件夹，文件夹名即为课程ID）   
     
-    [play]
-    showmd = True # 是否展示程序运行初的注意事项MD内容
-    speed = 1 # 视频播放倍速，推荐一倍速
+    >[play]
+    >showmd = True # 是否展示程序运行初的注意事项MD内容
+    >speed = 1 # 视频播放倍速，推荐一倍速
    
 4. (假如存在)删除目录下的saves文件夹
 
