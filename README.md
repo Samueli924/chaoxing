@@ -14,7 +14,7 @@
 
 2. 启动exe文件(建议放入独立文件夹内运行，因为在运行过程中会在运行当前本地目录生成saves存档Cookies等记录文件)</font>
 
-=
+
 ### :two: 使用Python环境运行源文件(Linux, macOS本地环境推荐) 
 
 1. git 克隆至本地
@@ -23,7 +23,7 @@
 
 3. 执行 python main.py 运行代码
 
-=
+
 ### :three: 配置文件运行(Linux服务器环境推荐)
 
 1. git 克隆至本地
@@ -48,7 +48,7 @@
 
 5. 执行 python main.py -c 运行代码
 
-=
+
 ## :question: FAQ(常见问题)
 
 1. 程序相关
@@ -69,12 +69,12 @@
     - TelegramBot机器人适配
     - 限制学习时间
     
-=
+
 ## :heart: CONTRIBUTORS
 ### :one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)
 ### 对于代码有任何问题或建议欢迎Pull&Request
 
-=
+
 ## :warning: 免责声明
 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议，允许开源/免费使用和引用/修改/衍生代码的开源/免费使用，不允许修改和衍生的代码作为闭源的商业软件发布和销售，禁止使用本代码盈利，以此代码为基础的程序必须同样遵守[GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议  
 本代码仅用于学习讨论，禁止用于盈利
