@@ -1,38 +1,36 @@
-## <center><font color=white size=6 align=center face="微软雅黑"> :computer: 超星学习通自动化</font></center>
+# :computer: 超星学习通自动化完成任务点
 
-<font color=white size=3 face="微软雅黑">:star: 觉得有帮助的朋友可以给个**Star**</font>
+:star: 觉得有帮助的朋友可以给个**Star**
 
-## <center><font color=white size=6 align=center face="微软雅黑">:exclamation: 更新通知</font></center>
+## :point_up: 更新通知
 
-<font color=white size=3 face="微软雅黑">:grinning: 20211124更新内容：更新了最新的Windows可执行文件版本[Release](https://github.com/Samueli924/chaoxing/releases/tag/2.0.5)</font>
+20211124更新内容：更新了最新的Windows可执行文件版本[Release](https://github.com/Samueli924/chaoxing/releases/tag/2.0.5)
 
-## <center><font color=white size=6 align=center face="微软雅黑">:smile: 其他项目</font></center>
+## :books: 三种使用方法(请根据自己的运行环境选择)
 
-<font color=white size=3 face="微软雅黑">:blush: [智慧树无人值守自动化完成共享课视频任务点](https://github.com/Samueli924/zhihuishu)</font>
+### :one: 可执行exe文件运行方式(Windows本地环境推荐)
 
-## <center><font color=white size=6 align=center face="微软雅黑">:books: 使用方法</font></center>
+1. 在[release](https://github.com/Samueli924/chaoxing/releases)页面下载2.X版本最新文件</font>
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 一. 可执行exe文件运行方式(Windows本地环境推荐)</font>
+2. 启动exe文件(建议放入独立文件夹内运行，因为在运行过程中会在运行当前本地目录生成saves存档Cookies等记录文件)</font>
 
-<font color=white size=3 align=center face="微软雅黑">1. 在[release](https://github.com/Samueli924/chaoxing/releases)页面下载2.X版本最新文件</font>
+=
+### :two: 使用Python环境运行源文件(Linux, macOS本地环境推荐) 
 
-<font color=white size=3 align=center face="微软雅黑">2. 启动exe文件(建议放入独立文件夹内运行，因为在运行过程中会在运行当前本地目录生成saves存档Cookies等记录文件)</font>
+1. git 克隆至本地
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 使用Python环境运行源文件(Linux, macOS本地环境推荐)</font>  
-  
-<font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
+2. 执行pip install -r requirements.txt安装相关依赖
 
-<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements.txt安装相关依赖</font>
+3. 执行 python main.py 运行代码
 
-<font color=white size=3 align=center face="微软雅黑">3. 执行 python main.py 运行代码</font>
+=
+### :three: 配置文件运行(Linux服务器环境推荐)
 
-### <font color=white size=4 align=center face="微软雅黑">:bulb: 二. 配置文件运行(Linux服务器环境推荐)</font>
+1. git 克隆至本地
 
-<font color=white size=3 align=center face="微软雅黑">1. git 克隆至本地</font>
+2. 执行pip install -r requirements.txt安装相关依赖
 
-<font color=white size=3 align=center face="微软雅黑">2. 执行pip install -r requirements.txt安装相关依赖</font>
-
-<font color=white size=3 align=center face="微软雅黑">3. 修改配置文件config.ini里的内容</font>
+3. 修改配置文件config.ini里的内容如下
 
 
     [user]
@@ -45,27 +43,39 @@
     showmd = True # 是否展示程序运行初的注意事项MD内容
     speed = 1 # 视频播放倍速，推荐一倍速
     
+
+4. (假如存在)删除目录下的saves文件夹
+
+5. 执行 python main.py -c 运行代码
+
+=
+## :question: FAQ(常见问题)
+
+1. 程序相关
+    - 问: 程序如何实现完成视频任务点?运行时会有**风险**吗?  
+   答: 程序使用从超星AndroidApp中逆向得到的**API发送协议包**完成任务。在超星不更新其API协议的前提下能够**确保安全**  
+    - 问: 为什么程序运行时间和实际时间一样，不能**一键瞬间完成**所有任务吗?  
+   答: 本程序设计的初衷是在确保**绝对安全**的前提下提高效率，所以在代码中没有添加一键完成所有任务的代码。实际上，一键完成功能十分容易，在Github上已经有许多相关的优秀repo可供下载  
+    - 问: 程序用到了哪些第三方库?  
+   答: 本程序仅用到了requests库负责完成任务，以及rich库负责输出结果。不同于Github中存在的一些其他使用selenium库的repo，具有内存占用小，带宽占用小的优点
+2. 运行相关
+    - 问: 为什么我在服务器运行这个程序会出现 **Connection Error**?  
+   答: 根据过去一段时间报告的BUG推测，超星的API屏蔽了**阿里云的服务器**IP段，所以无法在阿里云服务器运行
+    - 问: 为什么Windows版本的exe文件不能**调倍速**?  
+   答: Windows版本**可以调节倍速**，只需要把库根目录中的config.ini下载到本地exe所在目录，在配置完毕后，使用命令行**chaoxing_X.X.X.exe -c** 运行即可
+3. 计划相关(TODO LIST: 预计2022年1月初更新,在此之前仅更新修复BUG)
+    - 可视化UI界面
+    - 多线程运行
+    - TelegramBot机器人适配
+    - 限制学习时间
     
-<font color=white size=3 align=center face="微软雅黑">4. (假如存在)删除目录下的saves文件夹</font>
+=
+## :heart: CONTRIBUTORS
+### :one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)
+### 对于代码有任何问题或建议欢迎Pull&Request
 
-<font color=white size=3 align=center face="微软雅黑">5. 执行 python main.py -c 运行代码</font>
-
-## <center><font color=white size=6 align=center face="微软雅黑"> :grey_exclamation: 提醒&注释</font></center>
-
-<font color=white size=3 color=red face="微软雅黑">:one: 程序在python 3.6的环境下开发完成，建议使用Python 3.6运行本程序</font>  
-
-<font color=white size=3 color=red face="微软雅黑">2️⃣: 程序使用协议自动化，而非github其他的浏览器插件或selenium库自动化，占用资源小且安全有效</font>  
-
-<font color=white size=3 color=red face="微软雅黑">3️⃣: 考虑到了超星学习通的心跳检测刷课方式，本代码的所需时间等于视频的实际观看时间</font>   
-
-<font color=white size=3 color=red face="微软雅黑">注：在0.1.2版本中加入了多倍速的功能，建议不要使用</font>   
-
-<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码仅用于学习交流学习通自动化协议</font>   
-  
-<font color=white size=3 color=red face="微软雅黑">:stuck_out_tongue_winking_eye: 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)，使用、修改、发行本代码请遵守协议要求</font>   
-
-<font color=white size=3 color=red face="微软雅黑">:grinning: 欢迎issue &pull requests</font>   
-
-## <center><font color=white size=6 align=center face="微软雅黑"> :smile: CONTRIBUTORS</font></center>
-
-<font color=white size=3 color=red face="微软雅黑">:one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)</font>
+=
+## :warning: 免责声明
+本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议，允许开源/免费使用和引用/修改/衍生代码的开源/免费使用，不允许修改和衍生的代码作为闭源的商业软件发布和销售，禁止使用本代码盈利，以此代码为基础的程序必须同样遵守[GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议  
+本代码仅用于学习讨论，禁止用于盈利
+他人或组织使用本代码进行的任何违法行为与本人无关
