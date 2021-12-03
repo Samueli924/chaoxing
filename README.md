@@ -61,10 +61,7 @@
     - 问: 为什么Windows版本的exe文件不能**调倍速**?  
    答: Windows版本**可以调节倍速**，只需要把库根目录中的config.ini下载到本地exe所在目录，在配置完毕后，使用命令行**chaoxing_X.X.X.exe -c** 运行即可
 3. 计划相关(TODO LIST: 预计2022年1月初更新,在此之前仅更新修复BUG)
-    - 可视化UI界面
-    - 多线程运行
-    - TelegramBot机器人适配
-    - 限制学习时间
+    更新计划详见[Projects](https://github.com/Samueli924/chaoxing/projects/1)
     
 
 ## :heart: CONTRIBUTORS
