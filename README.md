@@ -6,6 +6,10 @@
 
 20211124更新内容：更新了最新的Windows可执行文件版本[Release](https://github.com/Samueli924/chaoxing/releases/tag/2.0.5)
 
+## 反馈方式  
+
+想要交流脚本运行或运行有问题需要提问的朋友可以选择加入Telegram群聊，我会在群聊中尽量尽快回复你的消息[点此加入群聊](https://t.me/samueli924)  
+
 ## :books: 三种使用方法(请根据自己的运行环境选择)
 
 ### :one: 可执行exe文件运行方式(Windows本地环境推荐)
