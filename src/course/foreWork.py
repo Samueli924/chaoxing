@@ -32,10 +32,18 @@ def find_courses(usernm, session, courseid):
                             'zh_CN)_1969814533 '
               }
     my_course = session.get("http://mooc1-api.chaoxing.com/mycourse?rss=1&mcode=", headers=header)
-    result = my_course.json()
+    try:
+        result = my_course.json()
+    except json.decoder.JSONDecodeError as e:
+        print("-------------------------")
+        print(my_course.text)
+        print("-------------------------")
+        print("JSON解码错误,请截图或复制上传Issue，方便作者修复BUG")
+        print("https://github.com/Samueli924/chaoxing")
+        input("点击回车键退出程序")
+        exit()
+
     channelList = result['channelList']
-
-
     if not courseid:
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("序号", style="dim")
