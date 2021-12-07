@@ -10,8 +10,8 @@ if __name__ == '__main__':
 
     isallow,usernm,passwd,courseid,speed = config.get_params()
 
-    # 展示md信息文件 默认为显示
-    mdshow.print_md(isallow)
+    # 展示md信息文件 默认为不显示
+    # mdshow.print_md(isallow)
 
     # 从本地或在线获取用户信息 默认为空
     usernm, session = getUser.get_session(usernm,passwd)
