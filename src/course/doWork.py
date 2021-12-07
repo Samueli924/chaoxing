@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.progress import Progress
 from math import ceil
 import src.rprint.print as rprint
-
+import json.decoder
 console = Console()
 def show_status(speed, name, totalmin, totalsec, done, job_done, totaljob):
     """
@@ -128,12 +128,20 @@ def do_mp4(usernm, course, session, mp4, speed):
                               (mp4[item][6]) + '-cpi_' + str(course['cpi']) + '&jobid=' + str \
                               (mp4[item][5][1]) + '&userid=' + str(user['userid']) + '&isdrag=0&view=pc&enc=' + str \
                               (enc) + '&rt=0.9&dtype=Video&_t=' + str(t)
+
                     resq = session.get(url, headers=header, verify=False)
-                    # print(resq.text)
+                    try:
+                        resq.json()
+                    except json.decoder.JSONDecodeError as e:
+                        print("出现错误，错误类型:json.decoder.JSONDecodeError")
+                        print("正在输出最近的一次请求\n")
+                        print("----------")
+                        print(resq.text)
+                        print("----------")
+                        input("建议在Github提交Issue上传截图，方便作者进行修改，点击回车键退出")
                     mm = int(mp4[item][2] / 60)
                     ss = int(mp4[item][2]) % 60
                     percent = int(playingtime) / int(mp4[item][2])
-                    # print(resq.text)
                     if resq.json()['isPassed'] == True:
                         console.log('\n视频任务{}完成观看'.format(mp4[item][0]))
                         with open('{}/finishedinfo.json'.format(course_path), 'a') as f:
