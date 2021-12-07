@@ -24,3 +24,7 @@ if __name__ == '__main__':
 
     # 开始完成PPT任务点
     doWork.do_ppt(session, mp4, ppt, usernm, course)
+    
+    # 提示任务全部结束
+    input("所有可识别的任务已经完成，请点击回车键退出程序")
+    exit()
