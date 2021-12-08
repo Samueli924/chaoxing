@@ -124,10 +124,6 @@ def do_mp4(usernm, course, session, mp4, speed):
                               (mp4[item][6]) + '-cpi_' + str(course['cpi']) + '&jobid=' + str \
                               (mp4[item][5][1]) + '&userid=' + str(user['userid']) + '&isdrag=0&view=pc&enc=' + str \
                               (enc) + '&rt=0.9&dtype=Video&_t=' + str(t)
-                    print(url)
-                    input()
-                    a = 'https://mooc1.chaoxing.com/multimedia/log/a/82923364/9755d19417cf3bb59efdb89acd638977?clazzId=42514044&playingTime=0&duration=782&clipTime=0_782&objectId=518cea772b1e73a66d47b36d22bffc38&otherInfo=nodeId_410169251-cpi_82923364&jobid=1614586940307453&userid=94945523&isdrag=0&view=pc&enc=dd78dbb355e18a0904f27188f1b29b81&rt=0.9&dtype=Video&_t=1638925682921'
-
                     resq = session.get(url)
                     try:
                         resq.json()
