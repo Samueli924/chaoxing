@@ -43,7 +43,6 @@ def do_mp4(usernm, course, session, mp4, speed):
     :param mp4: mp4任务点信息
     :return:
     """
-
     console.log("当前倍速[red] {} 倍速[/red],如果要多倍速播放，请在'config/speed.conf'中修改配置".format(speed))
     console.log("推荐使用 1 倍速，使用多倍速存在风险")
     finished_num = 0
@@ -58,25 +57,25 @@ def do_mp4(usernm, course, session, mp4, speed):
     with open('saves/{}/userinfo.json'.format(usernm), 'r') as f:
         user = json.loads(f.read())
 
-    header = {
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Host': 'mooc1-1.chaoxing.com',
-        'Referer': 'https://mooc1-1.chaoxing.com/ananas/modules/video/index.html?v=2020-1105-2010',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-    }
-    head = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/86.0.4240.198 Safari/537.36',
-    }
+    # header = {
+    #     'Accept': '*/*',
+    #     'Accept-Encoding': 'gzip, deflate, br',
+    #     'Accept-Language': 'zh-CN,zh;q=0.9',
+    #     'Connection': 'keep-alive',
+    #     'Content-Type': 'application/json',
+    #     'Host': 'mooc1-1.chaoxing.com',
+    #     'Referer': 'https://mooc1-1.chaoxing.com/ananas/modules/video/index.html?v=2020-1105-2010',
+    #     'Sec-Fetch-Dest': 'empty',
+    #     'Sec-Fetch-Mode': 'cors',
+    #     'Sec-Fetch-Site': 'same-origin',
+    #     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+    # }
+    # head = {
+    #     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+    #                   'Chrome/86.0.4240.198 Safari/537.36',
+    # }
     # print('*' *30 +'\n ' +'*' *30)
-    job_done = 0
+    # job_done = 0
     for item in mp4:
         if str(mp4[item][5][0]) in finished:
             console.log("视频任务{}[yellow]记录已完成[/yellow]，跳过".format(str(mp4[item][0])))
@@ -85,32 +84,29 @@ def do_mp4(usernm, course, session, mp4, speed):
             playingtime = 0
             retry_time = 1
             console.log("[yellow]开始任务[/yellow]{}".format(str(mp4[item][0])))
-
             while True:
                 try:
                     t1 = time.time() * 1000
-                    jsoncallback = 'jsonp0' + str(int(random.random() * 100000000000000000))
                     refer = 'http://i.mooc.chaoxing.com'
-                    version = str('1605853642425')
-                    url0 = 'https://passport2.chaoxing.com/api/monitor?version=' + version + '&refer=' + refer + '&jsoncallback=' + jsoncallback + '&t=' + str \
-                        (t1)
-                    rep = session.get(url0, headers=header)
-                    if job_done >= 3:
-                        url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
-                            mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
-                            course['clazzid']) + '&enc=' + str(course['enc'])
-                        resq = session.get(url, headers=head).content.decode('utf-8')
-                        url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
-                              re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
-                        resq = session.get(url, headers=head).text
-                        if 'success' in resq:
-                            console.log("添加[yellow]日志[/yellow]成功")
-                            job_done = 0
-                        else:
-                            console.log("[red]添加日志失败[/red]，请检查[yellow]网络连接[/yellow],[red]按回车键退出[/red]")
-                            input()
-                            exit()
-                        # self.get_score()
+                    version = str('1638893948678')
+                    url0 = 'https://passport2.chaoxing.com/api/monitor?version=' + version + '&refer=' + refer
+                    rep = session.get(url0)
+                    # if job_done >= 3:
+                    #     url = 'https://mooc1-1.chaoxing.com/mycourse/studentstudy?chapterId=' + str(
+                    #         mp4[item][6]) + '&courseId=' + str(course['courseid']) + '&clazzid=' + str(
+                    #         course['clazzid']) + '&enc=' + str(course['enc'])
+                    #     resq = session.get(url).content.decode('utf-8')
+                    #     url = 'https://fystat-ans.chaoxing.com/log/setlog?' + \
+                    #           re.findall('src="https://fystat-ans\.chaoxing\.com/log/setlog\?(.*?)">', resq)[0]
+                    #     resq = session.get(url).text
+                    #     if 'success' in resq:
+                    #         console.log("添加[yellow]日志[/yellow]成功")
+                    #         job_done = 0
+                    #     else:
+                    #         console.log("[red]添加日志失败[/red]，请检查[yellow]网络连接[/yellow],[red]按回车键退出[/red]")
+                    #         input()
+                    #         exit()
+                    #     # self.get_score()
                     t = str(int(t1))
                     if int(playingtime) > int(mp4[item][2]):
                         playingtime = int(mp4[item][2])
@@ -121,15 +117,18 @@ def do_mp4(usernm, course, session, mp4, speed):
                                                                      , '0_' + str(mp4[item][2]))
                     coded = ''.join(code).encode()
                     enc = hashlib.md5(coded).hexdigest()
-                    url = 'http://mooc1-1.chaoxing.com/multimedia/log/a/' + str(course['cpi']) + '/' + str \
+                    url = 'https://mooc1.chaoxing.com/multimedia/log/a/' + str(course['cpi']) + '/' + str \
                         (mp4[item][1]) + '?clazzId=' + str(course['clazzid']) + '&playingTime=' + str \
                               (playingtime) + '&duration=' + str(mp4[item][2]) + '&clipTime=0_' + str \
                               (mp4[item][2]) + '&objectId=' + str(mp4[item][5][0]) + '&otherInfo=nodeId_' + str \
                               (mp4[item][6]) + '-cpi_' + str(course['cpi']) + '&jobid=' + str \
                               (mp4[item][5][1]) + '&userid=' + str(user['userid']) + '&isdrag=0&view=pc&enc=' + str \
                               (enc) + '&rt=0.9&dtype=Video&_t=' + str(t)
+                    print(url)
+                    input()
+                    a = 'https://mooc1.chaoxing.com/multimedia/log/a/82923364/9755d19417cf3bb59efdb89acd638977?clazzId=42514044&playingTime=0&duration=782&clipTime=0_782&objectId=518cea772b1e73a66d47b36d22bffc38&otherInfo=nodeId_410169251-cpi_82923364&jobid=1614586940307453&userid=94945523&isdrag=0&view=pc&enc=dd78dbb355e18a0904f27188f1b29b81&rt=0.9&dtype=Video&_t=1638925682921'
 
-                    resq = session.get(url, headers=header, verify=False)
+                    resq = session.get(url)
                     try:
                         resq.json()
                     except json.decoder.JSONDecodeError as e:
@@ -141,7 +140,7 @@ def do_mp4(usernm, course, session, mp4, speed):
                         input("建议在Github提交Issue上传截图，方便作者进行修改，点击回车键退出")
                     mm = int(mp4[item][2] / 60)
                     ss = int(mp4[item][2]) % 60
-                    percent = int(playingtime) / int(mp4[item][2])
+                    # percent = int(playingtime) / int(mp4[item][2])
                     if resq.json()['isPassed'] == True:
                         console.log('\n视频任务{}完成观看'.format(mp4[item][0]))
                         with open('{}/finishedinfo.json'.format(course_path), 'a') as f:
@@ -149,7 +148,7 @@ def do_mp4(usernm, course, session, mp4, speed):
                         finished += str(mp4[item][5][0])
                         finished_num += 1
                         rt = random.randint(1, 3)
-                        job_done += 1
+                        # job_done += 1
                         break
                     show_status(speed,mp4[item][0],mm,ss,playingtime,str(finished_num),str(len(mp4)))
                     playingtime += 60

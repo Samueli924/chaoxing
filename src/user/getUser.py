@@ -90,12 +90,10 @@ def login(usernm, passwd):
 def newLogin(usernm,passwd):
     user = {}
     url = 'https://passport2-api.chaoxing.com/fanyalogin'
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36',
-        'X-Requested-With': 'XMLHttpRequest',
-    }
     console.log("正在开始尝试[yellow]登录账号[/yellow]")
     session = requests.session()
+    session.headers['User-Agent'] = 'Dalvik/2.1.0 (Linux; U; Android 5.1.1; SM-G9350 Build/LMY48Z) com.chaoxing.mobile/ChaoXingStudy_3_5.21_android_phone_206_1 (SM-G9350; Android 5.1.1; zh_CN)_19698145335.21'
+    session.headers['X-Requested-With'] = 'XMLHttpRequest'
     data = {
         'fid': '-1',
         'uname': str(usernm),
@@ -104,7 +102,7 @@ def newLogin(usernm,passwd):
         't': 'true',
         'forbidotherlogin': '0',
     }
-    resp = session.post(url,headers=headers,data=data)
+    resp = session.post(url,data=data)
     if resp.status_code == 200:
         if resp.json()['status']:
             console.log("[yellow]登录成功[/yellow]")
