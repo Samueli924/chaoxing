@@ -2,7 +2,7 @@
 import src.user.getUser as getUser
 import src.course.foreWork as foreWork
 import src.course.doWork as doWork
-import src.show.mdshow as mdshow
+# import src.show.mdshow as mdshow
 import src.config.config as config
 
 
