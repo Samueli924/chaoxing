@@ -51,9 +51,9 @@ def find_courses(usernm, session, courseid):
         for item in channelList:
             if "state" in item["content"]:
                 if item["content"]["state"] == 0:
-                    state = "结课"
-                else:
                     state = "开课"
+                else:
+                    state = "结课"
                 if exists('saves/{}/{}'.format(usernm, str(item['content']['course']['data'][0]['id']))):
                     table.add_row(str(channelList.index(item) + 1), item['content']['course']['data'][0]['name'], state, "存在")
                 else:
