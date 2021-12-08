@@ -1,10 +1,10 @@
-# :computer: 超星学习通自动化完成任务点
+# :computer: 超星学习通自动化完成任务点(请更新至2.1.0版本)
 
 :star: 觉得有帮助的朋友可以给个**Star**
 
 ## :point_up: 更新通知
 
-20211124更新内容：更新了最新的Windows可执行文件版本[Release](https://github.com/Samueli924/chaoxing/releases/tag/2.0.5)
+20211208更新内容：适配了超星最新的协议接口，添加了对于结课课程的判断，请更新至最新的2.1.0版本，使用2.1.0版本时老版本的saves文件夹需要删除
 
 ## :question: 反馈方式  
 
