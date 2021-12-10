@@ -269,10 +269,6 @@ def get_openc(usernm, course, session):
             course['openc'] = openc[0]
     else:
         course['openc'] = openc[0]
-    
-    except Exception:
-        course['openc'] = re.findall('&openc=(.*?)"', resp.text)[0]
-    
     console.log('成功获取[yellow]openc参数[/yellow]:{}'.format(course['openc']))
     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
     with open('{}/courseinfo.json'.format(course_path), 'w') as f:
