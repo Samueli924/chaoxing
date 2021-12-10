@@ -65,10 +65,11 @@ def find_courses(usernm, session, courseid):
     else:
         found = False
         for item in channelList:
-            if str(item['content']['course']['data'][0]['id']) == str(courseid):
-                channelList_json = item
-                found = True
-                break
+            if "state" in item["content"]:
+                if str(item['content']['course']['data'][0]['id']) == str(courseid):
+                    channelList_json = item
+                    found = True
+                    break
         if not found:
             console.log("不存在课程{}，请检查配置文件".format(courseid))
             console.input("点击回车键退出程序")
