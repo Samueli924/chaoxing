@@ -3,11 +3,11 @@ import json
 import re
 import requests
 from os.path import exists
-
+import time
 import requests.utils
 from rich.console import Console
 from rich.table import Table
-
+import random
 import src.path.pathCheck as pathCheck
 
 console = Console()
@@ -140,7 +140,15 @@ def find_objectives(usernm, chapterids, course_id, session):
     :return:
     """
     jobs = {}
-    for lesson_id in chapterids:
+    num = 0
+    last_wait = 0
+    while num < len(chapterids):
+        if num >= last_wait + 30:
+            wait = random.randint(1,6)
+            console.log("已加载{}个任务点，等待{}秒".format(num, wait))
+            time.sleep(wait)
+            last_wait = num
+        lesson_id = chapterids[num]
         url = 'http://mooc1-api.chaoxing.com/gas/knowledge?id=' + str(lesson_id) + '&courseid=' + str(
             course_id) + '&fields=begintime,clickcount,createtime,description,indexorder,jobUnfinishedCount,jobcount,' \
                          'jobfinishcount,label,lastmodifytime,layer,listPosition,name,openlock,parentnodeid,status,' \
@@ -155,6 +163,7 @@ def find_objectives(usernm, chapterids, course_id, session):
         except Exception as e:
             console.log('错误类型:{}'.format(e.__class__.__name__))
             console.log('错误明细:{}'.format(e))
+        num += 1
     course_path = 'saves/{}/{}'.format(usernm, course_id)
     console.log("正在向[red]本地[/red]保存任务点记录")
     with open('{}/jobsinfo.json'.format(course_path), 'w') as f:
