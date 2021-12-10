@@ -143,7 +143,7 @@ def find_objectives(usernm, chapterids, course_id, session):
     num = 0
     last_wait = 0
     while num < len(chapterids):
-        if num >= last_wait + 20:
+        if num >= last_wait + 40:
             wait = random.randint(1,6)
             console.log("已加载{}个任务点，等待{}秒".format(num, wait))
             time.sleep(wait)
