@@ -67,6 +67,10 @@
    答: Windows版本**可以调节倍速**，只需要把库根目录中的config.ini下载到本地exe所在目录，在配置完毕后，使用命令行**chaoxing_X.X.X.exe -c** 运行即可
 3. 计划相关(TODO LIST: 预计2022年1月初更新,在此之前仅更新修复BUG)
     - 更新计划详见[Projects](https://github.com/Samueli924/chaoxing/projects/1)
+    - v3.0版本更新内容(新的Web前端管理界面，多线程运行等功能)
+![Snipaste_2021-12-10_20-19-54](https://user-images.githubusercontent.com/65054820/145573525-63beb246-4201-4d95-96e5-161a08df731d.png)
+![Snipaste_2021-12-10_20-20-44](https://user-images.githubusercontent.com/65054820/145573536-aacdfcc2-4966-42c8-a27e-d59ae5174b24.png)
+
     
 
 ## :heart: CONTRIBUTORS
