@@ -263,6 +263,7 @@ def get_openc(usernm, course, session):
         if len(openc) == 0:
             print(resp.text)
             console.log("获取课程openc过程中出现错误\n已输出请求返回的结果\n请在Github Issue中提交截图方便我修复")
+            console.log(resp.url)
             console.input("点击回车键退出代码")
             exit()
         else:
