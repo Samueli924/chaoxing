@@ -257,10 +257,22 @@ def get_openc(usernm, course, session):
     url = 'https://mooc1-1.chaoxing.com/visit/stucoursemiddle?courseid={}&clazzid={}&vc=1&cpi={}'.format(
         course['courseid'], course['clazzid'], course['cpi'])
     resp = session.get(url)
-    try:
-        course['openc'] = re.findall("openc : '(.*?)'", resp.text)[0]
+    openc = re.findall("openc : '(.*?)'", resp.text)
+    if len(openc) == 0:
+        openc = re.findall('&openc=(.*?)"', resp.text)
+        if len(openc) == 0:
+            print(resp.text)
+            console.log("获取课程openc过程中出现错误\n已输出请求返回的结果\n请在Github Issue中提交截图方便我修复")
+            console.input("点击回车键退出代码")
+            exit()
+        else:
+            course['openc'] = openc[0]
+    else:
+        course['openc'] = openc[0]
+    
     except Exception:
         course['openc'] = re.findall('&openc=(.*?)"', resp.text)[0]
+    
     console.log('成功获取[yellow]openc参数[/yellow]:{}'.format(course['openc']))
     course_path = 'saves/{}/{}'.format(usernm, course['courseid'])
     with open('{}/courseinfo.json'.format(course_path), 'w') as f:
