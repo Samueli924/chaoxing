@@ -1,10 +1,10 @@
-# :computer: 超星学习通自动化完成任务点(请更新至2.1.0版本)
+# :computer: 超星学习通自动化完成任务点(命令行版)
 
 :star: 觉得有帮助的朋友可以给个**Star**
 
 ## :point_up: 更新通知
 
-20211208更新内容：适配了超星最新的协议接口，添加了对于结课课程的判断，请更新至最新的2.1.0版本，使用2.1.0版本时老版本的saves文件夹需要删除
+20211217更新内容：用于开发web版本的develop分支被独立出来[Samueli924/chaoxing_web](https://github.com/Samueli924/chaoxing_web)，作为独立的WEB版本发布，由于处于开发初期，所以BUG数量会多于本repo，若想使用最新WEB版本，请访问[Samueli924/chaoxing_web](https://github.com/Samueli924/chaoxing_web)，同时，本repo也还会继续更新    
 
 ## :question: 反馈方式  
 
@@ -67,12 +67,8 @@
    答: Windows版本**可以调节倍速**，只需要把库根目录中的config.ini下载到本地exe所在目录，在配置完毕后，使用命令行**chaoxing_X.X.X.exe -c** 运行即可
 3. 计划相关(TODO LIST)
     - 更新计划详见[Projects](https://github.com/Samueli924/chaoxing/projects/1)
-    - v3.0版本更新内容(新的Web前端管理界面，多线程运行等功能,预计2022年1月初更新)
-![Snipaste_2021-12-10_20-19-54](https://user-images.githubusercontent.com/65054820/145573525-63beb246-4201-4d95-96e5-161a08df731d.png)
-![Snipaste_2021-12-10_20-20-44](https://user-images.githubusercontent.com/65054820/145573536-aacdfcc2-4966-42c8-a27e-d59ae5174b24.png)
-
-    
-
+    - 问： 为什么最新的WEB版本要独立出本库?
+   答：最新web版本的代码重构后，整体发生较大的变化，不再适合发布到这个库内
 ## :heart: CONTRIBUTORS
 ### :one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)
 ### 对于代码有任何问题或建议欢迎Pull&Request
