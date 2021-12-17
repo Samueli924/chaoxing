@@ -4,7 +4,7 @@
 
 ## :point_up: 更新通知
 
-20211217更新内容：用于开发web版本的develop分支被独立出来[Samueli924/chaoxing_web](https://github.com/Samueli924/chaoxing_web)，作为独立的WEB版本发布，由于处于开发初期，所以BUG数量会多于本repo，若想使用最新WEB版本，请访问[Samueli924/chaoxing_web](https://github.com/Samueli924/chaoxing_web)，同时，本repo也还会继续更新    
+20211217更新内容：用于开发web版本的develop分支被独立出来作为全新的repo: [Samueli924/chaoxing_web](https://github.com/Samueli924/chaoxing_web)。同时，本repo也还会继续保持更新    
 
 ## :smile: 相关项目
 
