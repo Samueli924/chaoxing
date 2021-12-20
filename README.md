@@ -1,13 +1,13 @@
 # :computer: 超星学习通自动化完成任务点(命令行版)
 
 <p align="center">
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
-        <img align="center" src="https://so.samuelchen.cn/badge-chaoxing" alt="Github Stars" />
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 10px;">
+        <img src="https://so.samuelchen.cn/badge-chaoxing" alt="Github Stars" />
     </a>
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 10px;">
         <img src="https://img.shields.io/github/stars/Samueli924/chaoxing" alt="Github Stars" />
     </a>
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 10px;">
         <img src="https://img.shields.io/github/forks/Samueli924/chaoxing" alt="Github Forks" />
     </a>
     <a href="https://github.com/Samueli924/chaoxing" target="_blank">
