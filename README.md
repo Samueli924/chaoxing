@@ -1,7 +1,24 @@
 # :computer: 超星学习通自动化完成任务点(命令行版)
 
 <p align="center">
-    <img align="center" src="https://so.samuelchen.cn/badge-chaoxing" />
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+        <img align="center" src="https://so.samuelchen.cn/badge-chaoxing" alt="Github Stars" />
+    </a>
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+        <img src="https://img.shields.io/github/stars/Samueli924/chaoxing" alt="Github Stars" />
+    </a>
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+        <img src="https://img.shields.io/github/forks/Samueli924/chaoxing" alt="Github Forks" />
+    </a>
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+        <img src="https://img.shields.io/github/languages/code-size/Samueli924/chaoxing" alt="Code-size" />
+    </a>
+    <a href="https://github.com/Samueli924/chaoxing" target="_blank">
+        <img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="version" />
+    </a>
+    <a href="https://t.me/Samueli924" target="_blank" class="badge">
+        <img src="https://img.shields.io/badge/-Telegram-blue?logo=telegram" alt="Telegram" />
+    </a>
 </p>
 
 :star: 觉得有帮助的朋友可以给个**Star**
