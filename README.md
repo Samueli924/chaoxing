@@ -1,5 +1,9 @@
 # :computer: 超星学习通自动化完成任务点(命令行版)
 
+<p align="center">
+    <img align="center" src="https://so.samuelchen.cn/badge-chaoxing" />
+</p>
+
 :star: 觉得有帮助的朋友可以给个**Star**
 
 ## :point_up: 更新通知
