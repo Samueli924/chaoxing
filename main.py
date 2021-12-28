@@ -45,6 +45,11 @@ def formulate_cookies_from_dict(cookies_raw: dict):
     return cookies[:-2]
 
 
+def formatShow(jobid, playingtime, totaltime, donejobs, totaljobs):
+    content = f"任务ID: {jobid}  当前任务: {playingtime}/{totaltime}  已完成: {donejobs}/{totaljobs}"
+    print(content,flush=True,end="\r")
+
+
 class Logger:
     def __init__(self, path, stream=True, output=True, slevel=logging.INFO, olevel=logging.DEBUG):
         check_path("Logs")
@@ -321,7 +326,7 @@ class Course:
                 self.chapterids.append(str(chapter))
             with open(f"{course_path}/chapterid.cx", "w") as f:
                 json.dump(self.chapterids,f)
-            self.enc = re.findall("&clazzid=.*?&enc=(.*?)'", content)[0]
+            self.enc = re.findall("&enc=(.*?)&", content)[0]
             self.course_detail['enc'] = self.enc
 
             self.logger.info("正在读取openc参数")
@@ -547,6 +552,7 @@ class Course:
                         self.logger.debug(data)
                         with open(f"{course_path}/currentData", "w") as f:
                             json.dump(data, f)
+                        formatShow(str(self.mp4[item][5][0]), playing_dated, total_dated, finished_num, len(self.mp4))
                         time.sleep(1)
                         playingtime += int(speed)
                         count += int(speed)
@@ -587,11 +593,13 @@ if __name__ == '__main__':
     parser.add_argument("-passwd", type=str, default="", help="密码(如:123456)")
     parser.add_argument("-courseid", type=str, default="", help="课程id(如:124125621)")
     parser.add_argument("-circle", type=str, default="SINGLE", help="循环模式(SINGLE/ROUND)")
+    parser.add_argument("-speed", type=str, default="1", help="速度(1-10)")
     args = parser.parse_args()
     usernm = args.usernm
     passwd = args.passwd
     courseid = args.courseid
     circle = args.circle
+    speed = args.speed
     if not usernm:
         usernm = input("请输入您的账号/手机号")
     if not passwd:
@@ -618,16 +626,16 @@ if __name__ == '__main__':
             course_detail = user.find_course(courseid, courses.get("data"))
             if course_detail.get("status") == "success":
                 previous_jobs = 0
-                speed = str(input("请输入您需要的倍速(建议1-2倍速，请勿设置的太高)"))
+                print(f'当前倍速 {speed} 倍， 若要修改 请在程序运行时加上参数 -speed')
                 course = Course(user, courseid, course_detail.get("data"))
                 while True:
-                    course.load_chapter_id(session)
-                    jobs = course.load_jobs(session, old=False)
+                    course.load_chapter_id(session, old=True)
+                    jobs = course.load_jobs(session, old=True)
                     if len(jobs) == previous_jobs:
                         logger.info("判断不存在新的任务点")
                         break
                     previous_jobs = len(jobs)
-                    course.detect_job_type(session)
+                    course.detect_job_type(session,old=True)
                     course.do_mp4(session, speed)
                     logger.info("本轮任务点已完成")
                     if circle == "SINGLE":
