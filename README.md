@@ -41,7 +41,7 @@
     - 问: 为什么程序运行时间和实际时间一样，不能**一键瞬间完成**所有任务吗?  
    答: 本程序设计的初衷是在确保**绝对安全**的前提下提高效率，所以在代码中没有添加一键完成所有任务的代码。实际上，一键完成功能十分容易，在Github上已经有许多相关的优秀repo可供下载  
     - 问: 程序用到了哪些第三方库?  
-   答: 本程序仅用到了requests库负责完成任务，以及rich库负责输出结果。不同于Github中存在的一些其他使用selenium库的repo，具有内存占用小，带宽占用小的优点  
+   答: 本程序仅用到了requests库负责完成任务。不同于Github中存在的一些其他使用selenium库的repo，具有内存占用小，带宽占用小的优点  
     
 ## :heart: CONTRIBUTORS  
 ### :one: 感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)  
