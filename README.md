@@ -13,9 +13,6 @@
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
         <img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="version" />
     </a>
-    <a href="https://t.me/Samueli924" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://img.shields.io/badge/-Telegram-blue?logo=telegram" alt="Telegram" />
-    </a>
 </p>
 
 :star: 觉得有帮助的朋友可以给个**Star**
@@ -30,9 +27,7 @@
 
 ## :question: 反馈方式  
 
-<!-- 想要交流脚本运行或运行有问题需要提问的朋友可以选择加入Telegram群聊，我会在群聊中尽量尽快回复你的消息  
-[点此加入群聊](https://t.me/samueli924)   -->
-暂时停止提供反馈途径
+停止提供反馈途径
 
 ## :books: 使用方法
 
