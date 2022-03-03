@@ -2,9 +2,6 @@
 
 <p align="center">
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://so.samuelchen.cn/badge-chaoxing" alt="Github Stars" />
-    </a>
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
         <img src="https://img.shields.io/github/stars/Samueli924/chaoxing" alt="Github Stars" />
     </a>
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
