@@ -34,7 +34,7 @@
 
 ## :books: 使用方法
 
-[使用方法](https://blog.samuelchen.cn/archives/samueli924chaoxing-readme)
+[使用方法](https://samuelchen.cn/archives/samueli924chaoxing-readme)
 
 ## :question: FAQ(常见问题)
 
