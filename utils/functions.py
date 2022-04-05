@@ -152,7 +152,8 @@ def pretty_print(courses_raw: list):
     titles = ["序号", "课程ID", "课程名称"]
     data = list()
     for course_index, course in enumerate(courses_raw):
-        data.append([str(course_index + 1), str(course["key"]), str(course['content']['course']['data'][0]['name'])])
+        if "course" in course["content"]:
+            data.append([str(course_index + 1), str(course["key"]), str(course['content']['course']['data'][0]['name'])])
     format_row = "{:>16}" * (len(titles) + 1)
     print("-"*100)
     print(format_row.format("", *titles))
