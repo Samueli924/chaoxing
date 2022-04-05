@@ -29,7 +29,7 @@ def do_work(chaoxingAPI: Chaoxing):
             print(f'\n当前章节:{mission["label"]}:{mission["name"]}')
             for attachment in attachments['attachments']:   # 非视频任务跳过
                 if attachment.get('type') != 'video':
-                    print(f"\n当前任务:{attachment['property']['name']}非视频任务")
+                    # print(f"\n当前任务:{attachment['property']['name']}非视频任务")
                     continue
                 # if attachment['jobid'] in done:
                 #     print(f"\n当前视频:{attachment['property']['name']}存在历史记录")
