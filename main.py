@@ -5,7 +5,7 @@ import utils.functions as ft
 from api.chaoxing import Chaoxing
 
 
-def do_work(chaoxingAPI: Chaoxing):
+def do_work(chaoxingAPI):
     # done = list(ft.load_finished(chaoxingAPI.usernm))
     logger.info("开始获取所有章节")
     chaoxingAPI.get_selected_course_data()  # 读取所有章节
