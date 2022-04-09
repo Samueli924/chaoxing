@@ -28,7 +28,7 @@ class Chaoxing:
     def init_explorer(self):
         self.session = requests.session()
         self.session.headers = {
-            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(10, 13)}.0.1; MI {random.randint(10, 13)} Build/Xiaomi) com.chaoxing.mobile/ChaoXingStudy_3_5.1_android_phone_598_56',
+            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(10, 13)}.0.1; MI {random.randint(10, 13)} Build/Xiaomi) com.chaoxing.mobile/ChaoXingStudy_3_{random.randint(3, 5)}.{random.randint(1, 8)}_android_phone_{random.randint(111, 799)}_{random.randint(11, 99)}',
             'X-Requested-With': 'com.chaoxing.mobile'
         }
 
