@@ -51,7 +51,7 @@ class Chaoxing:
             save_users(usernm=self.usernm, passwd=self.passwd)
             return True
         else:
-            self.logger.error("登录失败：" + resp.json())
+            self.logger.error("登录失败：" + str(resp.json()))
             return False
 
     def status(self):
