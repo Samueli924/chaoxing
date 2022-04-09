@@ -12,6 +12,11 @@ def do_work(chaoxingAPI):
     for mission in chaoxingAPI.missions:
         # logger.info("开始读取章节信息")
         knowledge_raw = chaoxingAPI.get_mission(mission['id'], chaoxingAPI.selected_course['key'])  # 读取章节信息
+        if "data" not in knowledge_raw:
+            print("课程信息中不存在data键\n请截图以下内容，在Github或Telegram中向作者提交反馈，谢谢")
+            print(knowledge_raw)
+            input("点击回车键退出")
+            exit()
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
             # logger.info("开始读取标签信息")
@@ -78,4 +83,5 @@ if __name__ == '__main__':
                 chaoxing.speed = int(input("当前倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:"))
                 logger.info("开始学习")
                 do_work(chaoxing)   # 开始学习
+    input("任务已结束，请点击回车键退出程序")
 
