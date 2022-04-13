@@ -43,6 +43,9 @@ def do_work(chaoxingAPI):
                     attachment['objectId'],
                     attachments['defaults']['fid']
                 )
+                if "duration" not in video_info or "jobid" not in attachment:
+                    continue
+
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
