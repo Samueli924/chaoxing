@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+#import sys
 from hashlib import md5
 from os import mkdir
 from os.path import exists
@@ -58,7 +59,12 @@ def init_all_path(init_path):
 
 
 class Logger:
-    def __init__(self, name, show=True, save=True, debug=False):
+    def __init__(self, name, debug, show=True, save=True ):
+# Dammit defender
+#        debug = False
+#       if len(sys.argv)>1: # 懒得用argparse呜
+#            if str(sys.argv[1]) == "--debug" or str(sys.arg1) == "-debug" or str(sys.arg1) == "--Debug"or str(sys.arg1) == "-Debug":
+#                debug = True
         """
         日志记录系统
         :param name: 日志保存时使用的Name
@@ -72,10 +78,10 @@ class Logger:
         self.logger.setLevel(logging.DEBUG)
         if show:
             sh = logging.StreamHandler()
-            # if debug:
-            #     sh.setLevel(logging.DEBUG)
-            # else:
-            sh.setLevel(logging.INFO)
+            if debug:
+                sh.setLevel(logging.DEBUG)
+            else:
+                sh.setLevel(logging.INFO)
             sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
             self.logger.addHandler(sh)
         if save:

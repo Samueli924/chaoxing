@@ -13,10 +13,10 @@ from utils.functions import pretty_print, sort_missions, get_enc_time, show_prog
 
 
 class Chaoxing:
-    def __init__(self, usernm, passwd):
+    def __init__(self, usernm, passwd, debug):
         self.usernm = usernm
         self.passwd = passwd
-        self.logger = Logger("ChaoxingAPI")
+        self.logger = Logger("ChaoxingAPI",debug)
         self.session = None
         self.uid = None
         self.cookies = None
@@ -44,7 +44,9 @@ class Chaoxing:
                 "t": "true",
                 "forbidotherlogin": "0",
                 "validate": ""}
+        self.logger.debug("发送登录数据")
         resp = self.session.post(url, data=data)
+        self.logger.debug("收到返回数据")
         if resp.json()["status"]:
             self.uid = resp.cookies['_uid']
             self.cookies = dict_from_cookiejar(resp.cookies)

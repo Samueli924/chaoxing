@@ -1,5 +1,6 @@
 import random
 import time
+import argparse
 
 import utils.functions as ft
 from api.chaoxing import Chaoxing
@@ -62,13 +63,24 @@ def do_work(chaoxingAPI):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='chaoxing-xuexitong')
+    parser.add_argument('-debug','--debug', action='store_true', help='Enable debug output in console')
+    parser.add_argument('--no-logo', action='store_false', help='Disable Boot logo')
+    args = parser.parse_args()
+    debug = args.debug
+    logo = args.no_logo
     try:
         ft.init_all_path(["saves", "logs"])  # 检查文件夹
-        logger = ft.Logger("main")  # 初始化日志类
-        ft.title_show()     # 显示头
-        logger.info("正在获取用户数据...")
+        logger = ft.Logger("main",debug)  # 初始化日志类
+        if debug:
+            logger.debug("已启用debug输出")
+        if logo:
+            ft.title_show()     # 显示头
+        else:
+            logger.info("已关闭启动LOGO")
+        logger.info("正在获取本地用户数据...")
         usernm, passwd = ft.load_users()    # 获取账号密码
-        chaoxing = Chaoxing(usernm, passwd)     # 实例化超星API
+        chaoxing = Chaoxing(usernm, passwd, debug)     # 实例化超星API
         chaoxing.init_explorer()    # 实例化浏览Explorer
         logger.info("开始登录")
         if chaoxing.login():    # 登录
