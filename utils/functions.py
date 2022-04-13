@@ -5,7 +5,7 @@ import time
 from hashlib import md5
 from os import mkdir
 from os.path import exists
-
+import random
 from natsort import natsorted
 
 
@@ -203,3 +203,8 @@ def show_progress(name, current, total):
         print("\r" + f"当前任务： {name} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
 
 
+def pause(start: int, end: int):
+    __temp = random.randint(start, end)
+    print(f"等待{__temp}秒")
+    time.sleep(__temp)
+    return True
