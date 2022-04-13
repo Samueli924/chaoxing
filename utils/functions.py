@@ -120,7 +120,8 @@ def load_users():
         users = os.listdir("saves")
         print("-" * 40)
         for index, user in enumerate(users):
-            print(f"{index + 1}. {user}")
+            sec_user = "%s****%s"%(user[:3],user[7:])
+            print(f"{index + 1}. {sec_user}")
         print("-" * 40)
         num = input("请输入要登录的用户序号，新建请输入直接点击回车键")
         if not num:
@@ -134,7 +135,7 @@ def load_users():
     else:
         usernm = input("请输入手机号")
         passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
-    return usernm, passwd
+    return usernm, sec_user, passwd
 
 
 def load_finished(usernm):
