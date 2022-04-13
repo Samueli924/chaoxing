@@ -62,6 +62,7 @@ class Chaoxing:
         :return:
         """
         if not re.findall("<title>用户登录</title>", self.session.get("https://i.chaoxing.com/base").text):
+            self.logger.debug("用户Cookies有效")
             return True
         else:
             return False

@@ -3,7 +3,6 @@ import logging
 import os
 import time
 import maskpass
-#import sys
 from hashlib import md5
 from os import mkdir
 from os.path import exists
@@ -11,9 +10,10 @@ import random
 from natsort import natsorted
 
 
-def title_show():
-    print("-"*120 + "\n")
-    print("""                                                                                 ,---.-,                         ,--, 
+def title_show(logo):
+    if logo:
+        print("-"*120 + "\n")
+        print("""                                                                                 ,---.-,                         ,--, 
   .--.--.                         ____                           ,--,           '   ,'  '.       ,----,        ,--.'| 
  /  /    '.                     ,'  , `.                       ,--.'|     ,--, /   /      \    .'   .' \    ,--,  | : 
 |  :  /`. /                  ,-+-,.' _ |        ,--,           |  | :   ,--.'|.   ;  ,/.  :  ,----,'    |,---.'|  : ' 
@@ -27,9 +27,11 @@ def title_show():
   `--'---' ;  :   .'   \|   ;/         :  ,      .-./|   :    ||  ,   / ;  :    ;  |   |  '|   :    .'         |  : ; 
            |  ,     .-./'---'           `--`----'     \   \  /  ---`-'  |  ,   /   ;   |.' ;   | .'            '  ,/  
             `--`---'                                   `----'            ---`-'    '---'   `---'               '--'   """)
-    print("\n" + "-"*120)
+        print("\n" + "-"*120)
+    else:
+        print("\n")
     print("欢迎使用Samueli924/chaoxing\n对代码有任何疑问或建议，请前往https://github.com/Samueli924/chaoxing进行反馈")
-    print("如果喜欢这段代码，请给我的repo一个小小的Star，谢谢\n")
+    print("如果喜欢这个项目，请给我的repo一个小小的Star，谢谢\n")
 
 
 def check_path(path: str, file: bool = True):
@@ -61,17 +63,12 @@ def init_all_path(init_path):
 
 class Logger:
     def __init__(self, name, debug, show=True, save=True ):
-# Dammit defender
-#        debug = False
-#       if len(sys.argv)>1: # 懒得用argparse呜
-#            if str(sys.argv[1]) == "--debug" or str(sys.arg1) == "-debug" or str(sys.arg1) == "--Debug"or str(sys.arg1) == "-Debug":
-#                debug = True
         """
         日志记录系统
         :param name: 日志保存时使用的Name
+        :param debug: 控制台输出等级传参 
         :param show: 是否在控制台显示日志
         :param save: 是否将日志保存至本地
-        :param debug: 是否开启DEBUG模式
         """
         log_path = f"logs/{name}.log"
         self.logger = logging.getLogger(name)
