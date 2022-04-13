@@ -79,11 +79,12 @@ if __name__ == '__main__':
         else:
             logger.info("已关闭启动LOGO")
         logger.info("正在获取本地用户数据...")
-        usernm, passwd = ft.load_users()    # 获取账号密码
+        usernm, secname, passwd = ft.load_users()    # 获取账号密码
         chaoxing = Chaoxing(usernm, passwd, debug)     # 实例化超星API
         chaoxing.init_explorer()    # 实例化浏览Explorer
         logger.info("开始登录")
         if chaoxing.login():    # 登录
+            logger.info("已登录账户：" +secname)
             logger.info("开始读取所有课程")
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("开始选课")
