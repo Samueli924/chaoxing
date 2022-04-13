@@ -115,18 +115,24 @@ def save_users(usernm, passwd):
     return True
 
 
-def load_users():
+def load_users(hide):
     if os.listdir("saves"):
         users = os.listdir("saves")
         print("-" * 40)
         for index, user in enumerate(users):
-            sec_user = "%s****%s"%(user[:3],user[7:])
+            if hide:
+                sec_user = "%s****%s"%(user[:3],user[7:])
+            else:
+                sec_user = user
             print(f"{index + 1}. {sec_user}")
         print("-" * 40)
         num = input("请输入要登录的用户序号，新建请输入直接点击回车键")
         if not num:
             usernm = input("请输入手机号")
-            passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+            if hide:
+                passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+            else:
+                passwd = input("请输入密码")
         else:
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
                 __temp = json.loads(f.read())
@@ -134,7 +140,10 @@ def load_users():
                 passwd = __temp["passwd"]
     else:
         usernm = input("请输入手机号")
-        passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+        if hide:
+            passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+        else:
+            passwd = input("请输入密码")
     return usernm, sec_user, passwd
 
 
