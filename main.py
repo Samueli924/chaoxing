@@ -17,7 +17,7 @@ def do_work(chaoxingAPI):
             exit()
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
-            # logger.info("开始读取标签信息")
+            print("开始读取标签信息")
             knowledge_card_text = chaoxingAPI.get_knowledge(
                 chaoxingAPI.selected_course['key'],
                 chaoxingAPI.selected_course['content']['course']['data'][0]['id'],
@@ -59,7 +59,6 @@ def do_work(chaoxingAPI):
                     chaoxingAPI.speed
                 )
                 ft.pause(1, 3)
-        ft.pause(2, 4)
 
 
 if __name__ == '__main__':
