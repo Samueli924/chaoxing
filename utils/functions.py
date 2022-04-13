@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+import maskpass
 #import sys
 from hashlib import md5
 from os import mkdir
@@ -124,7 +125,7 @@ def load_users():
         num = input("请输入要登录的用户序号，新建请输入直接点击回车键")
         if not num:
             usernm = input("请输入手机号")
-            passwd = input("请输入密码")
+            passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
         else:
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
                 __temp = json.loads(f.read())
@@ -132,7 +133,7 @@ def load_users():
                 passwd = __temp["passwd"]
     else:
         usernm = input("请输入手机号")
-        passwd = input("请输入密码")
+        passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
     return usernm, passwd
 
 
