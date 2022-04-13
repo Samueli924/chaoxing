@@ -12,10 +12,8 @@ def do_work(chaoxingAPI):
     for mission in chaoxingAPI.missions:
         # logger.info("开始读取章节信息")
         knowledge_raw = chaoxingAPI.get_mission(mission['id'], chaoxingAPI.selected_course['key'])  # 读取章节信息
-        if "data" not in knowledge_raw:
-            print("课程信息中不存在data键\n请截图以下内容，在Github或Telegram中向作者提交反馈，谢谢")
-            print(knowledge_raw)
-            input("点击回车键退出")
+        if "data" not in knowledge_raw and "error" in knowledge_raw:
+            input("当前课程需要认证，请在学习通客户端中验证码认证后再运行本课程\n点击回车键退出程序")
             exit()
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
@@ -34,21 +32,20 @@ def do_work(chaoxingAPI):
             print(f'\n当前章节:{mission["label"]}:{mission["name"]}')
             for attachment in attachments['attachments']:   # 非视频任务跳过
                 if attachment.get('type') != 'video':
-                    # print(f"\n当前任务:{attachment['property']['name']}非视频任务")
+                    print("跳过非视频任务")
                     continue
-                # if attachment['jobid'] in done:
-                #     print(f"\n当前视频:{attachment['property']['name']}存在历史记录")
-                #     continue
                 print(f"\n当前视频:{attachment['property']['name']}")
                 if attachment.get('isPassed'):
+                    print("当前视频任务过去已完成")
                     ft.show_progress(attachment['property']['name'], 1, 1)
-                    # done.append(attachment['jobid'])
-                    # ft.save_finished(chaoxingAPI.usernm, done)
                     continue
                 video_info = chaoxingAPI.get_d_token(
                     attachment['objectId'],
                     attachments['defaults']['fid']
                 )
+                if "jobid" not in attachments['attachments'][0]:
+                    print("当前Attachment不存在jobid,已跳过")
+                    continue
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
@@ -61,9 +58,8 @@ def do_work(chaoxingAPI):
                     attachment['property']['name'],
                     chaoxingAPI.speed
                 )
-                # done.append(attachment['jobid'])
-                # ft.save_finished(chaoxingAPI.usernm, done)
-        time.sleep(random.randint(1, 3))
+                ft.pause(1, 5)
+        ft.pause(3, 7)
 
 
 if __name__ == '__main__':
