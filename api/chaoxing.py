@@ -138,6 +138,15 @@ class Chaoxing:
         return md5(
             f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]".encode()).hexdigest()
 
+    def add_log(self, personid, courseid, classid, encode):
+        log_url = f"https://fystat-ans.chaoxing.com/log/setlog?personid={personid}&courseId={courseid}&classId={classid}&encode={encode}"
+        resp = self.session.get(url=log_url)
+        if "success" in resp.text:
+            print("学习记录录入成功")
+            return True
+        else:
+            print("学习记录录入失败")
+
     def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
         # print(url)
