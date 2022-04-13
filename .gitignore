@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 logs/
 saves/
+build/
+dist/
+*.spec
