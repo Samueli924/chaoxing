@@ -58,8 +58,8 @@ def do_work(chaoxingAPI):
                     attachment['property']['name'],
                     chaoxingAPI.speed
                 )
-                ft.pause(1, 5)
-        ft.pause(3, 7)
+                ft.pause(1, 3)
+        ft.pause(2, 4)
 
 
 if __name__ == '__main__':
