@@ -126,7 +126,7 @@ def load_users(hide):
                 sec_user = user
             print(f"{index + 1}. {sec_user}")
         print("-" * 40)
-        num = input("请输入要登录的用户序号，新建请输入直接点击回车键")
+        num = input("请输入要登录的用户序号，新建用户请直接点击回车键")
         if not num:
             usernm = input("请输入手机号")
             if hide:
