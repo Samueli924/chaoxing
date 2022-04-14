@@ -92,7 +92,13 @@ if __name__ == '__main__':
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("进行选课")
                 if chaoxing.select_course():    # 选择要学习的课程
-                    chaoxing.speed = int(input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:"))
+                    speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:")
+                    if not speed:
+                        chaoxing.speed = 1
+                        logger.info("已使用默认速率")
+                    else:
+                        chaoxing.speed = int(speed)
+                    logger.debug("当前速率："+str(chaoxing.speed)+"倍速")
                     logger.info("开始学习")
                     do_work(chaoxing)   # 开始学习
         input("任务已结束，请点击回车键退出程序")
