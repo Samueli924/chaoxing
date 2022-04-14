@@ -14,7 +14,10 @@ def do_work(chaoxingAPI):
         logger.debug("开始读取章节信息")
         knowledge_raw = chaoxingAPI.get_mission(mission['id'], chaoxingAPI.selected_course['key'])  # 读取章节信息
         if "data" not in knowledge_raw and "error" in knowledge_raw:
-            input("当前课程需要认证，请在学习通客户端中验证码认证后再运行本课程\n点击回车键退出程序")
+            logger.debug("---knowledge_raw info begin---")
+            logger.debug(knowledge_raw)
+            logger.debug("---knowledge_raw info end---")
+            input("章节数据错误,可能是课程存在验证码,请在客户端中完成验证后再运行\n若问题仍然存在,请附带日志文件联系作者\n点击回车键退出程序")
             exit()
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
