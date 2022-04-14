@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+import maskpass
 from hashlib import md5
 from os import mkdir
 from os.path import exists
@@ -9,9 +10,10 @@ import random
 from natsort import natsorted
 
 
-def title_show():
-    print("-"*120 + "\n")
-    print("""                                                                                 ,---.-,                         ,--, 
+def title_show(logo):
+    if logo:
+        print("-"*120 + "\n")
+        print("""                                                                                 ,---.-,                         ,--, 
   .--.--.                         ____                           ,--,           '   ,'  '.       ,----,        ,--.'| 
  /  /    '.                     ,'  , `.                       ,--.'|     ,--, /   /      \    .'   .' \    ,--,  | : 
 |  :  /`. /                  ,-+-,.' _ |        ,--,           |  | :   ,--.'|.   ;  ,/.  :  ,----,'    |,---.'|  : ' 
@@ -25,9 +27,11 @@ def title_show():
   `--'---' ;  :   .'   \|   ;/         :  ,      .-./|   :    ||  ,   / ;  :    ;  |   |  '|   :    .'         |  : ; 
            |  ,     .-./'---'           `--`----'     \   \  /  ---`-'  |  ,   /   ;   |.' ;   | .'            '  ,/  
             `--`---'                                   `----'            ---`-'    '---'   `---'               '--'   """)
-    print("\n" + "-"*120)
+        print("\n" + "-"*120)
+    else:
+        print("\n")
     print("欢迎使用Samueli924/chaoxing\n对代码有任何疑问或建议，请前往https://github.com/Samueli924/chaoxing进行反馈")
-    print("如果喜欢这段代码，请给我的repo一个小小的Star，谢谢\n")
+    print("如果喜欢这个项目，请给我的repo一个小小的Star，谢谢\n")
 
 
 def check_path(path: str, file: bool = True):
@@ -58,13 +62,13 @@ def init_all_path(init_path):
 
 
 class Logger:
-    def __init__(self, name, show=True, save=True, debug=False):
+    def __init__(self, name, debug, show=True, save=True ):
         """
         日志记录系统
         :param name: 日志保存时使用的Name
+        :param debug: 控制台输出等级传参 
         :param show: 是否在控制台显示日志
         :param save: 是否将日志保存至本地
-        :param debug: 是否开启DEBUG模式
         """
         log_path = f"logs/{name}.log"
         self.logger = logging.getLogger(name)
@@ -72,10 +76,10 @@ class Logger:
         self.logger.setLevel(logging.DEBUG)
         if show:
             sh = logging.StreamHandler()
-            # if debug:
-            #     sh.setLevel(logging.DEBUG)
-            # else:
-            sh.setLevel(logging.INFO)
+            if debug:
+                sh.setLevel(logging.DEBUG)
+            else:
+                sh.setLevel(logging.INFO)
             sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
             self.logger.addHandler(sh)
         if save:
@@ -108,17 +112,24 @@ def save_users(usernm, passwd):
     return True
 
 
-def load_users():
+def load_users(hide):
     if os.listdir("saves"):
         users = os.listdir("saves")
         print("-" * 40)
         for index, user in enumerate(users):
-            print(f"{index + 1}. {user}")
+            if hide:
+                sec_user = "%s****%s"%(user[:3],user[7:])
+            else:
+                sec_user = user
+            print(f"{index + 1}. {sec_user}")
         print("-" * 40)
-        num = input("请输入要登录的用户序号，新建请输入直接点击回车键")
+        num = input("请输入要登录的用户序号，新建用户请直接点击回车键")
         if not num:
             usernm = input("请输入手机号")
-            passwd = input("请输入密码")
+            if hide:
+                passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+            else:
+                passwd = input("请输入密码")
         else:
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
                 __temp = json.loads(f.read())
@@ -126,8 +137,11 @@ def load_users():
                 passwd = __temp["passwd"]
     else:
         usernm = input("请输入手机号")
-        passwd = input("请输入密码")
-    return usernm, passwd
+        if hide:
+            passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+        else:
+            passwd = input("请输入密码")
+    return usernm, sec_user, passwd
 
 
 def load_finished(usernm):
