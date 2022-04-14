@@ -62,11 +62,11 @@ def init_all_path(init_path):
 
 
 class Logger:
-    def __init__(self, name, debug, show=True, save=True ):
+    def __init__(self, name, debug, show, save=True ):
         """
         日志记录系统
         :param name: 日志保存时使用的Name
-        :param debug: 控制台输出等级传参 
+        :param debug: 控制台输出等级传参    #有人懒得在外面传loghandler
         :param show: 是否在控制台显示日志
         :param save: 是否将日志保存至本地
         """
