@@ -127,8 +127,10 @@ def load_users(hide):
         if not num:
             usernm = input("请输入手机号")
             if hide:
+                sec_user = "%s****%s"%(usernm[:3],usernm[7:])
                 passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
             else:
+                sec_user = usernm
                 passwd = input("请输入密码")
         else:
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
@@ -138,8 +140,10 @@ def load_users(hide):
     else:
         usernm = input("请输入手机号")
         if hide:
+            sec_user = "%s****%s"%(usernm[:3],usernm[7:])
             passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
         else:
+            sec_user = usernm
             passwd = input("请输入密码")
     return usernm, sec_user, passwd
 
