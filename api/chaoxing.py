@@ -13,10 +13,10 @@ from utils.functions import pretty_print, sort_missions, get_enc_time, show_prog
 
 
 class Chaoxing:
-    def __init__(self, usernm, passwd, debug):
+    def __init__(self, usernm, passwd, debug, show):
         self.usernm = usernm
         self.passwd = passwd
-        self.logger = Logger("ChaoxingAPI",debug)
+        self.logger = Logger("ChaoxingAPI", debug, show)
         self.session = None
         self.uid = None
         self.cookies = None
