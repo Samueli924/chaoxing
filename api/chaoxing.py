@@ -189,6 +189,7 @@ class Chaoxing:
     def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed):
         sec = 58
         playingTime = 0
+        print("当前播放速率："+str(speed)+"倍速")
         while True:
             if sec >= 58:
                 sec = 0
@@ -205,7 +206,7 @@ class Chaoxing:
                 )
                 # print(res)
                 if res.get('isPassed'):
-                    show_progress(name, video_duration, video_duration)
+                    show_progress(name, video_duration, video_duration, speed)
                     break
                 elif res.get('error'):
                     self.logger.debug("---result info begin---")
@@ -213,7 +214,7 @@ class Chaoxing:
                     self.logger.debug("---result info end---")
                     raise Exception('出现错误')
                 continue
-            show_progress(name, playingTime, video_duration)
+            show_progress(name, playingTime, video_duration, speed)
             playingTime += 1 * self.speed
             sec += 1 * self.speed
             time.sleep(1)
