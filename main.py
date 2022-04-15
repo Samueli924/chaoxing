@@ -14,7 +14,10 @@ def do_work(chaoxingAPI):
         logger.debug("开始读取章节信息")
         knowledge_raw = chaoxingAPI.get_mission(mission['id'], chaoxingAPI.selected_course['key'])  # 读取章节信息
         if "data" not in knowledge_raw and "error" in knowledge_raw:
-            input("当前课程需要认证，请在学习通客户端中验证码认证后再运行本课程\n点击回车键退出程序")
+            logger.debug("---knowledge_raw info begin---")
+            logger.debug(knowledge_raw)
+            logger.debug("---knowledge_raw info end---")
+            input("章节数据错误,可能是课程存在验证码,请在客户端中完成验证后再运行\n若问题仍然存在,请附带日志文件联系作者\n点击回车键退出程序")
             exit()
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
@@ -65,25 +68,29 @@ def do_work(chaoxingAPI):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='chaoxing-xuexitong')  # 命令行传参
     parser.add_argument('-debug','--debug', action='store_true', help='Enable debug output in console')
+    parser.add_argument('--no-log', action='store_false', help='Disable Console log')
     parser.add_argument('--no-logo', action='store_false', help='Disable Boot logo')
     parser.add_argument('--no-sec', action='store_false', help='Disable all security feature')
 
     args = parser.parse_args()  # 定义专用参数变量
     debug = args.debug  # debug输出  Default:False
+    show = args.no_log # 显示控制台log Default:True
     logo = args.no_logo # 展示启动LOGO Default:True
     hideinfo = args.no_sec  # 启用隐私保护 Default:True
 
     try:
         ft.init_all_path(["saves", "logs"])  # 检查文件夹
-        logger = ft.Logger("main",debug)  # 初始化日志类
+        logger = ft.Logger("main",debug,show)  # 初始化日志类
         if debug:
             logger.debug("已启用debug输出")
+        if not show:
+            logger.debug("已关闭控制台日志")
         ft.title_show(logo)     # 显示头
         if not logo:
             logger.debug("已关闭启动LOGO")
         logger.info("正在读取本地用户数据...")
         usernm, secname, passwd = ft.load_users(hideinfo)    # 获取账号密码
-        chaoxing = Chaoxing(usernm, passwd, debug)     # 实例化超星API
+        chaoxing = Chaoxing(usernm, passwd, debug, show)     # 实例化超星API
         chaoxing.init_explorer()    # 实例化浏览Explorer
         logger.info("登陆中")
         if chaoxing.login():    # 登录
@@ -92,7 +99,13 @@ if __name__ == '__main__':
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("进行选课")
                 if chaoxing.select_course():    # 选择要学习的课程
-                    chaoxing.speed = int(input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:"))
+                    speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:")
+                    if not speed:
+                        chaoxing.speed = 1
+                        logger.info("已使用默认速率")
+                    else:
+                        chaoxing.speed = int(speed)
+                    logger.debug("当前速率："+str(chaoxing.speed)+"倍速")
                     logger.info("开始学习")
                     do_work(chaoxing)   # 开始学习
         input("任务已结束，请点击回车键退出程序")

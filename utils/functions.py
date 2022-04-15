@@ -62,11 +62,11 @@ def init_all_path(init_path):
 
 
 class Logger:
-    def __init__(self, name, debug, show=True, save=True ):
+    def __init__(self, name, debug, show, save=True ):
         """
         日志记录系统
         :param name: 日志保存时使用的Name
-        :param debug: 控制台输出等级传参 
+        :param debug: 控制台输出等级传参    #有人懒得在外面传loghandler
         :param show: 是否在控制台显示日志
         :param save: 是否将日志保存至本地
         """
@@ -127,8 +127,10 @@ def load_users(hide):
         if not num:
             usernm = input("请输入手机号")
             if hide:
+                sec_user = "%s****%s"%(usernm[:3],usernm[7:])
                 passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
             else:
+                sec_user = usernm
                 passwd = input("请输入密码")
         else:
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
@@ -138,8 +140,10 @@ def load_users(hide):
     else:
         usernm = input("请输入手机号")
         if hide:
+            sec_user = "%s****%s"%(usernm[:3],usernm[7:])
             passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
         else:
+            sec_user = usernm
             passwd = input("请输入密码")
     return usernm, sec_user, passwd
 
@@ -211,11 +215,11 @@ def show_progress(name, current, total):
     percent = int(current / total * 100)
     length = int(percent * 40 // 100)
     progress = ("#" * length).ljust(40, " ")
+    remain = total - current
     if current >= total:
         print("\r" + f"当前任务： {name} 已完成".ljust(100, " "))
     else:
-        print("\r" + f"当前任务： {name} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
-
+        print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
 
 def pause(start: int, end: int):
     __temp = random.randint(start, end)
