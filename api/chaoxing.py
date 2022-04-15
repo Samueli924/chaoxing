@@ -125,7 +125,11 @@ class Chaoxing:
 
     def get_attachments(self, text):
         if res := re.search(r'window\.AttachmentSetting =({\"attachments\":.*})', text):
-            return json.loads(res[1])
+            attachments = json.loads(res[1])
+            self.logger.debug("---attachments info begin---")
+            self.logger.debug(attachments)
+            self.logger.debug("---attachments info end---")
+            return attachments
 
     def get_d_token(self, objectid, fid):
         url = 'https://mooc1-api.chaoxing.com/ananas/status/{}'.format(objectid)
@@ -134,7 +138,13 @@ class Chaoxing:
             'flag': 'normal',
             '_dc': int(round(time.time() * 1000))
         }
-        return self.session.get(url, params=params).json()
+        self.logger.debug("获取视频信息")
+        d_token = self.session.get(url, params=params).json()
+        self.logger.debug("视频信息已获取")
+        self.logger.debug("---d_token info begin---")
+        self.logger.debug(d_token)
+        self.logger.debug("---d_token info end---")
+        return d_token
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
         # https://github.com/ZhyMC/chaoxing-xuexitong-autoflush/blob/445c8d8a8cc63472dd90cdf2a6ab28542c56d93b/logger.js
@@ -143,12 +153,17 @@ class Chaoxing:
 
     def add_log(self, personid, courseid, classid, encode):
         log_url = f"https://fystat-ans.chaoxing.com/log/setlog?personid={personid}&courseId={courseid}&classId={classid}&encode={encode}"
+        self.logger.debug("录入学习记录")
         resp = self.session.get(url=log_url)
+        self.logger.debug("收到录入结果")
         if "success" in resp.text:
             print("学习记录录入成功")
             return True
         else:
             print("学习记录录入失败")
+            self.logger.debug("---resp.text info begin---")
+            self.logger.debug(resp.text)
+            self.logger.debug("---resp.text info end---")
 
     def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
@@ -193,6 +208,9 @@ class Chaoxing:
                     show_progress(name, video_duration, video_duration)
                     break
                 elif res.get('error'):
+                    self.logger.debug("---result info begin---")
+                    self.logger.debug(res.get)
+                    self.logger.debug("---result info end---")
                     raise Exception('出现错误')
                 continue
             show_progress(name, playingTime, video_duration)
