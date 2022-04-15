@@ -215,11 +215,11 @@ def show_progress(name, current, total, speed):
     percent = int(current / total * 100)
     length = int(percent * 40 // 100)
     progress = ("#" * length).ljust(40, " ")
-    remain = (total - current) / speed
-    if current >= total:
-        print("\r" + f"当前任务： {name} 已完成".ljust(100, " "),end="", flush=True)
+    remain = (total - current)
+    if current >= total and remain < 1:
+        print("\r" + f"当前任务： {name} 已完成".ljust(100, " "))
     else:
-        print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
+        print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain / speed)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
 
 def pause(start: int, end: int):
     __temp = random.randint(start, end)
