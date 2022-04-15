@@ -47,9 +47,14 @@ def do_work(chaoxingAPI):
                     attachment['objectId'],
                     attachments['defaults']['fid']
                 )
-                if "duration" not in video_info or "jobid" not in attachment:
+                jobid = None
+                if "jobid" in attachments:
+                    jobid = attachments["jobid"]
+                if "jobid" in attachment:
+                    jobid = attachment["jobid"]
+                if not jobid:
+                    print("未找到jobid，已跳过当前任务点")
                     continue
-
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
