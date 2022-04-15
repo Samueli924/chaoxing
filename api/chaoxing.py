@@ -189,6 +189,7 @@ class Chaoxing:
     def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed):
         sec = 58
         playingTime = 0
+        print("当前播放速率："+str(speed)+"倍速")
         while True:
             if sec >= 58:
                 sec = 0

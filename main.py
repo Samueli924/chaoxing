@@ -34,8 +34,11 @@ def do_work(chaoxingAPI):
             if not attachments.get('attachments'):
                 continue
             print(f'\n当前章节:{mission["label"]}:{mission["name"]}')
-            for attachment in attachments['attachments']:   # 非视频任务跳过
-                if attachment.get('type') != 'video':
+            for attachment in attachments['attachments']:
+            #logger.debug("---attachment info begin---")
+            #logger.debug(attachment)
+            #logger.debug("---attachment info end---")
+                if attachment.get('type') != 'video': # 非视频任务跳过
                     print("跳过非视频任务")
                     continue
                 print(f"\n当前视频:{attachment['property']['name']}")
@@ -48,13 +51,28 @@ def do_work(chaoxingAPI):
                     attachments['defaults']['fid']
                 )
                 jobid = None
-                if "jobid" in attachments:
+                if "jobid" in attachments:  # it's stupid
                     jobid = attachments["jobid"]
-                if "jobid" in attachment:
-                    jobid = attachment["jobid"]
+                else: 
+                    if "jobid" in attachment:
+                        jobid = attachment["jobid"]
+                    else:
+                        if "jobid" in attachment['property']:
+                            jobid = attachment['property']['jobid']
+                        else:
+                            if "'_jobid'" in attachment['property']:
+                                jobid = attachment['property']['_jobid']
                 if not jobid:
                     print("未找到jobid，已跳过当前任务点")
                     continue
+                if adopt:
+                    logger.debug("已启用自适应速率")
+                    if attachment['property']['doublespeed'] == True:
+                        print("当前视频支持倍速播放,已切换速率")
+                        chaoxing.speed = 2
+                    else:
+                        print("当前视频不支持倍速播放,跳过")
+                        chaoxing.speed = set_speed
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
@@ -68,16 +86,19 @@ def do_work(chaoxingAPI):
                     chaoxingAPI.speed
                 )
                 ft.pause(1, 3)
+                chaoxing.speed = set_speed  # 预防ERR
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='chaoxing-xuexitong')  # 命令行传参
     parser.add_argument('-debug','--debug', action='store_true', help='Enable debug output in console')
+    parser.add_argument('--no-adopt', action='store_false', help='Disable adopt speed')
     parser.add_argument('--no-log', action='store_false', help='Disable Console log')
     parser.add_argument('--no-logo', action='store_false', help='Disable Boot logo')
     parser.add_argument('--no-sec', action='store_false', help='Disable all security feature')
 
     args = parser.parse_args()  # 定义专用参数变量
+    enable_adopt = args.no_adopt # 启用自适应速率 Default:True
     debug = args.debug  # debug输出  Default:False
     show = args.no_log # 显示控制台log Default:True
     logo = args.no_logo # 展示启动LOGO Default:True
@@ -93,6 +114,8 @@ if __name__ == '__main__':
         ft.title_show(logo)     # 显示头
         if not logo:
             logger.debug("已关闭启动LOGO")
+        if not enable_adopt:
+            logger.debug("已关闭自适应速率")
         logger.info("正在读取本地用户数据...")
         usernm, secname, passwd = ft.load_users(hideinfo)    # 获取账号密码
         chaoxing = Chaoxing(usernm, passwd, debug, show)     # 实例化超星API
@@ -104,13 +127,21 @@ if __name__ == '__main__':
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("进行选课")
                 if chaoxing.select_course():    # 选择要学习的课程
-                    speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:")
-                    if not speed:
+                    set_speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:")
+                    if not set_speed or set_speed == 0:
                         chaoxing.speed = 1
+                        set_speed = 1
                         logger.info("已使用默认速率")
                     else:
-                        chaoxing.speed = int(speed)
+                        chaoxing.speed = int(set_speed)
+                        set_speed = int(set_speed)
                     logger.debug("当前设置速率："+str(chaoxing.speed)+"倍速")
+                    if enable_adopt and set_speed == 1 and input("是否启用自适应速率(当播放速率为1且视频支持倍速播放时,自动切换为两倍速)\n！注意 该功能可能存在风险！输入(Y/y)启用") == "Y" or "y":
+                        adopt = True
+                        logger.info("已启用自适应速率")
+                    else:
+                        adopt = False
+                        logger.info("已禁用自适应速率")
                     logger.info("开始学习")
                     do_work(chaoxing)   # 开始学习
         input("任务已结束，请点击回车键退出程序")
