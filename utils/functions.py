@@ -217,7 +217,7 @@ def show_progress(name, current, total, speed):
     progress = ("#" * length).ljust(40, " ")
     remain = (total - current) / speed
     if current >= total:
-        print("\r" + f"当前任务： {name} 已完成".ljust(100, " "))
+        print("\r" + f"当前任务： {name} 已完成".ljust(100, " "),end="", flush=True)
     else:
         print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
 
