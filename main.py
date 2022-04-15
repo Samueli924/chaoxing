@@ -41,7 +41,7 @@ def do_work(chaoxingAPI):
                 print(f"\n当前视频:{attachment['property']['name']}")
                 if attachment.get('isPassed'):
                     print("当前视频任务已完成")
-                    ft.show_progress(attachment['property']['name'], 1, 1)
+                    ft.show_progress(attachment['property']['name'], 1, 1, 1)
                     continue
                 video_info = chaoxingAPI.get_d_token(
                     attachment['objectId'],
@@ -110,7 +110,7 @@ if __name__ == '__main__':
                         logger.info("已使用默认速率")
                     else:
                         chaoxing.speed = int(speed)
-                    logger.debug("当前速率："+str(chaoxing.speed)+"倍速")
+                    logger.debug("当前设置速率："+str(chaoxing.speed)+"倍速")
                     logger.info("开始学习")
                     do_work(chaoxing)   # 开始学习
         input("任务已结束，请点击回车键退出程序")
