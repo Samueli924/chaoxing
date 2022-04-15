@@ -211,11 +211,11 @@ def sec2time(sec):
     return ret
 
 
-def show_progress(name, current, total):
+def show_progress(name, current, total, speed):
     percent = int(current / total * 100)
     length = int(percent * 40 // 100)
     progress = ("#" * length).ljust(40, " ")
-    remain = total - current
+    remain = (total - current) / speed
     if current >= total:
         print("\r" + f"当前任务： {name} 已完成".ljust(100, " "))
     else:
