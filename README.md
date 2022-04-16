@@ -27,10 +27,11 @@
 ## :books: 使用方法
 
 ### 源码运行(推荐)
-1. git clone 项目至本地
-2. pip install requirements.txt
-3. python main.py 运行程序
-4. 可选参数 -debug 开启DEBUG模式 --no-adopt 禁用自适应速率 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
+1. 提前准备： Python版本>=3.9 因为使用到了:=表达式。urllib3=1.25.11 因为后面的版本对代理的支持有变化。
+2. git clone 项目至本地
+3. pip install requirements.txt
+4. python main.py 运行程序
+5. 可选参数 -debug 开启DEBUG模式 --no-adopt 禁用自适应速率 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
 ## :question: FAQ(常见问题)
 
