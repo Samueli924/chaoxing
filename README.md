@@ -26,7 +26,11 @@
 
 ## :books: 使用方法
 
-[使用方法](https://samuelchen.cn/archives/samueli924chaoxing-readme)
+### 源码运行(推荐)
+1. git clone 项目至本地
+2. pip install requirements.txt
+3. python main.py 运行程序
+4. 可选参数 -debug 开启DEBUG模式 --no-adopt 禁用自适应速率 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
 ## :question: FAQ(常见问题)
 
