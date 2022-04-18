@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    tags:
-      - "*"
+
+
+
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -50,3 +51,8 @@ jobs:
           files: 'dist/chaoxing*'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.name }}
+          path: 'dist/chaoxing*'
