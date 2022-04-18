@@ -42,7 +42,7 @@ jobs:
         run: pyinstaller -F main.py -n  'chaoxing-${{github.ref_name}}-${{ matrix.name }}' --add-data version.txt
 
       - name: run ls
-        run: |K
+        run: |
           ls dist
           echo ${{github.ref}}
 
