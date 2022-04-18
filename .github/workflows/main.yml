@@ -31,10 +31,9 @@ jobs:
           python-version: '3.10'
           architecture: ${{matrix.architecture}}
       - name: Install requirements
-        run: pip install -r requirements.txt
-
-      - name: Install pyinstaller
-        run: pip install pyinstaller
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
 
       - name: Build bin
         run: pyinstaller -F main.py -n  'chaoxing-${{github.ref_name}}-${{ matrix.name }}'
