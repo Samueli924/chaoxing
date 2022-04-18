@@ -7,6 +7,8 @@ from hashlib import md5
 from os import mkdir
 from os.path import exists
 import random
+
+import requests
 from natsort import natsorted
 
 
@@ -30,8 +32,27 @@ def title_show(logo):
         print("\n" + "-"*120)
     else:
         print("\n")
-    print("欢迎使用Samueli924/chaoxing\n对代码有任何疑问或建议，请前往https://github.com/Samueli924/chaoxing进行反馈")
+    print("欢迎使用Samueli924/chaoxing",end="")
+    try:
+        with open('version.txt', encoding='utf-8') as file_obj:
+            contents = file_obj.read()
+            print(" v"+contents)
+            print("正在检查更新···", end="")
+            resp = requests.get("https://api.github.com/repos/Samueli924/chaoxing/releases/latest").json()
+            if resp["tag_name"] == contents:
+                print("已是最新版")
+            else:
+                print("\n检测到新版", resp["tag_name"],
+                      "请即时更新，下载地址：\nhttps://github.com/Samueli924/chaoxing/releases/latest\n复制到浏览器进行下载")
+                input("任务已结束，请点击回车键退出程序")
+                exit(1)
+    except Exception as re:
+        print()
+        # print(re)
+
+    print("对代码有任何疑问或建议，请前往https://github.com/Samueli924/chaoxing进行反馈")
     print("如果喜欢这个项目，请给我的repo一个小小的Star，谢谢\n")
+
 
 
 def check_path(path: str, file: bool = True):
