@@ -1,8 +1,6 @@
 name: CI
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [ main ]
   pull_request:
@@ -16,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ windows-latest]
+        os: [windows-latest]
         python-version: ['3.10']
         architecture: ['x64','x86']
         include:
@@ -31,8 +29,7 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Display Python version
-        run: python --version
+
       - name: Install requirements
         run: pip install -r requirements.txt
         
@@ -40,7 +37,15 @@ jobs:
         run: pip install pyinstaller
         
       - name: Build bin
-        run: pyinstaller -F main.py
+        run: pyinstaller -F main.py -n  'chaoxing-${{ matrix.os }}-${{ matrix.architecture }}'
   
-      - name: run
+      - name: run ls
         run: ls dist
+
+      - name: Publish
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+            files: 'dist/chaoxing*'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
