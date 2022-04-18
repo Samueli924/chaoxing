@@ -39,4 +39,4 @@ jobs:
         run: pyinstaller -F main.py
   
       - name: run
-        run: ls
+        run: ls dist
