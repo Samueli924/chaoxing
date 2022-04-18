@@ -38,7 +38,7 @@ jobs:
         
       - name: Build bin
         run: pyinstaller -F main.py -n  'chaoxing-${{ matrix.os }}-${{ matrix.architecture }}'
-  
+
       - name: run ls
         run: |
           ls dist
