@@ -18,10 +18,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ windows-latest]
         python-version: ['3.10']
         architecture: ['x64','x86']
-        
+        include:
+          - os: [ubuntu-latest,macos-latest]
+            python-version: [ '3.10' ]
+            architecture: ['x64']
+
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
