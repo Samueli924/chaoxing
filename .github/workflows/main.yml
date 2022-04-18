@@ -11,30 +11,32 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest]
-        python-version: ['3.10.4']
-        architecture: ['x64','x86']
         include:
+          - os: windows-latest
+            architecture: 'x86'
+            name: 'win-32'
+          - os: windows-latest
+            name: 'win-64'
           - os: ubuntu-latest
-            python-version: '3.10.4'
+            name: 'linux-64'
           - os: macos-latest
-            python-version: '3.10.4'
+            name: 'macos-64'
 
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.10'
 
       - name: Install requirements
         run: pip install -r requirements.txt
-        
+
       - name: Install pyinstaller
         run: pip install pyinstaller
-        
+
       - name: Build bin
-        run: pyinstaller -F main.py -n  'chaoxing-${{ matrix.os }}-${{ matrix.architecture }}'
+        run: pyinstaller -F main.py -n  'chaoxing-${{github.ref_name}}-${{ matrix.name }}'
 
       - name: run ls
         run: |
@@ -45,6 +47,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-            files: 'dist/chaoxing*'
+          files: 'dist/chaoxing*'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
