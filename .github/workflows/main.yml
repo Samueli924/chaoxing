@@ -41,8 +41,8 @@ jobs:
   
       - name: run ls
         run: |
-          - ls dist
-          - echo ${{github.ref}}
+          ls dist
+          echo ${{github.ref}}
 
       - name: Publish
         uses: softprops/action-gh-release@v1
