@@ -68,9 +68,10 @@ def do_work(chaoxingAPI):
                     continue
                 if adopt:
                     logger.debug("已启用自适应速率")
-                    if attachment['property']['doublespeed'] == True:
-                        print("当前视频支持倍速播放,已切换速率")
-                        chaoxing.speed = 2
+                    if "doublespeed" in attachment['property']:
+                        if attachment['property']['doublespeed']:
+                            print("当前视频支持倍速播放,已切换速率")
+                            chaoxing.speed = 2
                     else:
                         print("当前视频不支持倍速播放,跳过")
                         chaoxing.speed = set_speed
