@@ -172,7 +172,7 @@ class Chaoxing:
             'otherInfo': otherInfo,
             'playingTime': playingTime,
             'duration': duration,
-            'akid': None,
+            # 'akid': None,
             'jobid': jobid,
             'clipTime': '0_{}'.format(duration),
             'clazzId': clazzId,
@@ -180,10 +180,11 @@ class Chaoxing:
             'userid': userid,
             'isdrag': 0,
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
-            'rt': '0.9',
+            'rt': '1',  # 'rt': '0.9',  ??
             'dtype': 'Video',
             'view': 'json'
         }
+        # print:(url+params)
         return self.session.get(url, params=params).json()
 
     def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed):
