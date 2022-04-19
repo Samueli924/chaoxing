@@ -124,7 +124,7 @@ class Chaoxing:
         return self.session.get(url, params=params).text
 
     def get_attachments(self, text):
-        if res := re.search(r'window\.AttachmentSetting =({\"attachments\":.*})', text):
+        if res == re.search(r'window\.AttachmentSetting =({\"attachments\":.*})', text):
             attachments = json.loads(res[1])
             self.logger.debug("---attachments info begin---")
             self.logger.debug(attachments)
