@@ -30,16 +30,18 @@ jobs:
           python-version: '3.10'
           architecture: ${{matrix.architecture}}
 
-      - name: Add version file
-        run: echo '${{github.ref_name}}' > version.txt
+      - name: Add version
+        run: |
+          echo 'def get_ver():' >> ./utils/functions.py
+          echo '    return "${{github.ref_name}}"' >> ./utils/functions.py
 
       - name: Install requirements
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build bin
-        run: pyinstaller -F main.py -n  'chaoxing-${{github.ref_name}}-${{ matrix.name }}' --add-data version.txt;.
+      - name: Build win bin
+        run: pyinstaller -F main.py -n  'chaoxing-${{github.ref_name}}-${{ matrix.name }}'
 
       - name: run ls
         run: |
