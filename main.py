@@ -45,6 +45,7 @@ def do_work(chaoxingAPI):
                 if attachment.get('isPassed'):
                     print("当前视频任务已完成")
                     ft.show_progress(attachment['property']['name'], 1, 1, 1)
+                    ft.time.sleep(1)
                     continue
                 video_info = chaoxingAPI.get_d_token(
                     attachment['objectId'],
