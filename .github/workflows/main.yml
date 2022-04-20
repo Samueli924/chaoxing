@@ -15,12 +15,6 @@ jobs:
           - os: windows-latest
             architecture: 'x86'
             name: 'win32'
-          - os: windows-latest
-            name: 'win64'
-          - os: ubuntu-latest
-            name: 'linux64'
-          - os: macos-latest
-            name: 'macos64'
 
     steps:
       - uses: actions/checkout@v3
