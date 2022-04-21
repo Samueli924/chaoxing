@@ -7,6 +7,8 @@ from hashlib import md5
 from os import mkdir
 from os.path import exists
 import random
+import _thread
+import requests
 from natsort import natsorted
 
 
@@ -32,6 +34,27 @@ def title_show(logo):
         print("\n")
     print("欢迎使用Samueli924/chaoxing\n对代码有任何疑问或建议，请前往https://github.com/Samueli924/chaoxing进行反馈")
     print("如果喜欢这个项目，请给我的repo一个小小的Star，谢谢\n")
+    _thread.start_new_thread(check_ver,())
+
+
+def check_ver():
+    try:
+        # get_ver 函数是在github action中加入的
+        ver = get_ver()
+        latest_ver = requests.get("https://api.github.com/repos/Samueli924/chaoxing/releases/latest").json()["tag_name"]
+        if latest_ver != ver:
+            print("""
+     ------------------------------------------------------------------------
+     |              检测到新版程序  v{ver} -> v{latest_ver}                           |
+     |  下载地址：https://github.com/Samueli924/chaoxing/releases/latest      |
+     |            复制到浏览器打开下载                                          |
+     ------------------------------------------------------------------------
+            """.format(ver=ver, latest_ver=latest_ver))
+    except:
+        # 获取版本失败
+        print()
+
+
 
 
 def check_path(path: str, file: bool = True):
