@@ -8,6 +8,7 @@ from api.chaoxing import Chaoxing
 
 def do_work(chaoxingAPI):
     # done = list(ft.load_finished(chaoxingAPI.usernm))
+    logger.info("已选课程："+str(chaoxingAPI.selected_course['content']['course']['data'][0]['name']))
     logger.info("开始获取所有章节")
     chaoxingAPI.get_selected_course_data()  # 读取所有章节
     for mission in chaoxingAPI.missions:
@@ -33,7 +34,7 @@ def do_work(chaoxingAPI):
                 continue
             if not attachments.get('attachments'):
                 continue
-            print(f'\n当前章节:{mission["label"]}:{mission["name"]}')
+            print(f'\n当前章节：{mission["label"]}:{mission["name"]}')
             for attachment in attachments['attachments']:
             #logger.debug("---attachment info begin---")
             #logger.debug(attachment)
@@ -41,7 +42,7 @@ def do_work(chaoxingAPI):
                 if attachment.get('type') != 'video': # 非视频任务跳过
                     print("跳过非视频任务")
                     continue
-                print(f"\n当前视频:{attachment['property']['name']}")
+                print(f"\n当前视频：{attachment['property']['name']}")
                 if attachment.get('isPassed'):
                     print("当前视频任务已完成")
                     ft.show_progress(attachment['property']['name'], 1, 1, 1)
@@ -129,7 +130,7 @@ if __name__ == '__main__':
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("进行选课")
                 if chaoxing.select_course():    # 选择要学习的课程
-                    set_speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的整数学习倍速:")
+                    set_speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的学习倍速(倍数需为整数,0或直接回车将使用默认倍速)：")
                     if not set_speed or set_speed == 0:
                         chaoxing.speed = 1
                         set_speed = 1
