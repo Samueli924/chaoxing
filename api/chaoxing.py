@@ -83,8 +83,11 @@ class Chaoxing:
 
     def select_course(self):
         pretty_print(self.courses)
-        index = int(input("请输入您要学习的课程序号"))
+        index = int(input("请输入您要学习的课程序号："))
         self.selected_course = self.courses[index - 1]
+        self.logger.debug("---selected_course info begin---")
+        self.logger.debug(self.selected_course)
+        self.logger.debug("---selected_course info end---")
         return True
 
     def get_selected_course_data(self):
