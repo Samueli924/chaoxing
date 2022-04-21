@@ -74,19 +74,20 @@ class Logger:
         self.logger = logging.getLogger(name)
         # self.logger.handlers.clear()
         self.logger.setLevel(logging.DEBUG)
-        if show:
-            sh = logging.StreamHandler()
-            if debug:
-                sh.setLevel(logging.DEBUG)
-            else:
-                sh.setLevel(logging.INFO)
-            sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-            self.logger.addHandler(sh)
-        if save:
-            fh = logging.FileHandler(log_path)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-            self.logger.addHandler(fh)
+        if not self.logger.handlers:
+            if show:
+                sh = logging.StreamHandler()
+                if debug:
+                    sh.setLevel(logging.DEBUG)
+                else:
+                    sh.setLevel(logging.INFO)
+                sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                self.logger.addHandler(sh)
+            if save:
+                fh = logging.FileHandler(log_path)
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                self.logger.addHandler(fh)
 
     def debug(self, message):
         self.logger.debug(message)
