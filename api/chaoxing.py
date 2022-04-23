@@ -184,7 +184,7 @@ class Chaoxing:
             'userid': userid,
             'isdrag': 0,
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
-            'rt': '1',  # 'rt': '0.9',  ??
+            'rt': '0.9',  # 'rt': '1.0',  ??
             'dtype': 'Video',
             'view': 'json'
         }
