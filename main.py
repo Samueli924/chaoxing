@@ -86,7 +86,8 @@ def do_work(chaoxingAPI):
                     video_info['objectid'],
                     chaoxingAPI.uid,
                     attachment['property']['name'],
-                    chaoxingAPI.speed
+                    chaoxingAPI.speed,
+                    chaoxingAPI.get_current_ms
                 )
                 ft.pause(1, 3)
                 chaoxing.speed = set_speed  # 预防ERR
