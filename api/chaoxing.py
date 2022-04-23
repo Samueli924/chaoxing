@@ -1,6 +1,7 @@
 import json
 import random
 import re
+import secrets
 import time
 from base64 import b64encode
 from hashlib import md5
@@ -28,7 +29,7 @@ class Chaoxing:
     def init_explorer(self):
         self.session = requests.session()
         self.session.headers = {
-            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74(@Kalimdor)_6845669cc7294fdc8549000714291300',
+            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74(@Kalimdor)_{secrets.token_hex(16)}',
             'X-Requested-With': 'com.chaoxing.mobile'
         }
 
