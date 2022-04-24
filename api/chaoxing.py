@@ -68,7 +68,7 @@ class Chaoxing:
         else:
             return False
 
-    def get_current_ms():
+    def get_current_ms(self):
         return round(time.time() * 1000)
 
     def get_all_courses(self):
@@ -172,7 +172,7 @@ class Chaoxing:
             self.logger.debug(resp.text)
             self.logger.debug("---resp.text info end---")
 
-    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, time):
+    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, _tsp):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
         # print(url)
         params = {
@@ -190,12 +190,12 @@ class Chaoxing:
             'rt': '0.9',  # 'rt': '1.0',  ??
             'dtype': 'Video',
             'view': 'json',
-            '_t': time
+            '_t': _tsp
         }
         # print:(url+params)
         return self.session.get(url, params=params).json()
 
-    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, time):
+    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, _tsp):
         sec = 58
         playingTime = 0
         print("当前播放速率："+str(speed)+"倍速")
@@ -212,7 +212,7 @@ class Chaoxing:
                     jobid,
                     objectid,
                     userid,
-                    time
+                    _tsp
                 )
                 # print(res)
                 if res.get('isPassed'):
