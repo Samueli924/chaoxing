@@ -33,16 +33,6 @@
 4. python main.py 运行程序
 5. 可选参数 -debug 开启DEBUG模式 --no-adopt 禁用自适应速率 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
-## :question: FAQ(常见问题)
-
-1. 程序相关
-    - 问: 程序如何实现完成视频任务点?运行时会有**风险**吗?  
-   答: 程序使用从超星AndroidApp中逆向得到的**API发送协议包**完成任务。在超星不更新其API协议的前提下能够**确保安全**  
-    - 问: 为什么程序运行时间和实际时间一样，不能**一键瞬间完成**所有任务吗?  
-   答: 本程序设计的初衷是在确保**绝对安全**的前提下提高效率，所以在代码中没有添加一键完成所有任务的代码。实际上，一键完成功能十分容易，在Github上已经有许多相关的优秀repo可供下载  
-    - 问: 程序用到了哪些第三方库?  
-   答: 本程序仅用到了requests库负责完成任务。不同于Github中存在的一些其他使用selenium库的repo，具有内存占用小，带宽占用小的优点  
-    
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
 ### :two:感谢[ljy0309](https://github.com/lyj0309)修复Attachments BUG! [PR #70](https://github.com/Samueli924/chaoxing/pull/70)
