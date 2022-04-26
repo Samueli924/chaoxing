@@ -89,7 +89,7 @@ def do_work(chaoxingAPI):
                     chaoxingAPI.speed,
                     chaoxingAPI.get_current_ms
                 )
-                ft.pause(1, 3)
+                ft.pause(10, 13)
                 chaoxing.speed = set_speed  # 预防ERR
 
 
@@ -154,7 +154,7 @@ if __name__ == '__main__':
                     logger.debug("当前设置速率："+str(chaoxing.speed)+"倍速")
                     if not disable_adopt and set_speed == 1: # Only God and I knew how it worked.
                         if not use_default and not use_adopt: 
-                            set_adopt=input("是否启用自适应速率(当播放速率为1且视频支持倍速播放时,自动切换为两倍速)\n！注意 该功能可能存在风险！输入(Y/y/Yes/yes)启用").lower()
+                            set_adopt = input("是否启用自适应速率(当播放速率为1且视频支持倍速播放时,自动切换为两倍速)\n！注意 该功能可能存在风险！输入(Y/y/Yes/yes)启用").lower()
                         if use_default or use_adopt or set_adopt.startswith('y'):
                             adopt = True
                         else:
