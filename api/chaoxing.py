@@ -1,6 +1,7 @@
 import json
 import random
 import re
+import secrets
 import time
 from base64 import b64encode
 from hashlib import md5
@@ -28,7 +29,7 @@ class Chaoxing:
     def init_explorer(self):
         self.session = requests.session()
         self.session.headers = {
-            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74(@Kalimdor)_6845669cc7294fdc8549000714291300',
+            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74 (@Kalimdor)_{secrets.token_hex(16)}',
             'X-Requested-With': 'com.chaoxing.mobile'
         }
 
@@ -66,6 +67,9 @@ class Chaoxing:
             return True
         else:
             return False
+
+    def get_current_ms(self):
+        return round(time.time() * 1000)
 
     def get_all_courses(self):
         url = 'https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json&mcode='
@@ -168,7 +172,7 @@ class Chaoxing:
             self.logger.debug(resp.text)
             self.logger.debug("---resp.text info end---")
 
-    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid):
+    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, _tsp):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
         # print(url)
         params = {
@@ -183,14 +187,15 @@ class Chaoxing:
             'userid': userid,
             'isdrag': 0,
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
-            'rt': '1',  # 'rt': '0.9',  ??
+            'rt': '0.9',  # 'rt': '1.0',  ??
             'dtype': 'Video',
-            'view': 'json'
+            'view': 'json',
+            '_t': _tsp
         }
         # print:(url+params)
         return self.session.get(url, params=params).json()
 
-    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed):
+    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, _tsp):
         sec = 58
         playingTime = 0
         print("当前播放速率："+str(speed)+"倍速")
@@ -206,7 +211,8 @@ class Chaoxing:
                     video_duration,
                     jobid,
                     objectid,
-                    userid
+                    userid,
+                    _tsp
                 )
                 # print(res)
                 if res.get('isPassed'):
