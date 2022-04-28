@@ -7,6 +7,7 @@ from api.chaoxing import Chaoxing
 
 
 def do_work(chaoxingAPI):
+    re_login_try = 0
     # done = list(ft.load_finished(chaoxingAPI.usernm))
     logger.info("已选课程："+str(chaoxingAPI.selected_course['content']['course']['data'][0]['name']))
     logger.info("开始获取所有章节")
@@ -22,10 +23,16 @@ def do_work(chaoxingAPI):
             logger.debug("---knowledge_raw info begin---")
             logger.debug(knowledge_raw)
             logger.debug("---knowledge_raw info end---")
-            logger.info("章节数据错误,可能是课程存在验证码,正在尝试重新登录")
-            chaoxingAPI.re_init_login()
-            mission_index -= 1
-            continue
+            if re_login_try < 2:
+                logger.warn("章节数据错误,可能是课程存在验证码,正在尝试重新登录")
+                chaoxingAPI.re_init_login()
+                mission_index -= 1
+                re_login_try += 1
+                continue
+            else:
+                logger.error("章节数据错误,可能是课程存在验证码,重新登录尝试无效")
+                input("请截图并携带日志提交Issue反馈")
+        re_login_try = 0
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
             print("开始读取标签信息")
