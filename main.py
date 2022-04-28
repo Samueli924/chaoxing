@@ -67,15 +67,15 @@ def do_work(chaoxingAPI):
                 if not jobid:
                     print("未找到jobid，已跳过当前任务点")
                     continue
-                if adopt:
-                    logger.debug("已启用自适应速率")
-                    if "doublespeed" in attachment['property']:
-                        if attachment['property']['doublespeed']:
-                            print("当前视频支持倍速播放,已切换速率")
-                            chaoxing.speed = 2
-                    else:
-                        print("当前视频不支持倍速播放,跳过")
-                        chaoxing.speed = set_speed
+                # if adopt:
+                #     logger.debug("已启用自适应速率")
+                #     if "doublespeed" in attachment['property']:
+                #         if attachment['property']['doublespeed']:
+                #             print("当前视频支持倍速播放,已切换速率")
+                #             chaoxing.speed = 2
+                #     else:
+                #         print("当前视频不支持倍速播放,跳过")
+                #         chaoxing.speed = set_speed
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
