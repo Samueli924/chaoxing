@@ -7,6 +7,7 @@ from base64 import b64encode
 from hashlib import md5
 
 import requests
+import requests.exceptions
 from requests.utils import dict_from_cookiejar
 
 from utils.functions import Logger
@@ -32,6 +33,15 @@ class Chaoxing:
             'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74 (@Kalimdor)_{secrets.token_hex(16)}',
             'X-Requested-With': 'com.chaoxing.mobile'
         }
+
+    def re_init_login(self):
+        del self.session
+        self.session = requests.session()
+        self.session.headers = {
+            'User-Agent': f'Dalvik/2.1.0 (Linux; U; Android {random.randint(9, 12)}; MI{random.randint(10, 12)} Build/SKQ1.210216.001) (device:MI{random.randint(10, 12)}) Language/zh_CN com.chaoxing.mobile/ChaoXingStudy_3_5.1.4_android_phone_614_74 (@Kalimdor)_{secrets.token_hex(16)}',
+            'X-Requested-With': 'com.chaoxing.mobile'
+        }
+        self.login()
 
     def login(self):
         """
@@ -146,11 +156,16 @@ class Chaoxing:
             '_dc': int(round(time.time() * 1000))
         }
         self.logger.debug("获取视频信息")
-        d_token = self.session.get(url, params=params).json()
+        d_token_raw = self.session.get(url, params=params)
         self.logger.debug("视频信息已获取")
         self.logger.debug("---d_token info begin---")
-        self.logger.debug(d_token)
+        self.logger.debug(d_token_raw)
         self.logger.debug("---d_token info end---")
+        try:
+            d_token = d_token_raw.json()
+        except json.JSONDecoder:
+            self.logger.debug("出现JSONDecoder异常，正在跳过当前任务")
+            d_token = None
         return d_token
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
@@ -216,7 +231,7 @@ class Chaoxing:
                 )
                 # print(res)
                 if res.get('isPassed'):
-                    show_progress(name, video_duration, video_duration, speed)
+                    show_progress(name, video_duration, video_duration)
                     break
                 elif res.get('error'):
                     self.logger.debug("---result info begin---")
@@ -224,7 +239,7 @@ class Chaoxing:
                     self.logger.debug("---result info end---")
                     raise Exception('出现错误')
                 continue
-            show_progress(name, playingTime, video_duration, speed)
+            show_progress(name, playingTime, video_duration)
             playingTime += 1 * self.speed
             sec += 1 * self.speed
             time.sleep(1)
