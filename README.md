@@ -31,7 +31,7 @@
 2. git clone 项目至本地
 3. pip install -r requirements.txt
 4. python main.py 运行程序
-5. 可选参数 -debug 开启DEBUG模式 --no-adopt 禁用自适应速率 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
+5. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
