@@ -212,7 +212,7 @@ def sec2time(sec):
     return ret
 
 
-def show_progress(name, current, total, speed):
+def show_progress(name, current, total):
     percent = int(current / total * 100)
     length = int(percent * 40 // 100)
     progress = ("#" * length).ljust(40, " ")
@@ -220,7 +220,9 @@ def show_progress(name, current, total, speed):
     if current >= total and remain < 1:
         print("\r" + f"当前任务： {name} 已完成".ljust(100, " "))
     else:
-        print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain / speed)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
+        # print("\r" + f"当前任务： {name} 剩余时间：{sec2time(remain / speed)} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
+        print("\r" + f"当前任务： {name} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}     ", end="", flush=True)
+
 
 def pause(start: int, end: int):
     __temp = random.randint(start, end)

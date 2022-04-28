@@ -11,15 +11,21 @@ def do_work(chaoxingAPI):
     logger.info("已选课程："+str(chaoxingAPI.selected_course['content']['course']['data'][0]['name']))
     logger.info("开始获取所有章节")
     chaoxingAPI.get_selected_course_data()  # 读取所有章节
-    for mission in chaoxingAPI.missions:
+    mission_num = len(chaoxingAPI.missions)
+    mission_index = 0
+    while mission_index < mission_num:
+        mission = chaoxingAPI.missions[mission_index]
+        mission_index += 1
         logger.debug("开始读取章节信息")
         knowledge_raw = chaoxingAPI.get_mission(mission['id'], chaoxingAPI.selected_course['key'])  # 读取章节信息
         if "data" not in knowledge_raw and "error" in knowledge_raw:
             logger.debug("---knowledge_raw info begin---")
             logger.debug(knowledge_raw)
             logger.debug("---knowledge_raw info end---")
-            input("章节数据错误,可能是课程存在验证码,请在客户端中完成验证后再运行\n若问题仍然存在,请附带日志文件联系作者\n点击回车键退出程序")
-            exit()
+            logger.info("章节数据错误,可能是课程存在验证码,正在尝试重新登录")
+            chaoxingAPI.re_init_login()
+            mission_index -= 1
+            continue
         tabs = len(knowledge_raw['data'][0]['card']['data'])
         for tab_index in range(tabs):
             print("开始读取标签信息")
@@ -36,9 +42,6 @@ def do_work(chaoxingAPI):
                 continue
             print(f'\n当前章节：{mission["label"]}:{mission["name"]}')
             for attachment in attachments['attachments']:
-            #logger.debug("---attachment info begin---")
-            #logger.debug(attachment)
-            #logger.debug("---attachment info end---")
                 if attachment.get('type') != 'video': # 非视频任务跳过
                     print("跳过非视频任务")
                     continue
@@ -52,8 +55,10 @@ def do_work(chaoxingAPI):
                     attachment['objectId'],
                     attachments['defaults']['fid']
                 )
+                if not video_info:
+                    continue
                 jobid = None
-                if "jobid" in attachments:  # it's stupid
+                if "jobid" in attachments:
                     jobid = attachments["jobid"]
                 else: 
                     if "jobid" in attachment:
@@ -90,7 +95,7 @@ def do_work(chaoxingAPI):
                     chaoxingAPI.get_current_ms
                 )
                 ft.pause(10, 13)
-                chaoxing.speed = set_speed  # 预防ERR
+                # chaoxing.speed = set_speed  # 预防ERR
 
 
 if __name__ == '__main__':
@@ -104,7 +109,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-sec', action='store_false', help='Disable all security feature')
 
     args = parser.parse_args()  # 定义专用参数变量
-    debug =  args.debug  # debug输出  Default:False
+    debug = args.debug  # debug输出  Default:False
 #     disable_adopt = args.no_adopt # 禁用自适应速率 Default:False
     show = args.no_log # 显示控制台log Default:True
     logo = args.no_logo # 展示启动LOGO Default:True
