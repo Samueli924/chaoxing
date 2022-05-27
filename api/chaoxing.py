@@ -6,6 +6,10 @@ import time
 from base64 import b64encode
 from hashlib import md5
 
+from pyDes import des, PAD_PKCS5
+import binascii
+
+
 import requests
 from requests.utils import dict_from_cookiejar
 
@@ -48,9 +52,11 @@ class Chaoxing:
         :return:
         """
         url = "https://passport2.chaoxing.com/fanyalogin"
+        des_obj = des("u2oh6Vu^", "u2oh6Vu^", pad=None, padmode=PAD_PKCS5)
+        secret_bytes = des_obj.encrypt(self.passwd, padmode=PAD_PKCS5)
         data = {"fid": "-1",
                 "uname": self.usernm,
-                "password": b64encode(self.passwd.encode("utf8")),
+                "password": binascii.b2a_hex(secret_bytes).decode("utf-8"),
                 "t": "true",
                 "forbidotherlogin": "0",
                 "validate": ""}
