@@ -24,10 +24,11 @@
 
 ### 源码运行(推荐)
 1. 提前准备： Python版本>=3.9 因为使用到了:=表达式。urllib3=1.25.11 因为后面的版本对代理的支持有变化。
-2. git clone 项目至本地
-3. pip install -r requirements.txt
-4. python main.py 运行程序
-5. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
+2. git clone --depth=1 https://github.com/Samueli924/chaoxing 项目至本地
+3. cd chaoxing
+4. pip install -r requirements.txt
+5. python main.py 运行程序
+6. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
