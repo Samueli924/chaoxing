@@ -24,10 +24,10 @@
 
 ### 源码运行(推荐)
 1. 提前准备： Python版本>=3.9 因为使用到了:=表达式。urllib3=1.25.11 因为后面的版本对代理的支持有变化。
-2. git clone --depth=1 https://github.com/Samueli924/chaoxing 项目至本地
-3. cd chaoxing
-4. pip install -r requirements.txt
-5. python main.py 运行程序
+2. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
+3. `cd chaoxing`
+4. `pip install -r requirements.txt`
+5. `python main.py` 运行程序
 6. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
 ### 使用Docker运行
@@ -41,6 +41,7 @@
 ### :two:感谢[ljy0309](https://github.com/lyj0309)修复Attachments BUG! [PR #70](https://github.com/Samueli924/chaoxing/pull/70)
 ### :three:感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)  
 ### :four:感谢[B1gM8c](https://github.com/B1gM8c)修复登录密码加密BUG[Pull #118](https://github.com/Samueli924/chaoxing/pull/118)  
+### :four:感谢[RyaoChengfeng](https://github.com/RyaoChengfeng)添加Docker运行支持[Pull #125](https://github.com/Samueli924/chaoxing/pull/125)  
 ### 对于代码有任何问题或建议欢迎Pull&Request  
 
 
