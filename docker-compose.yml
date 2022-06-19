@@ -1,0 +1,9 @@
+version: "3"
+services:
+  bot:
+    build:
+        context: .
+        dockerfile: Dockerfile
+    volumes:
+      - ./logs:/logs
+      - ./saves:/saves
