@@ -1,5 +1,5 @@
 FROM python:3.9
-COPY . /
-WORKDIR /
+COPY . /app
+WORKDIR /app
 RUN pip install -r requirements.txt
-ENTRYPOINT ["python3","/main.py"]
+ENTRYPOINT ["python","/app/main.py"]
