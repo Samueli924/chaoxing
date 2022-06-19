@@ -1,9 +1,9 @@
 version: "3"
 services:
-  bot:
+  app:
     build:
         context: .
         dockerfile: Dockerfile
     volumes:
-      - ./logs:/logs
-      - ./saves:/saves
+      - ./logs:/app/logs
+      - ./saves:/app/saves

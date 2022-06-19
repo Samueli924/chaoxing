@@ -30,6 +30,11 @@
 5. python main.py 运行程序
 6. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
 
+### 使用Docker运行
+1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 获取项目源码
+2. `docker-compose run --rm app`, 在交互式终端中运行容器
+
+
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
 ### :two:感谢[ljy0309](https://github.com/lyj0309)修复Attachments BUG! [PR #70](https://github.com/Samueli924/chaoxing/pull/70)
