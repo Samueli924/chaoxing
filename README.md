@@ -34,6 +34,7 @@
 1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 获取项目源码
 2. `docker-compose run --rm app`, 在交互式终端中运行容器
 
+你可以在终端中使用`ctrl+p+q`来让容器退出交互式终端并在后台运行
 
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
