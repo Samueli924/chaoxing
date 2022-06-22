@@ -14,7 +14,7 @@
         <img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="version" />
     </a>
 </p>
-
+:muscle: 本项目的最终目的是通过开源消灭所谓的付费刷课平台，希望有能力的朋友都可以为这个项目提交代码，支持本项目的良性发展  
 :star: 觉得有帮助的朋友可以给个**Star**
 
 ## :point_up: 更新通知  
