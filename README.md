@@ -14,8 +14,9 @@
         <img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="version" />
     </a>
 </p>
-:muscle: 本项目的最终目的是通过开源消灭所谓的付费刷课平台，希望有能力的朋友都可以为这个项目提交代码，支持本项目的良性发展  
-:star: 觉得有帮助的朋友可以给个**Star**
+:muscle: 本项目的最终目的是通过开源消灭所谓的付费刷课平台，希望有能力的朋友都可以为这个项目提交代码，支持本项目的良性发展    
+
+:star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知  
 20220426更新通知： 已尝试修复验证码BUG，请拉取最新源码（推荐）或使用最新exe可执行文件。出现BUG需要提交Issue的请携带运行截图与日志文件一起提交。  
@@ -41,7 +42,7 @@
 ### :two:感谢[ljy0309](https://github.com/lyj0309)修复Attachments BUG! [PR #70](https://github.com/Samueli924/chaoxing/pull/70)
 ### :three:感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)  
 ### :four:感谢[B1gM8c](https://github.com/B1gM8c)修复登录密码加密BUG[Pull #118](https://github.com/Samueli924/chaoxing/pull/118)  
-### :four:感谢[RyaoChengfeng](https://github.com/RyaoChengfeng)添加Docker运行支持[Pull #125](https://github.com/Samueli924/chaoxing/pull/125)  
+### :five:感谢[RyaoChengfeng](https://github.com/RyaoChengfeng)添加Docker运行支持[Pull #125](https://github.com/Samueli924/chaoxing/pull/125)  
 ### 对于代码有任何问题或建议欢迎Pull&Request  
 
 
