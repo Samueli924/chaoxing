@@ -137,6 +137,7 @@ def load_users(hide):
             with open(f"saves/{users[int(num) - 1]}/user.json", "r") as f:
                 __temp = json.loads(f.read())
                 usernm = __temp["usernm"]
+                sec_user = "%s****%s" % (usernm[:3], usernm[7:])
                 passwd = __temp["passwd"]
     else:
         usernm = input("请输入手机号")
