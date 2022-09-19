@@ -7,6 +7,7 @@ from api.chaoxing import Chaoxing
 
 
 def do_work(chaoxingAPI):
+    #print(chaoxingAPI.selected_course)
     re_login_try = 0
     # done = list(ft.load_finished(chaoxingAPI.usernm))
     logger.info("已选课程："+str(chaoxingAPI.selected_course['content']['course']['data'][0]['name']))
@@ -50,7 +51,45 @@ def do_work(chaoxingAPI):
             print(f'\n当前章节：{mission["label"]}:{mission["name"]}')
             for attachment in attachments['attachments']:
                 if attachment.get('type') != 'video': # 非视频任务跳过
-                    print("跳过非视频任务")
+                    #print(attachment)
+                    if attachment.get('type') != 'document':
+                        print("跳过非视频任务 and document")
+                        continue
+                    if not chaoxingAPI.filebeta:
+                        continue
+                    # document (.pptx...)支持
+                    jobid = None
+                    if "jobid" in attachments:
+                        jobid = attachments["jobid"]
+                    else: 
+                        if "jobid" in attachment:
+                            jobid = attachment["jobid"]
+                        else:
+                            if "jobid" in attachment['property']:
+                                jobid = attachment['property']['jobid']
+                            else:
+                                if "'_jobid'" in attachment['property']:
+                                    jobid = attachment['property']['_jobid']
+                    if not jobid:
+                        print("未找到jobid，已跳过当前任务点")
+                        continue
+                    video_info = chaoxingAPI.get_d_token(
+                        attachment['property']['objectid'],
+                        attachments['defaults']['fid']
+                    )
+                    #print(video_info)
+                    print(f"\n当前文件：{attachment['property']['name']}")
+                    #print(mission)
+                    #print(attachment)
+                    #if mission['id'] == 390379027:
+                    chaoxingAPI.document(
+                        chaoxingAPI.uid,
+                        chaoxingAPI.selected_course['key'],
+                        attachment['jtoken'],
+                        chaoxingAPI.selected_course['content']['course']['data'][0]['id'],
+                        mission["id"],
+                        jobid
+                    )
                     continue
                 print(f"\n当前视频：{attachment['property']['name']}")
                 if attachment.get('isPassed'):
@@ -58,10 +97,18 @@ def do_work(chaoxingAPI):
                     ft.show_progress(attachment['property']['name'], 1, 1)
                     time.sleep(1)
                     continue
-                video_info = chaoxingAPI.get_d_token(
-                    attachment['objectId'],
-                    attachments['defaults']['fid']
-                )
+                try:
+                    video_info = chaoxingAPI.get_d_token(
+                        attachment['objectid'],
+                        attachments['defaults']['fid']
+                    )
+                except:
+                    print(attachment)
+                    logger.warn("出现了一个问题")
+                    video_info = chaoxingAPI.get_d_token(
+                        attachment['property']['objectid'],
+                        attachments['defaults']['fid']
+                    )
                 if not video_info:
                     continue
                 jobid = None
@@ -108,23 +155,23 @@ def do_work(chaoxingAPI):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='chaoxing-xuexitong')  # 命令行传参
     parser.add_argument('-debug','--debug', action='store_true', help='Enable debug output in console')
-#     parser.add_argument('-default','--default-speed', action='store_true', help='Choose Default Speed,Enable adaptive speed(Disable by --no-adopt)')
-#     parser.add_argument('--use-adopt', action='store_true', help='Use adaptive speed')
-#     parser.add_argument('--no-adopt',  action='store_true', help='Disable adaptive speed')
+    # parser.add_argument('-default','--default-speed', action='store_true', help='Choose Default Speed,Enable adaptive speed(Disable by --no-adopt)')
+    # parser.add_argument('--use-adopt', action='store_true', help='Use adaptive speed')
+    # parser.add_argument('--no-adopt',  action='store_true', help='Disable adaptive speed')
     parser.add_argument('--no-log', action='store_false', help='Disable Console log')
     parser.add_argument('--no-logo', action='store_false', help='Disable Boot logo')
     parser.add_argument('--no-sec', action='store_false', help='Disable all security feature')
 
     args = parser.parse_args()  # 定义专用参数变量
     debug = args.debug  # debug输出  Default:False
-#     disable_adopt = args.no_adopt # 禁用自适应速率 Default:False
+    # disable_adopt = args.no_adopt # 禁用自适应速率 Default:False
     show = args.no_log # 显示控制台log Default:True
     logo = args.no_logo # 展示启动LOGO Default:True
     hideinfo = args.no_sec  # 启用隐私保护 Default:True
-#     use_adopt = args.use_adopt # 使用自适应速率 Default:False
-#     use_default = args.default_speed # 启用默认速度 Default:False
-
+    # use_adopt = args.use_adopt # 使用自适应速率 Default:False
+    # se_default = args.default_speed # 启用默认速度 Default:False
     try:
+        #if 1:
         ft.init_all_path(["saves", "logs"])  # 检查文件夹
         logger = ft.Logger("main",debug,show)  # 初始化日志类
         if debug:
@@ -163,7 +210,9 @@ if __name__ == '__main__':
 #                     else:
 #                         chaoxing.speed = int(set_speed)
 #                         set_speed = int(set_speed)
-                    speed_input = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的学习倍速(倍数需为整数,0或直接回车将使用默认1倍速)：")
+                    if chaoxing.filebeta:
+                        logger.warn("您已打开 Beta 版本功能（具体查看README.md）")
+                    speed_input = input("默认倍速： 1 倍速 \n——因使用不合理的多倍速造成的一切风险与开发者无关——\n请输入学习倍速(倍数为整数,默认1倍速)：")
                     if speed_input:
                         chaoxing.speed = int(speed_input)
                     else:
@@ -190,4 +239,4 @@ if __name__ == '__main__':
         print(f"错误文件名：{e.__traceback__.tb_frame.f_globals['__file__']}")
         print(f"错误行数：{e.__traceback__.tb_lineno}")
         print(f"错误原因:{e}")
-        input("请截图提交至Github或Telegram供作者修改代码\n点击回车键退出程序")
+        input("请截图提交至Github或QQ供作者修改代码\n点击回车键退出程序")
