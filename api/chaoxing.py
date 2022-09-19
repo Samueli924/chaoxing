@@ -29,7 +29,7 @@ class Chaoxing:
         self.selected_course = None
         self.missions = None
         self.speed = None
-
+        self.filebeta = 1
     def init_explorer(self):
         self.session = requests.session()
         self.session.headers = {
@@ -195,25 +195,39 @@ class Chaoxing:
     def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, _tsp):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
         # print(url)
+        otherInfo, courseId = otherInfo.split("&")
         params = {
             'otherInfo': otherInfo,
             'playingTime': playingTime,
             'duration': duration,
-            # 'akid': None,
+            'akid': 'null',
             'jobid': jobid,
             'clipTime': '0_{}'.format(duration),
             'clazzId': clazzId,
             'objectId': objectId,
             'userid': userid,
-            'isdrag': 0,
+            'isdrag': 2,
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
             'rt': '0.9',  # 'rt': '1.0',  ??
             'dtype': 'Video',
             'view': 'json',
-            '_t': _tsp
+            'courseId': courseId,
+            # '_t': _tsp
         }
         # print:(url+params)
-        return self.session.get(url, params=params).json()
+        try:
+            res = self.session.get(url, params=params)
+        except:
+            res = self.session.get(url, params=params)
+            print("-------重新尝试连接------")
+        try:
+            return res.json()
+        except:
+            print(res.text)
+            print("-" * 10)
+            print(url)
+            print("-" * 10)
+            print(params)
 
     def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, _tsp):
         sec = 58
@@ -245,6 +259,25 @@ class Chaoxing:
                     raise Exception('出现错误')
                 continue
             show_progress(name, playingTime, video_duration)
-            playingTime += 1 * self.speed
-            sec += 1 * self.speed
+            playingTime += self.speed
+            sec += self.speed
             time.sleep(1)
+    def document(self, userId, clazzid, jtoken, courseid, knowledgeid, jobid):
+        state = 0
+        #print(courseid)
+        #courseId = courseid.split("&")[1]
+        #enc = self.get_enc(clazzId, jobid, objectId, 20, duration, userid)
+        url = 'https://mooc1-api.chaoxing.com/ananas/job/document'
+        params = {
+            'jobid': jobid,
+            'knowledgeid': knowledgeid,
+            'courseid': courseid,
+            'clazzid': clazzid,
+            'jtoken': jtoken,
+            '_dc': str(int(time.time())) + "012"
+        }
+        #print(params)
+        res = self.session.get(url, params=params)
+        print(res.json()['msg'])
+
+
