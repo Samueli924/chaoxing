@@ -197,21 +197,26 @@ class Chaoxing:
         # print(url)
         params = {
             'otherInfo': otherInfo,
-            'playingTime': playingTime,
-            'duration': duration,
+            'playingTime': str(playingTime),
+            'duration': str(duration),
             # 'akid': None,
             'jobid': jobid,
             'clipTime': '0_{}'.format(duration),
-            'clazzId': clazzId,
+            'clazzId': str(clazzId),
             'objectId': objectId,
             'userid': userid,
-            'isdrag': 0,
+            'isdrag': '0',
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
             'rt': '0.9',  # 'rt': '1.0',  ??
             'dtype': 'Video',
-            'view': 'json',
-            '_t': _tsp
+            'view': 'pc',
+            '_t': str(int(round( time.time()*1000)))
         }
+        mylist = []
+        for key in params.items():
+            my = "=".join(key)
+            mylist.append(my)
+        params = "&".join(mylist)
         # print:(url+params)
         return self.session.get(url, params=params).json()
 
