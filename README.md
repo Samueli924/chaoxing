@@ -19,7 +19,7 @@
 :star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知  
-20220426更新通知： 已尝试修复验证码BUG，请拉取最新源码（推荐）或使用最新exe可执行文件。出现BUG需要提交Issue的请携带运行截图与日志文件一起提交。  
+20220924更新通知： 已由[a81608882](https://github.com/a81608882)于[Pull #142](https://github.com/Samueli924/chaoxing/pull/142)修复403无权限BUG  
 
 ## :books: 使用方法
 
