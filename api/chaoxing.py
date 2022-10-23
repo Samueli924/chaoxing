@@ -168,8 +168,8 @@ class Chaoxing:
         self.logger.debug("---d_token info end---")
         try:
             d_token = d_token_raw.json()
-        except json.JSONDecoder or json.decoder.JSONDecodeError:
-            self.logger.debug("出现JSONDecoder异常，正在跳过当前任务")
+        except:
+            self.logger.debug("出现异常，正在跳过当前任务")
             d_token = None
         return d_token
 
