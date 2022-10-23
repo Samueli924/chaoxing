@@ -88,20 +88,24 @@ def do_work(chaoxingAPI):
                 #     else:
                 #         print("当前视频不支持倍速播放,跳过")
                 #         chaoxing.speed = set_speed
-                chaoxingAPI.pass_video(
-                    video_info['duration'],
-                    attachments['defaults']['cpi'],
-                    video_info['dtoken'],
-                    attachment['otherInfo'],
-                    chaoxingAPI.selected_course['key'],
-                    attachment['jobid'],
-                    video_info['objectid'],
-                    chaoxingAPI.uid,
-                    attachment['property']['name'],
-                    chaoxingAPI.speed,
-                    chaoxingAPI.get_current_ms
-                )
-                ft.pause(10, 13)
+                try:
+                    chaoxingAPI.pass_video(
+                        video_info['duration'],
+                        attachments['defaults']['cpi'],
+                        video_info['dtoken'],
+                        attachment['otherInfo'],
+                        chaoxingAPI.selected_course['key'],
+                        attachment['jobid'],
+                        video_info['objectid'],
+                        chaoxingAPI.uid,
+                        attachment['property']['name'],
+                        chaoxingAPI.speed,
+                        chaoxingAPI.get_current_ms
+                    )
+                    ft.pause(10, 13)
+                except:
+                    print("返回值处理异常，已跳过任务点")
+                    continue
                 # chaoxing.speed = set_speed  # 预防ERR
 
 
