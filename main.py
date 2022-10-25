@@ -52,10 +52,14 @@ def do_work(chaoxingAPI):
                 if attachment.get('type') != 'video': # 非视频任务跳过
                     print("跳过非视频任务")
                     continue
-                print(f"\n当前视频：{attachment['property']['name']}")
+                if attachment.get('property', False):
+                    name = attachment['property']['name']
+                else:
+                    name = attachment['objectId']
+                print(f"\n当前视频：{name}")
                 if attachment.get('isPassed'):
                     print("当前视频任务已完成")
-                    ft.show_progress(attachment['property']['name'], 1, 1)
+                    ft.show_progress(name, 1, 1)
                     time.sleep(1)
                     continue
                 video_info = chaoxingAPI.get_d_token(
@@ -70,7 +74,7 @@ def do_work(chaoxingAPI):
                 else: 
                     if "jobid" in attachment:
                         jobid = attachment["jobid"]
-                    else:
+                    elif attachment.get('property', False):
                         if "jobid" in attachment['property']:
                             jobid = attachment['property']['jobid']
                         else:
