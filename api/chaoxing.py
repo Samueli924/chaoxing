@@ -192,7 +192,7 @@ class Chaoxing:
             self.logger.debug(resp.text)
             self.logger.debug("---resp.text info end---")
 
-    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, _tsp):
+    def main_pass_video(self, personid, dtoken, otherInfo, playingTime, clazzId, duration, jobid, objectId, userid, dtype, _tsp):
         url = 'https://mooc1-api.chaoxing.com/multimedia/log/a/{}/{}'.format(personid, dtoken)
         # print(url)
         params = {
@@ -208,7 +208,8 @@ class Chaoxing:
             'isdrag': '0',
             'enc': self.get_enc(clazzId, jobid, objectId, playingTime, duration, userid),
             'rt': '0.9',  # 'rt': '1.0',  ??
-            'dtype': 'Video',
+            # 'dtype': 'Video', 音频文件为Audio
+            'dtype': dtype,
             'view': 'pc',
             '_t': str(int(round( time.time()*1000)))
         }
@@ -218,9 +219,16 @@ class Chaoxing:
             mylist.append(my)
         params = "&".join(mylist)
         # print:(url+params)
-        return self.session.get(url, params=params).json()
+        tmp_response = self.session.get(url, params=params)
+        try:
+            result = tmp_response.json()
+        except Exception:
+            self.logger.debug("任务失败")
+            result = {'error': {'status_code': tmp_response.status_code, 'text': tmp_response.text}}
+        return result
+        # return self.session.get(url, params=params).json()
 
-    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, _tsp):
+    def pass_video(self, video_duration, cpi, dtoken, otherInfo, clazzid, jobid, objectid, userid, name, speed, dtype, _tsp):
         sec = 58
         playingTime = 0
         print("当前播放速率："+str(speed)+"倍速")
@@ -237,6 +245,7 @@ class Chaoxing:
                     jobid,
                     objectid,
                     userid,
+                    dtype,
                     _tsp
                 )
                 # print(res)
@@ -245,7 +254,7 @@ class Chaoxing:
                     break
                 elif res.get('error'):
                     self.logger.debug("---result info begin---")
-                    self.logger.debug(res.get)
+                    self.logger.debug(res)
                     self.logger.debug("---result info end---")
                     raise Exception('出现错误')
                 continue
