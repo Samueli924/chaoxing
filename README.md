@@ -19,7 +19,7 @@
 :star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知  
-20220924更新通知： 已由[a81608882](https://github.com/a81608882)于[Pull #142](https://github.com/Samueli924/chaoxing/pull/142)修复403无权限BUG  
+20221030更新通知： 已由[yhm97](https://github.com/yhm97)于[Pull #187](https://github.com/Samueli924/chaoxing/pull/187)修复音频格式造成的403无权限BUG  
 
 ## :books: 使用方法
 
@@ -44,6 +44,7 @@
 ### :four:感谢[B1gM8c](https://github.com/B1gM8c)修复登录密码加密BUG[Pull #118](https://github.com/Samueli924/chaoxing/pull/118)  
 ### :five:感谢[RyaoChengfeng](https://github.com/RyaoChengfeng)添加Docker运行支持[Pull #125](https://github.com/Samueli924/chaoxing/pull/125)  
 ### :six:感谢[a81608882](https://github.com/a81608882)修复403报错BUG[Pull #142](https://github.com/Samueli924/chaoxing/pull/142)
+### :seven:感谢[yhm97](https://github.com/yhm97)修复音频格式导致的403BUG[Pull #187](https://github.com/Samueli924/chaoxing/pull/187) 
 ### 对于代码有任何问题或建议欢迎Pull&Request  
 
 
