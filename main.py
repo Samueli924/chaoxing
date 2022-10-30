@@ -71,7 +71,7 @@ def do_work(chaoxingAPI):
                 jobid = None
                 if "jobid" in attachments:
                     jobid = attachments["jobid"]
-                else: 
+                else:
                     if "jobid" in attachment:
                         jobid = attachment["jobid"]
                     elif attachment.get('property', False):
@@ -92,6 +92,10 @@ def do_work(chaoxingAPI):
                 #     else:
                 #         print("当前视频不支持倍速播放,跳过")
                 #         chaoxing.speed = set_speed
+                dtype = 'Video'
+                if 'audio' in attachment['property']['module']:
+                    dtype = 'Audio'
+
                 chaoxingAPI.pass_video(
                     video_info['duration'],
                     attachments['defaults']['cpi'],
@@ -103,6 +107,7 @@ def do_work(chaoxingAPI):
                     chaoxingAPI.uid,
                     attachment['property']['name'],
                     chaoxingAPI.speed,
+                    dtype,
                     chaoxingAPI.get_current_ms
                 )
                 ft.pause(10, 13)
