@@ -19,7 +19,7 @@
 :star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知  
-20221030更新通知： 已由[yhm97](https://github.com/yhm97)于[Pull #187](https://github.com/Samueli924/chaoxing/pull/187)修复音频格式造成的403无权限BUG  
+20221123更新通知： 已由[B1gM8c](https://github.com/B1gM8c)修复重复获取章节BUG  
 
 ## :books: 使用方法
 
