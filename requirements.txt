@@ -3,3 +3,4 @@ natsort
 requests
 urllib3==1.25.11
 pyDes
+pycryptodome
