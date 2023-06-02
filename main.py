@@ -115,7 +115,7 @@ def do_work(chaoxingAPI:Chaoxing):
 
 def do_work_multi(chaoxingAPI:Chaoxing):
     for i in range(len(chaoxingAPI.selected_course_index_list)): # 遍历所有课程
-        logger.info("正在执行第 {} 个所选课程".format(i+1))
+        logger.info("正在进行第 {} 个所选课程".format(i+1))
         do_work(chaoxingAPI)
         chaoxingAPI.next_selected_course()
 
