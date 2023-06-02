@@ -27,6 +27,8 @@ class Chaoxing:
         self.cookies = None
         self.courses = None
         self.selected_course = None
+        self.selected_course_index_list = None
+        self.selected_course_index_now = None
         self.missions = None
         self.speed = None
 
@@ -143,7 +145,23 @@ class Chaoxing:
         self.logger.debug(self.selected_course)
         self.logger.debug("---selected_course info end---")
         return True
-
+    
+    def select_course_multi(self):
+        pretty_print(self.courses)
+        index = input("请输入您要学习的课程序号，空格分隔：")
+        self.selected_course_index_list = [int(i)-1 for i in index.split(' ')]
+        self.selected_course = self.courses[self.selected_course_index_list[0]]
+        self.selected_course_index_now = 0
+        self.logger.debug("---selected_course info begin---")
+        for i in self.selected_course_index_list:
+            self.logger.debug(self.courses[i])
+        self.logger.debug("---selected_course info end---")
+        return True
+    
+    def next_selected_course(self):
+        self.selected_course_index_now += 1
+        self.selected_course = self.courses[self.selected_course_index_list[self.selected_course_index_now]]
+        
     def get_selected_course_data(self):
         url = 'https://mooc1-api.chaoxing.com/gas/clazz'
         params = {

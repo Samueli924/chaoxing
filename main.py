@@ -6,7 +6,7 @@ import utils.functions as ft
 from api.chaoxing import Chaoxing
 
 
-def do_work(chaoxingAPI):
+def do_work(chaoxingAPI:Chaoxing):
     re_login_try = 0
     # done = list(ft.load_finished(chaoxingAPI.usernm))
     logger.info("已选课程："+str(chaoxingAPI.selected_course['content']['course']['data'][0]['name']))
@@ -113,6 +113,12 @@ def do_work(chaoxingAPI):
                 ft.pause(10, 13)
                 # chaoxing.speed = set_speed  # 预防ERR
 
+def do_work_multi(chaoxingAPI:Chaoxing):
+    for i in range(len(chaoxingAPI.selected_course_index_list)):
+        logger.info("正在执行第 {} 个所选课程".format(i+1))
+        do_work(chaoxingAPI)
+        chaoxingAPI.next_selected_course()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='chaoxing-xuexitong')  # 命令行传参
@@ -160,7 +166,8 @@ if __name__ == '__main__':
             logger.info("正在读取所有课程")
             if chaoxing.get_all_courses():  # 读取所有的课程
                 logger.info("进行选课")
-                if chaoxing.select_course():    # 选择要学习的课程
+#               if chaoxing.select_course():    # 选择要学习的课程
+                if chaoxing.select_course_multi():
 #                     if not use_default: 
 #                         set_speed = input("默认倍速： 1 倍速 \n在不紧急的情况下建议使用 1 倍速，因使用不合理的多倍速造成的一切风险与作者无关\n请输入您想要的学习倍速(倍数需为整数,0或直接回车将使用默认1倍速)：")
 #                     else:
@@ -192,7 +199,8 @@ if __name__ == '__main__':
 #                     else:
 #                         logger.info("已禁用自适应速率")
                     logger.info("开始学习")
-                    do_work(chaoxing)   # 开始学习
+#                   do_work(chaoxing)   # 开始学习
+                    do_work_multi(chaoxing)
         input("任务已结束，请点击回车键退出程序")
     except Exception as e:
         print(f"出现报错{e.__class__}")
