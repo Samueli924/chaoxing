@@ -143,7 +143,7 @@ def load_users(hide):
         usernm = input("请输入手机号")
         if hide:
             sec_user = "%s****%s"%(usernm[:3],usernm[7:])
-            passwd = passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
+            passwd = maskpass.askpass(prompt="请输入密码(已自动隐藏)", mask="#")
         else:
             sec_user = usernm
             passwd = input("请输入密码")
