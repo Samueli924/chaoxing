@@ -1,4 +1,5 @@
 FROM python:3.9-alpine as builder
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 RUN apk update && apk add gcc musl-dev linux-headers
 COPY . /app
 WORKDIR /app
