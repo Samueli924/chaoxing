@@ -11,17 +11,18 @@ def decode_course_list(_text):
     _raw_courses = _soup.select("li.course")
     _course_list = list()
     for course in _raw_courses:
-        _course_detail = {}
-        _course_detail["id"] = course.attrs["id"]
-        _course_detail["info"] = course.attrs["info"]
-        _course_detail["roleid"] = course.attrs["roleid"]
-        _course_detail["clazzId"] = course.select_one("input.clazzId").attrs["value"]
-        _course_detail["courseId"] = course.select_one("input.courseId").attrs["value"]
-        _course_detail["cpi"] = re.findall("cpi=(.*?)&", course.select_one("a").attrs["href"])[0]
-        _course_detail["title"] = course.select_one("span.course-name").attrs["title"]
-        _course_detail["desc"] = course.select_one("p.margint10").attrs["title"]
-        _course_detail["teacher"] = course.select_one("p.color3").attrs["title"]
-        _course_list.append(_course_detail)
+        if not course.select_one("a.not-open-tip"):
+            _course_detail = {}
+            _course_detail["id"] = course.attrs["id"]
+            _course_detail["info"] = course.attrs["info"]
+            _course_detail["roleid"] = course.attrs["roleid"]
+            _course_detail["clazzId"] = course.select_one("input.clazzId").attrs["value"]
+            _course_detail["courseId"] = course.select_one("input.courseId").attrs["value"]
+            _course_detail["cpi"] = re.findall("cpi=(.*?)&", course.select_one("a").attrs["href"])[0]
+            _course_detail["title"] = course.select_one("span.course-name").attrs["title"]
+            _course_detail["desc"] = course.select_one("p.margint10").attrs["title"]
+            _course_detail["teacher"] = course.select_one("p.color3").attrs["title"]
+            _course_list.append(_course_detail)
     return _course_list
 
 
