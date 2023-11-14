@@ -111,7 +111,6 @@ class Chaoxing:
         return _job_list, _job_info
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
-        # https://github.com/ZhyMC/chaoxing-xuexitong-autoflush/blob/445c8d8a8cc63472dd90cdf2a6ab28542c56d93b/logger.js
         return md5(
             f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]"
             .encode()).hexdigest()
@@ -143,10 +142,10 @@ class Chaoxing:
         _session.headers.update()
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         _video_info = _session.get(_info_url).json()
-        _dtoken = _video_info["dtoken"]  # 7d8349c683a65af92b68ed42b9eebfc1
+        _dtoken = _video_info["dtoken"]
         _duration = _video_info["duration"]
-        _crc = _video_info["crc"]  # 993fd31ba058895723016fa4fe9a6486
-        _key = _video_info["key"]  # 71980072a32dd57d151f7c3f6b3b122c
+        _crc = _video_info["crc"]
+        _key = _video_info["key"]
         _isPassed = False
         _isFinished = False
         _playingTime = 0
