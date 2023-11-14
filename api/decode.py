@@ -30,9 +30,6 @@ def decode_course_point(_text):
     _soup = BeautifulSoup(_text, "lxml")
     _course_point = {}
     _point_list = []
-    _course_point["finish_num"] = _soup.select_one("div.chapter_head h2.xs_head_name span").text
-    _course_point["total_num"] = re.findall("/(\d{1,10})", _soup.select_one("div.chapter_head h2.xs_head_name").text)[0]
-
     _raw_points = _soup.select("div.chapter_item")
     for _point in _raw_points:
         if (not "id" in _point.attrs) or (not "title" in _point.attrs):
@@ -56,6 +53,8 @@ def decode_course_card(_text: str):
     else:
         return None
     _cards = json.loads("{" + _temp + "}")
+    _job_info = {}
+    _job_list = []
     if _cards:
         _job_info = {}
         _job_info["ktoken"] = _cards["defaults"]["ktoken"]  # 0754c189543882e328d711960117de81
