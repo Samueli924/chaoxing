@@ -19,23 +19,21 @@
 :star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知  
-20221123更新通知： 已由[B1gM8c](https://github.com/B1gM8c)修复重复获取章节BUG  
+20231114更新通知： 3.0大版本更新，修复403报错，优化代码结构
 
 ## :books: 使用方法
 
-### 源码运行(推荐)
-1. 提前准备： Python版本>=3.9 因为使用到了:=表达式。urllib3=1.25.11 因为后面的版本对代理的支持有变化。
-2. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
-3. `cd chaoxing`
-4. `pip install -r requirements.txt`
-5. `python main.py` 运行程序
-6. 可选参数 -debug 开启DEBUG模式 --no-log 不输出日志 --no-logo 隐藏开头项目LOGO --no-sec 关闭隐私保护
+### 源码运行
+1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
+2. `cd chaoxing`
+3. `pip install -r requirements.txt`
+4. (可选配置文件运行)复制config_template.ini文件为config.ini文件，修改文件内的账号密码内容, 执行 `python main.py -c config.ini`
+5. (可选命令行运行)`python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选)`
 
-### 使用Docker运行
-1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 获取项目源码
-2. `docker-compose run --rm app`, 在交互式终端中运行容器
-
-你可以在终端中使用`ctrl+p+q`来让容器退出交互式终端并在后台运行
+### 打包文件运行
+1. 从最新[Releases](https://github.com/Samueli924/chaoxing/releases)中下载exe文件
+2. (可选配置文件运行)下载config_template.ini文件保存为config.ini文件，修改文件内的账号密码内容, 执行 `./chaoxing.exe -c config.ini`
+3. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选)`
 
 ## :heart: CONTRIBUTORS  
 ### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
@@ -46,8 +44,7 @@
 ### :six:感谢[a81608882](https://github.com/a81608882)修复403报错BUG[Pull #142](https://github.com/Samueli924/chaoxing/pull/142)
 ### :seven:感谢[yhm97](https://github.com/yhm97)修复音频格式导致的403BUG[Pull #187](https://github.com/Samueli924/chaoxing/pull/187) 
 ### :eight:感谢[evibhm](https://github.com/evibhm)修复Docker运行的DNS问题、优化Docker映像大小[Pull #232](https://github.com/Samueli924/chaoxing/pull/232)
-### 对于代码有任何问题或建议欢迎Pull&Request  
-
+### 对于代码有任何问题或建议欢迎Pull&Request
 
 ## :warning: 免责声明  
 - 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议，允许**开源/免费使用和引用/修改/衍生代码的开源/免费使用**，不允许**修改和衍生的代码作为闭源的商业软件发布和销售**，禁止**使用本代码盈利**，以此代码为基础的程序**必须**同样遵守[GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议  
