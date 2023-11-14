@@ -88,7 +88,7 @@ def decode_course_card(_text: str):
                 _job["mid"] = _card["mid"]
                 _job["objectid"] = _card["objectId"]
                 _job["aid"] = _card["aid"]
-                _job["doublespeed"] = _card["property"]["doublespeed"]
+                # _job["doublespeed"] = _card["property"]["doublespeed"]
                 _job_list.append(_job)
                 continue
             if _card["type"] == "document":
