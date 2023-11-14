@@ -23,7 +23,7 @@ def init_config():
                 config.get("common", "course_list"),
                 int(config.get("common", "speed")))
     else:
-        return (args.username, args.password, args.list.split(","), int(args.speed))
+        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1)
 
 
 if __name__ == '__main__':
