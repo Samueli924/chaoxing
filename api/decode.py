@@ -57,13 +57,13 @@ def decode_course_card(_text: str):
     _job_list = []
     if _cards:
         _job_info = {}
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]  # 0754c189543882e328d711960117de81
-        _job_info["mtEnc"] = _cards["defaults"]["mtEnc"]    # 5a281a5c9819ae54f0b23bf97865133e
+        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
+        _job_info["mtEnc"] = _cards["defaults"]["mtEnc"]
         _job_info["reportTimeInterval"] = _cards["defaults"]["reportTimeInterval"]   # 60
-        _job_info["defenc"] = _cards["defaults"]["defenc"]  # 48a25584121db3161e429c9b0861b3da
-        _job_info["cardid"] = _cards["defaults"]["cardid"]  # 690554045
-        _job_info["cpi"] = _cards["defaults"]["cpi"]    # 82923364
-        _job_info["qnenc"] = _cards["defaults"]["qnenc"]    # a60d09ee89bc30d264e09d24b77e3ada
+        _job_info["defenc"] = _cards["defaults"]["defenc"]
+        _job_info["cardid"] = _cards["defaults"]["cardid"]
+        _job_info["cpi"] = _cards["defaults"]["cpi"]
+        _job_info["qnenc"] = _cards["defaults"]["qnenc"]
         _job_info["ktoken"] = _cards["defaults"]["ktoken"]
         _job_info["ktoken"] = _cards["defaults"]["ktoken"]
         _job_info["ktoken"] = _cards["defaults"]["ktoken"]
