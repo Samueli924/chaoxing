@@ -55,6 +55,8 @@ if __name__ == '__main__':
         for course in all_course:
             if course["courseId"] in course_list:
                 course_task.append(course)
+        if not course_task:
+            course_task = all_course
         # 开始遍历要学习的课程列表
         logger.info(f"课程列表过滤完毕，当前课程任务数量: {len(course_task)}")
         for course in course_task:
