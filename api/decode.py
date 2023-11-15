@@ -65,10 +65,6 @@ def decode_course_card(_text: str):
         _job_info["cardid"] = _cards["defaults"]["cardid"]
         _job_info["cpi"] = _cards["defaults"]["cpi"]
         _job_info["qnenc"] = _cards["defaults"]["qnenc"]
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
         _cards = _cards["attachments"]
         _job_list = []
         for _card in _cards:

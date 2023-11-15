@@ -90,7 +90,7 @@ class Chaoxing:
         }
         logger.trace("正在读取所有的课程列表...")
         _resp = _session.post(_url, data=_data)
-        logger.trace(f"原始课程列表内容:\n{_resp.text}")
+        # logger.trace(f"原始课程列表内容:\n{_resp.text}")
         logger.info("课程列表读取完毕...")
         return decode_course_list(_resp.text)
 
@@ -99,7 +99,7 @@ class Chaoxing:
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         logger.trace("开始读取课程所有章节...")
         _resp = _session.get(_url)
-        logger.trace(f"原始章节列表内容:\n{_resp.text}")
+        # logger.trace(f"原始章节列表内容:\n{_resp.text}")
         logger.info("课程章节读取成功...")
         return decode_course_point(_resp.text)
 
@@ -109,7 +109,7 @@ class Chaoxing:
         logger.trace("开始读取章节所有任务点...")
         _resp = _session.get(_url)
         _job_list, _job_info = decode_course_card(_resp.text)
-        logger.trace(f"原始任务点列表内容:\n{_resp.text}")
+        # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
         return _job_list, _job_info
 
