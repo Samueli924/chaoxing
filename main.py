@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import argparse
 import configparser
-
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError
@@ -20,7 +19,7 @@ def init_config():
         config.read(args.config, encoding="utf8")
         return (config.get("common", "username"),
                 config.get("common", "password"),
-                config.get("common", "course_list"),
+                str(config.get("common", "course_list")).split(",") if config.get("common", "course_list") else None,
                 int(config.get("common", "speed")))
     else:
         return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1)
