@@ -81,7 +81,11 @@ def decode_course_card(_text: str):
                 _job["jobid"] = _card["jobid"]
                 _job["name"] = _card["property"]["name"]
                 _job["otherinfo"] = _card["otherInfo"]
-                _job["mid"] = _card["mid"]
+                try:
+                    _job["mid"] = _card["mid"]
+                except KeyError as e:
+                    logger.warning("出现转码失败视频，已跳过...")
+                    continue
                 _job["objectid"] = _card["objectId"]
                 _job["aid"] = _card["aid"]
                 # _job["doublespeed"] = _card["property"]["doublespeed"]
