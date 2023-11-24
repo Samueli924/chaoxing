@@ -66,7 +66,13 @@ if __name__ == '__main__':
         point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
         for point in point_list["points"]:
             # 获取当前章节的所有任务点
-            jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
+            jobs=[]
+            job_info = None 
+            try:
+                jobs,job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
+            except:
+                logger.warning(f"跳过错误章节 -> {point['title']}")
+        
             # 可能存在章节无任何内容的情况
             if not jobs:
                 continue
