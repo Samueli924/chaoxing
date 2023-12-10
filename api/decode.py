@@ -8,7 +8,7 @@ from api.logger import logger
 def decode_course_list(_text):
     logger.trace("开始解码课程列表...")
     _soup = BeautifulSoup(_text, "lxml")
-    _raw_courses = _soup.select("li.course")
+    _raw_courses = _soup.select("div.course")
     _course_list = list()
     for course in _raw_courses:
         if not course.select_one("a.not-open-tip"):
