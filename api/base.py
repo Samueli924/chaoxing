@@ -13,7 +13,8 @@ from api.process import show_progress
 from api.config import GlobalConst as gc
 from api.decode import (decode_course_list,
                         decode_course_point,
-                        decode_course_card)
+                        decode_course_card,
+                        decode_course_folder)
 
 
 def get_timestamp():
@@ -92,7 +93,21 @@ class Chaoxing:
         _resp = _session.post(_url, data=_data)
         # logger.trace(f"原始课程列表内容:\n{_resp.text}")
         logger.info("课程列表读取完毕...")
-        return decode_course_list(_resp.text)
+        course_list = decode_course_list(_resp.text)
+
+        _interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
+        _interaction_resp = _session.get(_interaction_url)
+        course_folder = decode_course_folder(_interaction_resp.text)
+        for folder in course_folder:
+            _data = {
+                "courseType": 1,
+                "courseFolderId": folder["id"],
+                "query": "",
+                "superstarClass": 0
+            }
+            _resp = _session.post(_url, data=_data)
+            course_list += decode_course_list(_resp.text)
+        return course_list
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
         _session = init_session()

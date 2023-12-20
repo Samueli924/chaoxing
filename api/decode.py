@@ -25,6 +25,18 @@ def decode_course_list(_text):
             _course_list.append(_course_detail)
     return _course_list
 
+def decode_course_folder(_text):
+    logger.trace("开始解码二级课程列表...")
+    _soup = BeautifulSoup(_text, "lxml")
+    _raw_courses = _soup.select("ul.file-list>li")
+    _course_folder_list = list()
+    for course in _raw_courses:
+        if course.attrs["fileid"]:
+            _course_folder_detail = {}
+            _course_folder_detail["id"] = course.attrs["fileid"]
+            _course_folder_detail["rename"] = course.select_one("input.rename-input").attrs["value"]
+            _course_folder_list.append(_course_folder_detail)
+    return _course_folder_list
 
 def decode_course_point(_text):
     logger.trace("开始解码章节列表...")
