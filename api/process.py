@@ -19,7 +19,7 @@ def sec2time(sec):
 def show_progress(name, start: int, span: int, total: int, _speed):
     start_time = time.time()
     while int(time.time() - start_time) < int(span // _speed):
-        current = start + int(time.time() - start_time)
+        current = start + int((time.time() - start_time) * _speed)
         percent = int(current / total * 100)
         length = int(percent * 40 // 100)
         progress = ("#" * length).ljust(40, " ")

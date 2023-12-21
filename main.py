@@ -70,7 +70,7 @@ if __name__ == '__main__':
             job_info = None 
             try:
                 jobs,job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
-            except:
+            except :
                 logger.warning(f"跳过错误章节 -> {point['title']}")
         
             # 可能存在章节无任何内容的情况
