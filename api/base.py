@@ -172,7 +172,7 @@ class Chaoxing:
             while not _isPassed:
                 if _isFinished:
                     _playingTime = _duration
-                _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, 0)
+                _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime)
                 if _isPassed:
                     break
                 _wait_time = get_random_seconds()
