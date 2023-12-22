@@ -138,7 +138,7 @@ class Chaoxing:
                 f"{_course['cpi']}/"
                 f"{_dtoken}?"
                 f"clazzId={_course['clazzId']}&"
-                f"playingTime=0&"
+                f"playingTime={_playingTime}&"
                 f"duration={_duration}&"
                 f"clipTime=0_{_duration}&"
                 f"objectId={_job['objectid']}&"
