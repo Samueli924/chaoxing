@@ -1,5 +1,5 @@
 from loguru import logger
-
+from requests.exceptions import JSONDecodeError
 class BaseException(Exception):
     def __init__(self, _msg: str = None):
         if _msg:

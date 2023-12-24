@@ -3,8 +3,7 @@ import argparse
 import configparser
 from api.logger import logger
 from api.base import Chaoxing, Account
-from api.exceptions import LoginError, FormatError
-
+from api.exceptions import LoginError, FormatError, JSONDecodeError
 
 def init_config():
     parser = argparse.ArgumentParser(description='Samueli924/chaoxing')  # 命令行传参
@@ -66,13 +65,9 @@ if __name__ == '__main__':
         point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
         for point in point_list["points"]:
             # 获取当前章节的所有任务点
-            jobs=[]
-            job_info = None 
-            try:
-                jobs,job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
-            except :
-                logger.warning(f"跳过错误章节 -> {point['title']}")
-        
+            jobs = []
+            job_info = None
+            jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
             # 可能存在章节无任何内容的情况
             if not jobs:
                 continue
@@ -81,7 +76,18 @@ if __name__ == '__main__':
                 # 视频任务
                 if job["type"] == "video":
                     logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-                    chaoxing.study_video(course, job, job_info, _speed=speed)
+                    # 超星的接口没有返回当前任务是否为Audio音频任务
+                    isAudio = False
+                    try:
+                        chaoxing.study_video(course, job, job_info, _speed=speed, _type="Video")
+                    except JSONDecodeError as e:
+                        logger.warning("当前任务非视频任务，正在尝试音频任务解码")
+                        isAudio = True
+                    if isAudio:
+                        try:
+                            chaoxing.study_video(course, job, job_info, _speed=speed, _type="Audio")
+                        except JSONDecodeError as e:
+                            logger.warning(f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过")
                 # 文档任务
                 elif job["type"] == "document":
                     logger.trace(f"识别到文档任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")

@@ -64,7 +64,7 @@ def decode_course_card(_text: str):
     if _temp:
         _temp = _temp[0]
     else:
-        return None
+        return None, None
     _cards = json.loads("{" + _temp + "}")
     _job_info = {}
     _job_list = []

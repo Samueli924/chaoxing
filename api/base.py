@@ -25,10 +25,12 @@ def get_random_seconds():
     return random.randint(30, 90)
 
 
-def init_session(isVideo: bool = False):
+def init_session(isVideo: bool = False, isAudio: bool = False):
     _session = requests.session()
     if isVideo:
         _session.headers = gc.VIDEO_HEADERS
+    elif isAudio:
+        _session.headers = gc.AUDIO_HEADERS
     else:
         _session.headers = gc.HEADERS
     _session.cookies.update(use_cookies())
@@ -133,7 +135,11 @@ class Chaoxing:
             f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]"
             .encode()).hexdigest()
 
-    def video_progress_log(self, _session, _course, _job, _job_info, _dtoken, _duration, _playingTime):
+    def video_progress_log(self, _session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type: str = "Video"):
+        if "courseId" in _job['otherinfo']:
+            _mid_text = f"otherInfo={_job['otherinfo']}&"
+        else:
+            _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
         _url = (f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
                 f"{_course['cpi']}/"
                 f"{_dtoken}?"
@@ -142,21 +148,23 @@ class Chaoxing:
                 f"duration={_duration}&"
                 f"clipTime=0_{_duration}&"
                 f"objectId={_job['objectid']}&"
-                f"otherInfo={_job['otherinfo']}&"
-                f"courseId={_course['courseId']}&"
+                f"{_mid_text}"
                 f"jobid={_job['jobid']}&"
                 f"userid={self.get_uid()}&"
                 f"isdrag=3&"
                 f"view=pc&"
                 f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
                 f"rt=0.9&"
-                f"dtype=Video&"
+                f"dtype={_type}&"
                 f"_t={get_timestamp()}")
         resp = _session.get(_url)
         return resp.json()["isPassed"]
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1):
-        _session = init_session(isVideo=True)
+    def study_video(self, _course, _job, _job_info, _speed: float = 1, _type: str = "Video"):
+        if _type == "Video":
+            _session = init_session(isVideo=True)
+        else:
+            _session = init_session(isAudio=True)
         _session.headers.update()
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         _video_info = _session.get(_info_url).json()
@@ -172,7 +180,7 @@ class Chaoxing:
             while not _isPassed:
                 if _isFinished:
                     _playingTime = _duration
-                _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime)
+                _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
                 if _isPassed:
                     break
                 _wait_time = get_random_seconds()
