@@ -5,6 +5,7 @@ import re
 from api.logger import logger
 
 
+
 def decode_course_list(_text):
     logger.trace("开始解码课程列表...")
     _soup = BeautifulSoup(_text, "lxml")
@@ -13,17 +14,24 @@ def decode_course_list(_text):
     for course in _raw_courses:
         if not course.select_one("a.not-open-tip"):
             _course_detail = {}
-            _course_detail["id"] = course.attrs["id"]
-            _course_detail["info"] = course.attrs["info"]
-            _course_detail["roleid"] = course.attrs["roleid"]
-            _course_detail["clazzId"] = course.select_one("input.clazzId").attrs["value"]
-            _course_detail["courseId"] = course.select_one("input.courseId").attrs["value"]
-            _course_detail["cpi"] = re.findall("cpi=(.*?)&", course.select_one("a").attrs["href"])[0]
-            _course_detail["title"] = course.select_one("span.course-name").attrs["title"]
-            _course_detail["desc"] = course.select_one("p.margint10").attrs["title"]
-            _course_detail["teacher"] = course.select_one("p.color3").attrs["title"]
-            _course_list.append(_course_detail)
-    return _course_list
+            _course_detail["id"] = course.get("id", "未知ID")
+            _course_detail["info"] = course.get("info", "未知信息")
+            _course_detail["roleid"] = course.get("roleid", "未知角色ID")
+            _clazzId = course.select_one("input.clazzId")
+            _courseId = course.select_one("input.courseId")
+            _link = course.select_one("a")
+            _title = course.select_one("span.course-name")
+            _desc = course.select_one("p.margint10")
+            _teacher = course.select_one("p.color3")
+
+            _course_detail["clazzId"] = _clazzId["value"] if _clazzId else "未知班级ID"
+            _course_detail["courseId"] = _courseId["value"] if _courseId else "未知课程ID"
+            _course_detail["cpi"] = re.findall("cpi=(.*?)&", _link["href"])[0] if _link else "未知CPI"
+            _course_detail["title"] = _title["title"] if _title else "未知课程名称"
+            _course_detail["desc"] = _desc["title"] if _desc else "无描述"
+            _course_detail["teacher"] = _teacher["title"] if _teacher else "未知教师"
+
+            _course_list.a
 
 def decode_course_folder(_text):
     logger.trace("开始解码二级课程列表...")
