@@ -4,6 +4,7 @@ import requests
 import time
 import random
 from hashlib import md5
+from requests.adapters import HTTPAdapter
 
 from api import formatted_output
 from api.cipher import AESCipher
@@ -27,6 +28,8 @@ def get_random_seconds():
 
 def init_session(isVideo: bool = False, isAudio: bool = False):
     _session = requests.session()
+    _session.mount('http://', HTTPAdapter(max_retries=3))
+    _session.mount('https://', HTTPAdapter(max_retries=3))
     if isVideo:
         _session.headers = gc.VIDEO_HEADERS
     elif isAudio:
