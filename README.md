@@ -38,15 +38,9 @@
 4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选)`
 
 ## :heart: CONTRIBUTORS  
-### :one:感谢[huajijam](https://github.com/huajijam)对chaoxing项目的贡献! [PR #73](https://github.com/Samueli924/chaoxing/pull/73)
-### :two:感谢[ljy0309](https://github.com/lyj0309)修复Attachments BUG! [PR #70](https://github.com/Samueli924/chaoxing/pull/70)
-### :three:感谢[Shanxuns](https://github.com/Shanxuns)修正查找任务点的正则表达式内容 [Pull #33](https://github.com/Samueli924/chaoxing/pull/33)  
-### :four:感谢[B1gM8c](https://github.com/B1gM8c)修复登录密码加密BUG[Pull #118](https://github.com/Samueli924/chaoxing/pull/118)  
-### :five:感谢[RyaoChengfeng](https://github.com/RyaoChengfeng)添加Docker运行支持[Pull #125](https://github.com/Samueli924/chaoxing/pull/125)  
-### :six:感谢[a81608882](https://github.com/a81608882)修复403报错BUG[Pull #142](https://github.com/Samueli924/chaoxing/pull/142)
-### :seven:感谢[yhm97](https://github.com/yhm97)修复音频格式导致的403BUG[Pull #187](https://github.com/Samueli924/chaoxing/pull/187) 
-### :eight:感谢[evibhm](https://github.com/evibhm)修复Docker运行的DNS问题、优化Docker映像大小[Pull #232](https://github.com/Samueli924/chaoxing/pull/232)
-### 对于代码有任何问题或建议欢迎Pull&Request
+<a href="https://github.com/Samueli924/chaoxing/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Samueli924/chaoxing" />
+</a>
 
 ## :warning: 免责声明  
 - 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议，允许**开源/免费使用和引用/修改/衍生代码的开源/免费使用**，不允许**修改和衍生的代码作为闭源的商业软件发布和销售**，禁止**使用本代码盈利**，以此代码为基础的程序**必须**同样遵守[GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE)协议  
