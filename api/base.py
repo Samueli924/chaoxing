@@ -143,25 +143,37 @@ class Chaoxing:
             _mid_text = f"otherInfo={_job['otherinfo']}&"
         else:
             _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
-        _url = (f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
-                f"{_course['cpi']}/"
-                f"{_dtoken}?"
-                f"clazzId={_course['clazzId']}&"
-                f"playingTime={_playingTime}&"
-                f"duration={_duration}&"
-                f"clipTime=0_{_duration}&"
-                f"objectId={_job['objectid']}&"
-                f"{_mid_text}"
-                f"jobid={_job['jobid']}&"
-                f"userid={self.get_uid()}&"
-                f"isdrag=3&"
-                f"view=pc&"
-                f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
-                f"rt=0.9&"
-                f"dtype={_type}&"
-                f"_t={get_timestamp()}")
-        resp = _session.get(_url)
-        return resp.json()["isPassed"]
+        _success = False
+        for _possible_rt in ["0.9", "1"]:
+            _url = (f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
+                    f"{_course['cpi']}/"
+                    f"{_dtoken}?"
+                    f"clazzId={_course['clazzId']}&"
+                    f"playingTime={_playingTime}&"
+                    f"duration={_duration}&"
+                    f"clipTime=0_{_duration}&"
+                    f"objectId={_job['objectid']}&"
+                    f"{_mid_text}"
+                    f"jobid={_job['jobid']}&"
+                    f"userid={self.get_uid()}&"
+                    f"isdrag=3&"
+                    f"view=pc&"
+                    f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
+                    f"rt={_possible_rt}&"
+                    f"dtype={_type}&"
+                    f"_t={get_timestamp()}")
+            resp = _session.get(_url)
+            if resp.status_code == 200:
+                _success = True
+                break   # 如果返回为200正常，则跳出循环
+            elif resp.status_code == 403:
+                continue    # 如果出现403无权限报错，则继续尝试不同的rt参数
+            if _success:
+                return resp.json()
+            else:
+                # 若出现两个rt参数都返回403的情况，则跳过当前任务
+                logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
+                return False
 
     def study_video(self, _course, _job, _job_info, _speed: float = 1, _type: str = "Video"):
         if _type == "Video":
@@ -184,7 +196,9 @@ class Chaoxing:
                 if _isFinished:
                     _playingTime = _duration
                 _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
-                if _isPassed:
+                if _isPassed and _isPassed["isPassed"]:
+                    break
+                elif not _isPassed:
                     break
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
