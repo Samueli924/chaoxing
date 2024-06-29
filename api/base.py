@@ -173,12 +173,12 @@ class Chaoxing:
                 break   # 如果返回为200正常，则跳出循环
             elif resp.status_code == 403:
                 continue    # 如果出现403无权限报错，则继续尝试不同的rt参数
-            if _success:
-                return resp.json()
-            else:
-                # 若出现两个rt参数都返回403的情况，则跳过当前任务
-                logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
-                return False
+        if _success:
+            return resp.json()
+        else:
+            # 若出现两个rt参数都返回403的情况，则跳过当前任务
+            logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
+            return False
 
     def study_video(self, _course, _job, _job_info, _speed: float = 1, _type: str = "Video"):
         if _type == "Video":
@@ -197,7 +197,7 @@ class Chaoxing:
             _isFinished = False
             _playingTime = 0
             logger.info(f"开始任务:{_job['name']}, 总时长: {_duration}秒")
-            while not _isPassed:
+            while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
                 _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
