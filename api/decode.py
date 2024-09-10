@@ -11,7 +11,7 @@ def decode_course_list(_text):
     _raw_courses = _soup.select("div.course")
     _course_list = list()
     for course in _raw_courses:
-        if not course.select_one("a.not-open-tip"):
+        if not course.select_one("a.not-open-tip") and not course.select_one("div.not-open-tip"):
             _course_detail = {}
             _course_detail["id"] = course.attrs["id"]
             _course_detail["info"] = course.attrs["info"]
