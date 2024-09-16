@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 import re
-import requests
 import time
 import random
+import requests
 from hashlib import md5
 from requests.adapters import HTTPAdapter
 
-from api import formatted_output
 from api.cipher import AESCipher
 from api.logger import logger
 from api.cookies import save_cookies, use_cookies
@@ -132,8 +131,6 @@ class Chaoxing:
             _job_list, _job_info = decode_course_card(_resp.text)
             if _job_list and len(_job_list) != 0:
                 break
-            else:
-                continue
         # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
         return _job_list, _job_info
@@ -201,9 +198,7 @@ class Chaoxing:
                 if _isFinished:
                     _playingTime = _duration
                 _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
-                if _isPassed and _isPassed["isPassed"]:
-                    break
-                elif not _isPassed:
+                if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
@@ -216,5 +211,5 @@ class Chaoxing:
 
     def study_document(self, _course, _job):
         _session = init_session()
-        _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall('nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
+        _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
