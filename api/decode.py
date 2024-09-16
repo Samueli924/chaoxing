@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
+import re
 import json
 from bs4 import BeautifulSoup
-import re
 from api.logger import logger
 
 
@@ -19,7 +19,7 @@ def decode_course_list(_text):
 
             _course_detail["clazzId"] = course.select_one("input.clazzId").attrs["value"]
             _course_detail["courseId"] = course.select_one("input.courseId").attrs["value"]
-            _course_detail["cpi"] = re.findall("cpi=(.*?)&", course.select_one("a").attrs["href"])[0]
+            _course_detail["cpi"] = re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0]
             _course_detail["title"] = course.select_one("span.course-name").attrs["title"]
             if course.select_one("p.margint10") is None:
                 _course_detail["desc"] = ''
@@ -52,7 +52,7 @@ def decode_course_point(_text):
         if (not "id" in _point.attrs) or (not "title" in _point.attrs):
             continue
         _point_detail = {}
-        _point_detail["id"] = re.findall("^cur(\d{1,20})$", _point.attrs["id"])[0]
+        _point_detail["id"] = re.findall(r"^cur(\d{1,20})$", _point.attrs["id"])[0]
         _point_detail["title"] = str(_point.select_one("span.catalog_sbar").text) + " " + str(_point.attrs["title"])
         _point_detail["jobCount"] = 0
         if _point.select_one("input.knowledgeJobCount"):
@@ -64,7 +64,7 @@ def decode_course_point(_text):
 
 def decode_course_card(_text: str):
     logger.trace("开始解码任务点列表...")
-    _temp = re.findall("mArg=\{(.*?)};", _text.replace(" ", ""))
+    _temp = re.findall(r"mArg=\{(.*?)\};", _text.replace(" ", ""))
     if _temp:
         _temp = _temp[0]
     else:
@@ -85,10 +85,10 @@ def decode_course_card(_text: str):
         _job_list = []
         for _card in _cards:
             # 已经通过的任务
-            if "isPassed" in _card and _card["isPassed"] == True:
+            if "isPassed" in _card and _card["isPassed"] is True:
                 continue
             # 不属于任务点的任务
-            if "job" not in _card or _card["job"] == False:
+            if "job" not in _card or _card["job"] is False:
                 continue
             # 视频任务
             if _card["type"] == "video":
@@ -99,7 +99,7 @@ def decode_course_card(_text: str):
                 _job["otherinfo"] = _card["otherInfo"]
                 try:
                     _job["mid"] = _card["mid"]
-                except KeyError as e:
+                except KeyError:
                     logger.warning("出现转码失败视频，已跳过...")
                     continue
                 _job["objectid"] = _card["objectId"]

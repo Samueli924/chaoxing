@@ -49,9 +49,9 @@ if __name__ == '__main__':
             print(f"ID: {course['courseId']} 课程名: {course['title']}")
         print("*" * 28)
         try:
-            course_list = str(input("请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n")).split(",")
-        except:
-            raise FormatError("输入格式错误")
+            course_list = input("请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n").split(",")
+        except Exception as e:
+            raise FormatError("输入格式错误") from e
     # 筛选需要学习的课程
     for course in all_course:
         if course["courseId"] in course_list:

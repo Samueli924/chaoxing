@@ -16,7 +16,7 @@ def sec2time(sec):
     return ret
 
 
-def show_progress(name, start: int, span: int, total: int, _speed):
+def show_progress(name, start: int, span: int, total: int, _speed: float):
     start_time = time.time()
     while int(time.time() - start_time) < int(span // _speed):
         current = start + int((time.time() - start_time) * _speed)
