@@ -44,7 +44,7 @@ if __name__ == '__main__':
     course_task = []
     # 手动输入要学习的课程ID列表
     if not course_list:
-        print("*"*10 + "课程列表" + "*"*10)
+        print("*" * 10 + "课程列表" + "*" * 10)
         for course in all_course:
             print(f"ID: {course['courseId']} 课程名: {course['title']}")
         print("*" * 28)
@@ -95,4 +95,3 @@ if __name__ == '__main__':
                 # 测验任务
                 elif job["type"] == "workid":
                     logger.trace(f"识别到测验任务, 任务章节: {course['title']}")
-                    pass
