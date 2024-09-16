@@ -24,5 +24,5 @@ def show_progress(name, start: int, span: int, total: int, _speed: float):
         length = int(percent * 40 // 100)
         progress = ("#" * length).ljust(40, " ")
         # remain = (total - current)
-        print("\r" + f"当前任务: {name} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}     ", end="", flush=True)
+        print(f"\r当前任务: {name} |{progress}| {percent}%  {sec2time(current)}/{sec2time(total)}", end="", flush=True)
         time.sleep(gc.THRESHOLD)
