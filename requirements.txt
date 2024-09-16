@@ -4,3 +4,5 @@ beautifulsoup4
 lxml
 argparse
 loguru
+celery
+flask
