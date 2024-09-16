@@ -170,9 +170,9 @@ class Chaoxing:
             resp = _session.get(_url)
             if resp.status_code == 200:
                 _success = True
-                break   # 如果返回为200正常，则跳出循环
+                break # 如果返回为200正常，则跳出循环
             elif resp.status_code == 403:
-                continue    # 如果出现403无权限报错，则继续尝试不同的rt参数
+                continue # 如果出现403无权限报错，则继续尝试不同的rt参数
         if _success:
             return resp.json()
         else:
