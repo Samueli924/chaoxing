@@ -193,7 +193,7 @@ class Chaoxing:
             _isPassed = False
             _isFinished = False
             _playingTime = 0
-            logger.info(f"开始任务:{_job['name']}, 总时长: {_duration}秒")
+            logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
@@ -207,7 +207,8 @@ class Chaoxing:
                 # 播放进度条
                 show_progress(_job['name'], _playingTime, _wait_time, _duration, _speed)
                 _playingTime += _wait_time
-            logger.info(f"\n任务完成:{_job['name']}")
+            print("\r", end="", flush=True)
+            logger.info(f"任务完成: {_job['name']}")
 
     def study_document(self, _course, _job):
         _session = init_session()
