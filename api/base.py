@@ -177,7 +177,7 @@ class Chaoxing:
             logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
             return False
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1, _type: str = "Video"):
+    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"):
         if _type == "Video":
             _session = init_session(isVideo=True)
         else:
