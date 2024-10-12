@@ -38,7 +38,9 @@
 4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选)`
 
 ## :heart: CONTRIBUTORS
-<a href="https://github.com/Samueli924/chaoxing/graphs/contributors">
+![Alt](https://repobeats.axiom.co/api/embed/d3931e84b4b2f17cbe60cafedb38114bdf9931cb.svg "Repobeats analytics image")  
+
+<a style="margin-top: 15px" href="https://github.com/Samueli924/chaoxing/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=Samueli924/chaoxing" />
 </a>
 
