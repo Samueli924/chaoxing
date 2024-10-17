@@ -130,16 +130,20 @@ class Chaoxing:
 
     def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
         _session = init_session()
+        job_list = []
+        job_info = {}
         for _possible_num in ["0", "1"]:
             _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
-            if _job_list and len(_job_list) != 0:
-                break
+            job_list += _job_list
+            job_info.update(_job_info)
+            # if _job_list and len(_job_list) != 0:
+            #     break
         # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
-        return _job_list, _job_info
+        return job_list, job_info
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
         return md5(
