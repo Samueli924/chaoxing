@@ -4,6 +4,7 @@ import configparser
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError
+from api.answer import Tiku
 
 def init_config():
     parser = argparse.ArgumentParser(description='Samueli924/chaoxing')  # 命令行传参
@@ -19,23 +20,35 @@ def init_config():
         return (config.get("common", "username"),
                 config.get("common", "password"),
                 str(config.get("common", "course_list")).split(",") if config.get("common", "course_list") else None,
-                int(config.get("common", "speed")))
+                int(config.get("common", "speed")),
+                config['tiku']
+                )
     else:
-        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1)
+        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1,None)
 
 
 if __name__ == '__main__':
     try:
         # 初始化登录信息
-        username, password, course_list, speed = init_config()
+        username, password, course_list, speed,tiku_config= init_config()
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
             username = input("请输入你的手机号，按回车确认\n手机号:")
             password = input("请输入你的密码，按回车确认\n密码:")
         account = Account(username, password)
+        # 设置题库
+        tiku = Tiku()
+        if not tiku_config: 
+            # 尝试使用默认的config路径
+            config = configparser.ConfigParser()
+            config.read('config.ini', encoding="utf8")
+            tiku_config = config['tiku']
+        tiku.config_set(tiku_config)
+        tiku = tiku.get_tiku_from_config()
+        tiku.load_token()
         # 实例化超星API
-        chaoxing = Chaoxing(account=account)
+        chaoxing = Chaoxing(account=account,tiku=tiku)
         # 检查当前登录状态，并检查账号密码
         _login_state = chaoxing.login()
         if not _login_state["status"]:
@@ -96,6 +109,7 @@ if __name__ == '__main__':
                     # 测验任务
                     elif job["type"] == "workid":
                         logger.trace(f"识别到测验任务, 任务章节: {course['title']}")
+                        chaoxing.study_work(course, job,job_info)
     except BaseException as e:
         import traceback
         logger.error(f"错误: {type(e).__name__}: {e}")
