@@ -14,8 +14,11 @@ from api.config import GlobalConst as gc
 from api.decode import (decode_course_list,
                         decode_course_point,
                         decode_course_card,
-                        decode_course_folder)
-
+                        decode_course_folder,
+                        decode_questions_info
+                        )
+from api.answer import *
+import copy
 
 def get_timestamp():
     return str(int(time.time() * 1000))
@@ -27,6 +30,7 @@ def get_random_seconds():
 
 def init_session(isVideo: bool = False, isAudio: bool = False):
     _session = requests.session()
+    _session.verify = False
     _session.mount('http://', HTTPAdapter(max_retries=3))
     _session.mount('https://', HTTPAdapter(max_retries=3))
     if isVideo:
@@ -50,12 +54,14 @@ class Account:
 
 
 class Chaoxing:
-    def __init__(self, account: Account = None):
+    def __init__(self, account: Account = None,tiku:Tiku=None):
         self.account = account
         self.cipher = AESCipher()
+        self.tiku = tiku
 
     def login(self):
         _session = requests.session()
+        _session.verify = False
         _url = "https://passport2.chaoxing.com/fanyalogin"
         _data = {"fid": "-1",
                     "uname": self.cipher.encrypt(self.account.username),
@@ -124,16 +130,20 @@ class Chaoxing:
 
     def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
         _session = init_session()
+        job_list = []
+        job_info = {}
         for _possible_num in ["0", "1"]:
             _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
-            if _job_list and len(_job_list) != 0:
-                break
+            job_list += _job_list
+            job_info.update(_job_info)
+            # if _job_list and len(_job_list) != 0:
+            #     break
         # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
-        return _job_list, _job_info
+        return job_list, job_info
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
         return md5(
@@ -214,3 +224,141 @@ class Chaoxing:
         _session = init_session()
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
+
+    def study_work(self, _course, _job,_job_info) -> None:
+        if self.tiku.DISABLE or not self.tiku:
+            return None
+        def random_answer(options) -> str:
+            if not options:
+                return ''
+            options_list = options.split('\n')
+            _answer = random.choice(options_list)[:1]
+            answer = _answer[:1]    # 取首字为答案，例如A或B
+            # 判断题处理
+            if q['type'] == "judgement":
+                # answer = self.tiku.jugement_select(_answer)
+                answer = "true" if random.choice[True,False] else "false"
+            logger.info(f'随机选择 -> {answer}')
+            return answer
+        
+
+        # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
+        _session = init_session()
+        headers={
+            "Host": "mooc1.chaoxing.com",
+            "sec-ch-ua": "\"Microsoft Edge\";v=\"129\", \"Not=A?Brand\";v=\"8\", \"Chromium\";v=\"129\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Dest": "iframe",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5"
+        }
+        cookies = _session.cookies.get_dict()
+
+
+        _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"   
+        _resp = requests.get(
+            _url,
+            headers=headers,
+            cookies=cookies,
+            verify=False,
+            params = {
+                "api": "1",
+                "workId": _job['jobid'].replace("work-",""),
+                "jobid": _job['jobid'],
+                "originJobId": _job['jobid'],
+                "needRedirect": "true",
+                "skipHeader": "true",
+                "knowledgeid": str(_job_info['knowledgeid']),
+                'ktoken': _job_info['ktoken'], 
+                "cpi": _job_info['cpi'],
+                "ut": "s",
+                "clazzId": _course['clazzId'],
+                "type": "",
+                "enc": _job['enc'],
+                "mooc2": "1",
+                "courseid": _course['courseId']
+            }
+        )
+        questions = decode_questions_info(_resp.text)   # 加载题目信息
+
+        # 搜题
+        for q in questions['questions']:
+            res = self.tiku.query(q)
+            answer = ''
+            if not res:
+                # 随机答题
+                answer = random_answer(q['options'])
+            else:
+                # 根据响应结果选择答案
+                options_list = q['options'].split('\n')
+                if q['type'] == "multiple":
+                    # 多选处理
+                    for _a in res.split(' '):
+                        for o in options_list:
+                            if _a in o:
+                                answer += o[:1]
+                elif q['type'] == 'judgement':
+                    answer = self.tiku.jugement_select(res)
+                else:
+                    for o in options_list:
+                        if res in o:
+                            answer = o[:1]
+                            break
+                # 如果未能匹配，依然随机答题
+                answer = answer if answer else random_answer(q['options'])
+
+            # 填充答案
+            q['answerField'][f'answer{q["id"]}'] = answer
+        
+        # 提交模式
+        questions['pyFlag'] = ""   # 留空直接提交，1保存但不提交
+
+        # 组建提交表单
+        for q in questions["questions"]:
+            questions.update({
+                f'answer{q["id"]}':q['answerField'][f'answer{q["id"]}'],
+                f'answertype{q["id"]}':q['answerField'][f'answertype{q["id"]}']
+            })
+        del questions["questions"]
+
+        res = _session.post(
+            'https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew',
+            data=questions,
+            headers= {
+                "Host": "mooc1.chaoxing.com",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "X-Requested-With": "XMLHttpRequest",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "sec-ch-ua": "\"Microsoft Edge\";v=\"129\", \"Not=A?Brand\";v=\"8\", \"Chromium\";v=\"129\"",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "sec-ch-ua-mobile": "?0",
+                "Origin": "https://mooc1.chaoxing.com",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Dest": "empty",
+                #"Referer": "https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?courseId=246831735&workAnswerId=52680423&workId=37778125&api=1&knowledgeid=913820156&classId=107515845&oldWorkId=07647c38d8de4c648a9277c5bed7075a&jobid=work-07647c38d8de4c648a9277c5bed7075a&type=&isphone=false&submit=false&enc=1d826aab06d44a1198fc983ed3d243b1&cpi=338350298&mooc2=1&skipHeader=true&originJobId=work-07647c38d8de4c648a9277c5bed7075a",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5"
+            }
+        )
+        if res.status_code == 200:
+            res_json = res.json()
+            if res_json['status']:
+                logger.info(f'提交答题成功 -> {res_json["msg"]}')
+            else:
+                logger.error(f'提交答题失败 -> {res_json["msg"]}')
+        else:
+            logger.error(f"提交答题失败 -> {res.text}")
+
+
+
+            
+
+
+
+
