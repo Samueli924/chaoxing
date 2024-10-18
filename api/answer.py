@@ -137,7 +137,13 @@ class Tiku:
             self.config_set(self._get_conf())
         if self.DISABLE:
             return self
-        cls_name = self._conf['provider']
+        try:
+            cls_name = self._conf['provider']
+            if not cls_name:
+                raise KeyError
+        except KeyError:
+            logger.error("未找到题库配置，已忽略题库功能")
+            return self
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
         return new_cls
