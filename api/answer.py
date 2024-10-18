@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 import json
 from api.logger import logger
+import random
 from urllib3 import disable_warnings,exceptions
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
@@ -41,7 +42,7 @@ class Tiku:
         self._name = None
         self._api = None
         self._conf = None
-        self._token = None
+
     @property
     def name(self):
         return self._name
@@ -73,7 +74,7 @@ class Tiku:
     def config_set(self,config:configparser.ConfigParser|None):
         self._conf = config
 
-    def __get_conf(self):
+    def _get_conf(self):
         """
         从默认配置文件查询配置，如果未能查到，停用题库
         """
@@ -91,6 +92,7 @@ class Tiku:
             return None
 
         # 预处理，去除【单选题】这样与标题无关的字段
+        # 此处需要改进！！！
         q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
 
         # 先过缓存
@@ -116,13 +118,33 @@ class Tiku:
         """
         if not self._conf:
             # 尝试从默认配置文件加载
-            self.config_set(self.__get_conf())
+            self.config_set(self._get_conf())
         if self.DISABLE:
             return self
         cls_name = self._conf['provider']
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
         return new_cls
+    
+    def jugement_select(self,answer:str) -> bool:
+        """
+        这是一个专用的方法，要求配置维护两个选项列表，一份用于正确选项，一份用于错误选项，以应对题库对判断题答案响应的各种可能的情况
+        它的作用是将获取到的答案answer与可能的选项列对比并返回对应的布尔值
+        """
+        if self.DISABLE:
+            return False
+        true_list = self._conf['true_list'].split(',')
+        false_list = self._conf['false_list'].split(',')
+        if answer in true_list:
+            return True
+        elif answer in false_list:
+            return False
+        else:
+            # 无法判断，随机选择
+            logger.error(f'无法判断答案{answer}对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
+            return random.choice([True,False])
+    
+
 
 # 按照以下模板实现更多题库
 
@@ -133,34 +155,47 @@ class TikuYanxi(Tiku):
         self.name = '言溪题库'
         self.api = 'https://tk.enncy.cn/query'
         self._token = None
+        self._token_index = 0   # token队列计数器
+        self._times = 100   # 查询次数剩余，初始化为100，查询后校对修正
 
     def _query(self,q_info:dict):
         res = requests.get(
             self.api,
             params={
                 'question':q_info['title'],
-                'token':self.token
+                'token':self._token
             },
             verify=False
         )
         if res.status_code == 200:
             res_json = res.json()
             if not res_json['code']:
-                logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times","未知")}:\n消息:{res_json["message"]}')
+                # 如果是因为TOKEN次数到期，则更换token
+                if self._times == 0 or '次数不足' in res_json['data']['answer']:
+                    logger.info(f'TOKEN查询次数不足，将会更换并重新搜题')
+                    self._token_index += 1
+                    self.load_token()
+                    # 重新查询
+                    return self._query(q_info)
+                logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n消息:{res_json["message"]}')
                 return None
+            self._times = res_json["data"].get("times",self._times)
             return res_json['data']['answer']
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
     
     def load_token(self): 
-        self.token=self._conf['token']
+        token_list = self._conf['tokens'].split(',')
+        if self._token_index == len(token_list):
+            # TOKEN 用完
+            logger.error('TOKEN用完，请自行更换再重启脚本')
+            raise Exception(f'{self.name} TOKEN 已用完，请更换')
+        self._token = token_list[self._token_index]
 
     def init_tiku(self):
         if not self._conf:
-            self.config_set(self.__get_conf())
+            self.config_set(self._get_conf())
         if not self.DISABLE:
             return self.load_token()
-
-    
 
