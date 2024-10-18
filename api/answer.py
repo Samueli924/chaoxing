@@ -34,7 +34,8 @@ class CacheDAO:
 
 
 class Tiku:
-    CONFIG_PATH = "config.ini"
+    CONFIG_PATH = "config.ini"  # 默认配置文件路径
+    DISABLE = False     # 停用标志
 
     def __init__(self) -> None:
         self._name = None
@@ -65,19 +66,30 @@ class Tiku:
     def token(self,value):
         self._token = value
 
-    def load_token(self): 
-        self.token=self._conf['token']
+    def init_tiku(self):
+        # 仅用于题库初始化，例如配置token
+        pass
 
-    def config_set(self,config:configparser.ConfigParser):
+    def config_set(self,config:configparser.ConfigParser|None):
         self._conf = config
 
-
     def __get_conf(self):
-        config = configparser.ConfigParser()
-        config.read(self.CONFIG_PATH, encoding="utf8")
-        return config['tiku']
-    
+        """
+        从默认配置文件查询配置，如果未能查到，停用题库
+        """
+        try:
+            config = configparser.ConfigParser()
+            config.read(self.CONFIG_PATH, encoding="utf8")
+            return config['tiku']
+        except KeyError or FileNotFoundError:
+            logger.info("未找到tiku配置，已忽略题库功能")
+            self.DISABLE = True
+            return None
+
     def query(self,q_info:dict) -> str|None:
+        if self.DISABLE:
+            return None
+
         # 预处理，去除【单选题】这样与标题无关的字段
         q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
 
@@ -99,8 +111,14 @@ class Tiku:
         pass
 
     def get_tiku_from_config(self):
+        """
+        从配置文件加载题库，这个配置可以是用户提供，可以是默认配置文件
+        """
         if not self._conf:
+            # 尝试从默认配置文件加载
             self.config_set(self.__get_conf())
+        if self.DISABLE:
+            return self
         cls_name = self._conf['provider']
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
@@ -134,6 +152,15 @@ class TikuYanxi(Tiku):
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
+    
+    def load_token(self): 
+        self.token=self._conf['token']
+
+    def init_tiku(self):
+        if not self._conf:
+            self.config_set(self.__get_conf())
+        if not self.DISABLE:
+            return self.load_token()
 
     
 
