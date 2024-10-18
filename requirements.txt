@@ -6,3 +6,4 @@ argparse
 loguru
 celery
 flask
+pwinput
