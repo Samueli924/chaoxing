@@ -18,7 +18,6 @@ from api.decode import (decode_course_list,
                         decode_questions_info
                         )
 from api.answer import *
-import copy
 
 def get_timestamp():
     return str(int(time.time() * 1000))
@@ -232,19 +231,35 @@ class Chaoxing:
     def study_work(self, _course, _job,_job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
-        def random_answer(options) -> str:
+        def random_answer(options:str) -> str:
+            answer = ''
             if not options:
-                return ''
-            options_list = options.split('\n')
-            _answer = random.choice(options_list)[:1]
-            answer = _answer[:1]    # 取首字为答案，例如A或B
+                return answer
+            
+            if q['type'] == "multiple":
+                _op_list = options.split('\n')
+                for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):
+                    _choice = random.choice(_op_list)
+                    _op_list.remove(_choice)
+                    answer+=_choice[:1] # 取首字为答案，例如A或B
+            elif q['type'] == "single":
+                answer = random.choice(options.split('\n'))[:1] # 取首字为答案，例如A或B
             # 判断题处理
-            if q['type'] == "judgement":
+            elif q['type'] == "judgement":
                 # answer = self.tiku.jugement_select(_answer)
                 answer = "true" if random.choice([True,False]) else "false"
             logger.info(f'随机选择 -> {answer}')
             return answer
         
+        def multi_cut(answer) -> list[str]:
+            cut_char = [' ',',','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&']    # 多选答案切割符
+            res = []
+            for char in cut_char:
+                res = answer.split(char)
+                if len(res)>1:
+                    return res
+            return list(res)
+
 
         # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
@@ -302,9 +317,9 @@ class Chaoxing:
                 options_list = q['options'].split('\n')
                 if q['type'] == "multiple":
                     # 多选处理
-                    for _a in res.split(' '):
+                    for _a in multi_cut(res):
                         for o in options_list:
-                            if _a in o:
+                            if _a.upper() in o:     # 题库返回的答案可能包含选项，如A，B，C，全部转成大写与学习通一致
                                 answer += o[:1]
                 elif q['type'] == 'judgement':
                     answer = 'true' if self.tiku.jugement_select(res) else 'false'
