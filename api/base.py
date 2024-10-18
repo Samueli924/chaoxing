@@ -236,7 +236,8 @@ class Chaoxing:
             answer = _answer[:1]    # 取首字为答案，例如A或B
             # 判断题处理
             if q['type'] == "judgement":
-                answer = "true" if "对" in _answer else "false"
+                # answer = self.tiku.jugement_select(_answer)
+                answer = "true" if random.choice[True,False] else "false"
             logger.info(f'随机选择 -> {answer}')
             return answer
         
@@ -302,7 +303,7 @@ class Chaoxing:
                             if _a in o:
                                 answer += o[:1]
                 elif q['type'] == 'judgement':
-                    answer = 'true' if '对' in res else 'false'
+                    answer = self.tiku.jugement_select(res)
                 else:
                     for o in options_list:
                         if res in o:
