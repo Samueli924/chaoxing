@@ -182,6 +182,7 @@ def decode_questions_info(html_content) -> dict:
         q_options = ''
         for li_tag in div_tag.find("ul").find_all("li"):
             q_options += replace_rtn(fd.decode(li_tag.text))+'\n'
+        q_options=q_options[:-1]    # 去除尾部'\n'
 
         # 尝试使用 data 属性来判断题型
         q_type_code = div_tag.find('div',class_='TiMu').attrs['data']
