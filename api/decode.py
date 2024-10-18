@@ -76,14 +76,20 @@ def decode_course_point(_text):
 
 def decode_course_card(_text: str):
     logger.trace("开始解码任务点列表...")
+    _job_info = {}
+    _job_list = []
+    # 对于未开放章节检测
+    if '章节未开放' in _text:
+        _job_info['notOpen'] = True
+        return [],_job_info
+    
     _temp = re.findall(r"mArg=\{(.*?)\};", _text.replace(" ", ""))
     if _temp:
         _temp = _temp[0]
     else:
         return [],{}
     _cards = json.loads("{" + _temp + "}")
-    _job_info = {}
-    _job_list = []
+   
     if _cards:
         _job_info = {}
         _job_info["ktoken"] = _cards["defaults"]["ktoken"]
