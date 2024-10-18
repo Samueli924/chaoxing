@@ -110,6 +110,7 @@ if __name__ == '__main__':
                     elif job["type"] == "workid":
                         logger.trace(f"识别到测验任务, 任务章节: {course['title']}")
                         chaoxing.study_work(course, job,job_info)
+        logger.info("所有课程学习任务已完成")
     except BaseException as e:
         import traceback
         logger.error(f"错误: {type(e).__name__}: {e}")
