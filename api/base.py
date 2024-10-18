@@ -303,7 +303,7 @@ class Chaoxing:
                             if _a in o:
                                 answer += o[:1]
                 elif q['type'] == 'judgement':
-                    answer = self.tiku.jugement_select(res)
+                    answer = 'true' if self.tiku.jugement_select(res) else 'false'
                 else:
                     for o in options_list:
                         if res in o:
