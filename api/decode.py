@@ -80,7 +80,7 @@ def decode_course_card(_text: str):
     if _temp:
         _temp = _temp[0]
     else:
-        return None, None
+        return [],{}
     _cards = json.loads("{" + _temp + "}")
     _job_info = {}
     _job_list = []
@@ -142,6 +142,12 @@ def decode_course_card(_text: str):
                 _job["enc"] = _card["enc"]
                 _job["aid"] = _card["aid"]
                 _job_list.append(_job)
+                continue
+            if _card['type'] == "read":
+                # 阅读任务 实际上不属于任务点，永远不会转跳至此，占位
+                continue
+            if _card["type"] == "vote":
+                # 调查问卷 同上
                 continue
         return _job_list, _job_info
     
