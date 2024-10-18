@@ -237,7 +237,7 @@ class Chaoxing:
             # 判断题处理
             if q['type'] == "judgement":
                 # answer = self.tiku.jugement_select(_answer)
-                answer = "true" if random.choice[True,False] else "false"
+                answer = "true" if random.choice([True,False]) else "false"
             logger.info(f'随机选择 -> {answer}')
             return answer
         
