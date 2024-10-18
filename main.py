@@ -32,6 +32,9 @@ def init_config():
 
 if __name__ == '__main__':
     try:
+        # 避免异常的无限回滚
+        ROLLBACK_TIMES = 0  # 回滚计数器
+
         # 初始化登录信息
         username, password, course_list, speed,tiku_config= init_config()
         # 规范化播放速度的输入值
@@ -95,6 +98,9 @@ if __name__ == '__main__':
                         # 未启用题库或未开启题库提交，章节检测未完成会导致无法开始下一章，直接退出
                         logger.error(f"章节未开启，可能由于上一章节的章节检测未完成，请手动完成并提交再重试，或者开启题库并启用提交")
                         break
+                    if ROLLBACK_TIMES == 3:
+                        raise Exception("回滚次数超过3次，请手动检查学习通任务点完成情况")
+                    ROLLBACK_TIMES +=1
                     continue
 
                 # 可能存在章节无任何内容的情况
@@ -126,6 +132,10 @@ if __name__ == '__main__':
                     elif job["type"] == "workid":
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
                         chaoxing.study_work(course, job,job_info)
+                    # 阅读任务
+                    elif job["type"] == "read":
+                        logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
+                        chaoxing.strdy_read(course, job,job_info)
                 __point_index += 1
         logger.info("所有课程学习任务已完成")
     except BaseException as e:
