@@ -319,8 +319,8 @@ class Chaoxing:
             # 填充答案
             q['answerField'][f'answer{q["id"]}'] = answer
         
-        # 提交模式
-        questions['pyFlag'] = ""   # 留空直接提交，1保存但不提交
+        # 提交模式  现在与题库绑定
+        questions['pyFlag'] = self.tiku.get_submit_params()  
 
         # 组建提交表单
         for q in questions["questions"]:
