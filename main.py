@@ -17,7 +17,6 @@ def init_config():
     parser.add_argument("-l", "--list", type=str, default=None, help="要学习的课程ID列表")
     parser.add_argument("-s", "--speed", type=float, default=1.0, help="视频播放倍速(默认1，最大2)")
     args = parser.parse_args()
-    args.config = args.config or "config.ini"
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config, encoding="utf8")
@@ -87,7 +86,7 @@ if __name__ == '__main__':
                 jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
                 
                 # 发现未开放章节，回滚上一个任务重新完成一次
-                if job_info['notOpen']:
+                if job_info.get('notOpen',False):
                     __point_index -= 1  # 默认第一个任务总是开放的
                     continue
 
@@ -119,6 +118,7 @@ if __name__ == '__main__':
                     elif job["type"] == "workid":
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
                         chaoxing.study_work(course, job,job_info)
+                __point_index += 1
         logger.info("所有课程学习任务已完成")
     except BaseException as e:
         import traceback
