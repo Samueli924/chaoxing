@@ -37,6 +37,7 @@ class CacheDAO:
 class Tiku:
     CONFIG_PATH = "config.ini"  # 默认配置文件路径
     DISABLE = False     # 停用标志
+    SUBMIT = False      # 提交标志
 
     def __init__(self) -> None:
         self._name = None
@@ -68,7 +69,18 @@ class Tiku:
         self._token = value
 
     def init_tiku(self):
-        # 仅用于题库初始化，例如配置token
+        # 仅用于题库初始化，应该在题库载入后作初始化调用，随后才可以使用题库
+        # 尝试根据配置文件设置提交模式
+        if not self._conf:
+            self.config_set(self._get_conf())
+        if not self.DISABLE:
+            # 设置提交模式
+            self.SUBMIT = True if self._conf['submit'] == 'true' else False
+            # 调用自定义题库初始化
+            self._init_tiku()
+        
+    def _init_tiku(self):
+        # 仅用于题库初始化，例如配置token，交由自定义题库完成
         pass
 
     def config_set(self,config:configparser.ConfigParser|None):
@@ -100,16 +112,20 @@ class Tiku:
         answer = cache_dao.getCache(q_info['title'])
         if answer:
             logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
-            return answer
+            return answer.strip()
         else:
             answer = self._query(q_info)
             if answer:
+                answer = answer.strip()
                 cache_dao.addCache(q_info['title'], answer)
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
                 return answer
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
     def _query(self,q_info:dict):
+        """
+        查询接口，交由自定义题库实现
+        """
         pass
 
     def get_tiku_from_config(self):
@@ -135,16 +151,26 @@ class Tiku:
             return False
         true_list = self._conf['true_list'].split(',')
         false_list = self._conf['false_list'].split(',')
+        # 对响应的答案作处理
+        answer = answer.strip()
         if answer in true_list:
             return True
         elif answer in false_list:
             return False
         else:
             # 无法判断，随机选择
-            logger.error(f'无法判断答案{answer}对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
+            logger.error(f'无法判断答案 -> {answer} 对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
             return random.choice([True,False])
     
-
+    def get_submit_params(self):
+        """
+        这是一个专用方法，用于根据当前设置的提交模式，响应对应的答题提交API中的pyFlag值
+        """
+        # 留空直接提交，1保存但不提交
+        if self.SUBMIT:
+            return ""
+        else:
+            return "1"
 
 # 按照以下模板实现更多题库
 
@@ -180,7 +206,7 @@ class TikuYanxi(Tiku):
                 logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n消息:{res_json["message"]}')
                 return None
             self._times = res_json["data"].get("times",self._times)
-            return res_json['data']['answer']
+            return res_json['data']['answer'].strip()
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
@@ -193,9 +219,6 @@ class TikuYanxi(Tiku):
             raise Exception(f'{self.name} TOKEN 已用完，请更换')
         self._token = token_list[self._token_index]
 
-    def init_tiku(self):
-        if not self._conf:
-            self.config_set(self._get_conf())
-        if not self.DISABLE:
-            return self.load_token()
+    def _init_tiku(self):
+        self.load_token()
 

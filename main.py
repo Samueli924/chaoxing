@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
             # 为了支持课程任务回滚，采用下标方式遍历任务点
             __point_index = 0
-            for __point_index in range(len(point_list["points"])):
+            while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
                 # 获取当前章节的所有任务点
@@ -87,13 +87,19 @@ if __name__ == '__main__':
                 job_info = None
                 jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
                 
-                # 发现未开放章节，回滚上一个任务重新完成一次
+                # 发现未开放章节，尝试回滚上一个任务重新完成一次
                 if job_info.get('notOpen',False):
                     __point_index -= 1  # 默认第一个任务总是开放的
+                    # 针对题库启用情况
+                    if not tiku or tiku.DISABLE or not tiku.SUBMIT:
+                        # 未启用题库或未开启题库提交，章节检测未完成会导致无法开始下一章，直接退出
+                        logger.error(f"章节未开启，可能由于上一章节的章节检测未完成，请手动完成并提交再重试，或者开启题库并启用提交")
+                        break
                     continue
 
                 # 可能存在章节无任何内容的情况
                 if not jobs:
+                    __point_index += 1
                     continue
                 # 遍历所有任务点
                 for job in jobs:

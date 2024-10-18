@@ -137,6 +137,10 @@ class Chaoxing:
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
+            if _job_info.get('notOpen',False):
+                # 直接返回，节省一次请求
+                logger.info("该章节未开放")
+                return [], _job_info
             job_list += _job_list
             job_info.update(_job_info)
             # if _job_list and len(_job_list) != 0:
@@ -315,8 +319,8 @@ class Chaoxing:
             # 填充答案
             q['answerField'][f'answer{q["id"]}'] = answer
         
-        # 提交模式
-        questions['pyFlag'] = ""   # 留空直接提交，1保存但不提交
+        # 提交模式  现在与题库绑定
+        questions['pyFlag'] = self.tiku.get_submit_params()  
 
         # 组建提交表单
         for q in questions["questions"]:
