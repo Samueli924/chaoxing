@@ -73,6 +73,7 @@ if __name__ == '__main__':
         # 开始遍历要学习的课程列表
         logger.info(f"课程列表过滤完毕，当前课程任务数量: {len(course_task)}")
         for course in course_task:
+            logger.info(f"开始学习课程: {course['title']}")
             # 获取当前课程的所有章节
             point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
 
@@ -80,6 +81,7 @@ if __name__ == '__main__':
             __point_index = 0
             for __point_index in range(len(point_list["points"])):
                 point = point_list["points"][__point_index]
+                logger.info(f'当前章节: {point["title"]}')
                 # 获取当前章节的所有任务点
                 jobs = []
                 job_info = None
