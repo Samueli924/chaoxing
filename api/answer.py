@@ -97,12 +97,12 @@ class Tiku:
 
         # 先过缓存
         cache_dao = CacheDAO()
-        answer = cache_dao.getCache(q_info['title'])
+        answer = cache_dao.getCache(q_info['title']).strip()
         if answer:
             logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
             return answer
         else:
-            answer = self._query(q_info)
+            answer = self._query(q_info).strip()
             if answer:
                 cache_dao.addCache(q_info['title'], answer)
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
@@ -135,13 +135,15 @@ class Tiku:
             return False
         true_list = self._conf['true_list'].split(',')
         false_list = self._conf['false_list'].split(',')
+        # 对响应的答案作处理
+        answer = answer.strip()
         if answer in true_list:
             return True
         elif answer in false_list:
             return False
         else:
             # 无法判断，随机选择
-            logger.error(f'无法判断答案{answer}对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
+            logger.error(f'无法判断答案 -> {answer} 对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
             return random.choice([True,False])
     
 
@@ -180,7 +182,7 @@ class TikuYanxi(Tiku):
                 logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n消息:{res_json["message"]}')
                 return None
             self._times = res_json["data"].get("times",self._times)
-            return res_json['data']['answer']
+            return res_json['data']['answer'].strip()
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
