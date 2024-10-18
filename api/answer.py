@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Optional
 import json
 from api.logger import logger
+from urllib3 import disable_warnings,exceptions
+# 关闭警告
+disable_warnings(exceptions.InsecureRequestWarning)
 
 class CacheDAO:
     """

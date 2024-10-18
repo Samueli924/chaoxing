@@ -5,6 +5,9 @@ from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError
 from api.answer import Tiku
+from urllib3 import disable_warnings,exceptions
+# 关闭警告
+disable_warnings(exceptions.InsecureRequestWarning)
 
 def init_config():
     parser = argparse.ArgumentParser(description='Samueli924/chaoxing')  # 命令行传参
