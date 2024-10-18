@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import configparser
+import pwinput
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError
@@ -31,8 +32,8 @@ if __name__ == '__main__':
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
-            username = input("请输入你的手机号，按回车确认\n手机号:")
-            password = input("请输入你的密码，按回车确认\n密码:")
+            username = pwinput.pwinput("请输入你的手机号，按回车确认\n手机号:", mask="*")
+            password = pwinput.pwinput("请输入你的密码，按回车确认\n密码:", mask="*")
         account = Account(username, password)
         # 实例化超星API
         chaoxing = Chaoxing(account=account)
