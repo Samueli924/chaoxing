@@ -137,6 +137,10 @@ class Chaoxing:
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
+            if _job_info.get('notOpen',False):
+                # 直接返回，节省一次请求
+                logger.info("该章节未开放")
+                return [], _job_info
             job_list += _job_list
             job_info.update(_job_info)
             # if _job_list and len(_job_list) != 0:

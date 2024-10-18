@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
             # 为了支持课程任务回滚，采用下标方式遍历任务点
             __point_index = 0
-            for __point_index in range(len(point_list["points"])):
+            while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
                 # 获取当前章节的所有任务点
@@ -94,6 +94,7 @@ if __name__ == '__main__':
 
                 # 可能存在章节无任何内容的情况
                 if not jobs:
+                    __point_index += 1
                     continue
                 # 遍历所有任务点
                 for job in jobs:
