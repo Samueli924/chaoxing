@@ -42,14 +42,9 @@ if __name__ == '__main__':
         account = Account(username, password)
         # 设置题库
         tiku = Tiku()
-        if not tiku_config: 
-            # 尝试使用默认的config路径
-            config = configparser.ConfigParser()
-            config.read('config.ini', encoding="utf8")
-            tiku_config = config['tiku']
-        tiku.config_set(tiku_config)
-        tiku = tiku.get_tiku_from_config()
-        tiku.load_token()
+        tiku.config_set(tiku_config)    # 载入配置
+        tiku = tiku.get_tiku_from_config()  # 载入题库
+        tiku.init_tiku()    # 初始化题库
         # 实例化超星API
         chaoxing = Chaoxing(account=account,tiku=tiku)
         # 检查当前登录状态，并检查账号密码
@@ -111,7 +106,7 @@ if __name__ == '__main__':
                         chaoxing.study_document(course, job)
                     # 测验任务
                     elif job["type"] == "workid":
-                        logger.trace(f"识别到测验任务, 任务章节: {course['title']}")
+                        logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
                         chaoxing.study_work(course, job,job_info)
         logger.info("所有课程学习任务已完成")
     except BaseException as e:

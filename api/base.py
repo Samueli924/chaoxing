@@ -57,7 +57,7 @@ class Chaoxing:
     def __init__(self, account: Account = None,tiku:Tiku=None):
         self.account = account
         self.cipher = AESCipher()
-        self.tiku = tiku if tiku else Tiku().get_tiku_from_config()
+        self.tiku = tiku
 
     def login(self):
         _session = requests.session()
@@ -225,7 +225,9 @@ class Chaoxing:
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
 
-    def study_work(self, _course, _job,_job_info):
+    def study_work(self, _course, _job,_job_info) -> None:
+        if self.tiku.DISABLE or not self.tiku:
+            return None
         def random_answer(options) -> str:
             if not options:
                 return ''
