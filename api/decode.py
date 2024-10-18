@@ -108,6 +108,22 @@ def decode_course_card(_text: str):
                 continue
             # 不属于任务点的任务
             if "job" not in _card or _card["job"] is False:
+                if _card['type'] == "read":
+                # 发现有在视频任务下掺杂阅读任务，不完成可能会导致无法开启下一章节
+                    if _card['property'].get('read',False):
+                        # 已阅读，跳过
+                        continue
+                    _job = {}
+                    _job['title'] = _card['property']['title']
+                    _job["type"] = "read"
+                    _job['id'] = _card['property']['id']
+                    _job["jobid"] = _card["jobid"]
+                    _job["jtoken"] = _card["jtoken"]
+                    _job['mid'] = _card['mid']
+                    _job['otherinfo'] = _card["otherInfo"]
+                    _job['enc'] = _card["enc"]
+                    _job['aid'] = _card["aid"]
+                    _job_list.append(_job)
                 continue
             # 视频任务
             if _card["type"] == "video":
@@ -149,9 +165,7 @@ def decode_course_card(_text: str):
                 _job["aid"] = _card["aid"]
                 _job_list.append(_job)
                 continue
-            if _card['type'] == "read":
-                # 阅读任务 实际上不属于任务点，永远不会转跳至此，占位
-                continue
+       
             if _card["type"] == "vote":
                 # 调查问卷 同上
                 continue
