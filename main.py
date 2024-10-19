@@ -99,9 +99,12 @@ if __name__ == '__main__':
                         logger.error(f"章节未开启，可能由于上一章节的章节检测未完成，请手动完成并提交再重试，或者开启题库并启用提交")
                         break
                     if ROLLBACK_TIMES == 3:
-                        raise Exception("回滚次数超过3次，请手动检查学习通任务点完成情况")
+                        raise Exception("回滚次数已达3次，请手动检查学习通任务点完成情况")
                     ROLLBACK_TIMES +=1
                     continue
+
+                # 正常获取，重置回滚计数器
+                ROLLBACK_TIMES = 0
 
                 # 可能存在章节无任何内容的情况
                 if not jobs:
