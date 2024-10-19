@@ -108,8 +108,8 @@ def decode_course_card(_text: str):
                 continue
             # 不属于任务点的任务
             if "job" not in _card or _card["job"] is False:
-                if _card['type'] == "read":
-                # 发现有在视频任务下掺杂阅读任务，不完成可能会导致无法开启下一章节
+                if _card.get('type') and _card['type'] == "read":
+                    # 发现有在视频任务下掺杂阅读任务，不完成可能会导致无法开启下一章节
                     if _card['property'].get('read',False):
                         # 已阅读，跳过
                         continue
