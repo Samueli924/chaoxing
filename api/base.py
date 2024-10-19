@@ -18,7 +18,6 @@ from api.decode import (decode_course_list,
                         decode_questions_info
                         )
 from api.answer import *
-import copy
 
 def get_timestamp():
     return str(int(time.time() * 1000))
@@ -100,7 +99,24 @@ class Chaoxing:
             "superstarClass": 0
         }
         logger.trace("正在读取所有的课程列表...")
-        _resp = _session.post(_url, data=_data)
+        # 接口突然抽风，增加headers
+        _headers = {
+            "Host": "mooc2-ans.chaoxing.com",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "X-Requested-With": "XMLHttpRequest",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+            "Accept": "text/html, */*; q=0.01",
+            "sec-ch-ua": "\"Microsoft Edge\";v=\"129\", \"Not=A?Brand\";v=\"8\", \"Chromium\";v=\"129\"",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "sec-ch-ua-mobile": "?0",
+            "Origin": "https://mooc2-ans.chaoxing.com",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction?moocDomain=https://mooc1-1.chaoxing.com/mooc-ans",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5"
+        }
+        _resp = _session.post(_url,headers=_headers,data=_data)
         # logger.trace(f"原始课程列表内容:\n{_resp.text}")
         logger.info("课程列表读取完毕...")
         course_list = decode_course_list(_resp.text)
@@ -132,7 +148,7 @@ class Chaoxing:
         _session = init_session()
         job_list = []
         job_info = {}
-        for _possible_num in ["0", "1"]:
+        for _possible_num in ["0", "1","2"]:    # 学习界面任务卡片数，很少有3个的，但是对于章节解锁任务点少一个都不行，可以从API /mooc-ans/mycourse/studentstudyAjax获取值，或者干脆直接加，但二者都会造成额外的请求
             _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
@@ -232,19 +248,37 @@ class Chaoxing:
     def study_work(self, _course, _job,_job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
-        def random_answer(options) -> str:
+        def random_answer(options:str) -> str:
+            answer = ''
             if not options:
-                return ''
-            options_list = options.split('\n')
-            _answer = random.choice(options_list)[:1]
-            answer = _answer[:1]    # 取首字为答案，例如A或B
+                return answer
+            
+            if q['type'] == "multiple":
+                _op_list = options.split('\n')
+                for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):
+                    _choice = random.choice(_op_list)
+                    _op_list.remove(_choice)
+                    answer+=_choice[:1] # 取首字为答案，例如A或B
+                # 对答案进行排序，否则会提交失败
+                answer = "".join(sorted(answer))
+            elif q['type'] == "single":
+                answer = random.choice(options.split('\n'))[:1] # 取首字为答案，例如A或B
             # 判断题处理
-            if q['type'] == "judgement":
+            elif q['type'] == "judgement":
                 # answer = self.tiku.jugement_select(_answer)
                 answer = "true" if random.choice([True,False]) else "false"
             logger.info(f'随机选择 -> {answer}')
             return answer
         
+        def multi_cut(answer) -> list[str]:
+            cut_char = [' ',',','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&']    # 多选答案切割符
+            res = []
+            for char in cut_char:
+                res = answer.split(char)
+                if len(res)>1:
+                    return res
+            return list(res)
+
 
         # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
@@ -302,10 +336,12 @@ class Chaoxing:
                 options_list = q['options'].split('\n')
                 if q['type'] == "multiple":
                     # 多选处理
-                    for _a in res.split(' '):
+                    for _a in multi_cut(res):
                         for o in options_list:
-                            if _a in o:
+                            if _a.upper() in o:     # 题库返回的答案可能包含选项，如A，B，C，全部转成大写与学习通一致
                                 answer += o[:1]
+                    # 对答案进行排序，否则会提交失败
+                    answer = "".join(sorted(answer))
                 elif q['type'] == 'judgement':
                     answer = 'true' if self.tiku.jugement_select(res) else 'false'
                 else:
@@ -315,9 +351,9 @@ class Chaoxing:
                             break
                 # 如果未能匹配，依然随机答题
                 answer = answer if answer else random_answer(q['options'])
-
             # 填充答案
             q['answerField'][f'answer{q["id"]}'] = answer
+            logger.info(f'{q["title"]} 填写答案为 {answer}')
         
         # 提交模式  现在与题库绑定
         questions['pyFlag'] = self.tiku.get_submit_params()  
@@ -328,6 +364,8 @@ class Chaoxing:
                 f'answer{q["id"]}':q['answerField'][f'answer{q["id"]}'],
                 f'answertype{q["id"]}':q['answerField'][f'answertype{q["id"]}']
             })
+
+
         del questions["questions"]
 
         res = _session.post(
