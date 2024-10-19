@@ -259,6 +259,8 @@ class Chaoxing:
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
                     answer+=_choice[:1] # 取首字为答案，例如A或B
+                # 对答案进行排序，否则会提交失败
+                answer = "".join(sorted(answer))
             elif q['type'] == "single":
                 answer = random.choice(options.split('\n'))[:1] # 取首字为答案，例如A或B
             # 判断题处理
@@ -338,6 +340,8 @@ class Chaoxing:
                         for o in options_list:
                             if _a.upper() in o:     # 题库返回的答案可能包含选项，如A，B，C，全部转成大写与学习通一致
                                 answer += o[:1]
+                    # 对答案进行排序，否则会提交失败
+                    answer = "".join(sorted(answer))
                 elif q['type'] == 'judgement':
                     answer = 'true' if self.tiku.jugement_select(res) else 'false'
                 else:
@@ -347,9 +351,9 @@ class Chaoxing:
                             break
                 # 如果未能匹配，依然随机答题
                 answer = answer if answer else random_answer(q['options'])
-
             # 填充答案
             q['answerField'][f'answer{q["id"]}'] = answer
+            logger.info(f'{q["title"]} 填写答案为 {answer}')
         
         # 提交模式  现在与题库绑定
         questions['pyFlag'] = self.tiku.get_submit_params()  
@@ -360,6 +364,8 @@ class Chaoxing:
                 f'answer{q["id"]}':q['answerField'][f'answer{q["id"]}'],
                 f'answertype{q["id"]}':q['answerField'][f'answertype{q["id"]}']
             })
+
+
         del questions["questions"]
 
         res = _session.post(
