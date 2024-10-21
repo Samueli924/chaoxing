@@ -19,7 +19,7 @@
 :star: 觉得有帮助的朋友可以给个Star
 
 ## :point_up: 更新通知
-20231114更新通知： 3.0大版本更新，修复403报错，优化代码结构
+20241021更新通知： 感谢[sz134055](https://github.com/sz134055)提交代码[PR #360](https://github.com/Samueli924/chaoxing/pull/360)，**添加了对题库答题的支持**  
 
 ## :books: 使用方法
 
