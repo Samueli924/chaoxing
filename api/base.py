@@ -254,7 +254,7 @@ class Chaoxing:
                 return answer
             
             if q['type'] == "multiple":
-                _op_list = options.split('\n')
+                _op_list = multi_cut(options)
                 for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
@@ -270,8 +270,8 @@ class Chaoxing:
             logger.info(f'随机选择 -> {answer}')
             return answer
         
-        def multi_cut(answer) -> list[str]:
-            cut_char = [' ',',','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&']    # 多选答案切割符
+        def multi_cut(answer:str) -> list[str]:
+            cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
             res = []
             for char in cut_char:
                 res = answer.split(char)
@@ -333,7 +333,7 @@ class Chaoxing:
                 answer = random_answer(q['options'])
             else:
                 # 根据响应结果选择答案
-                options_list = q['options'].split('\n')
+                options_list = multi_cut(q['options'])
                 if q['type'] == "multiple":
                     # 多选处理
                     for _a in multi_cut(res):
