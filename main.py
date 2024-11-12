@@ -6,6 +6,28 @@ from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError,MaxRollBackError
 from api.answer import Tiku
 from urllib3 import disable_warnings,exceptions
+import os
+
+# 定义全局变量，用于存储配置文件路径
+textPath = './resource/BookID.txt'
+
+# 获取文本 -> 用于查看学习过的课程ID
+def getText():
+    try: 
+        if not os.path.exists(textPath):
+            with open(textPath, 'x') as file: pass 
+            return []
+        with open(textPath, 'r', encoding='utf-8') as file: content = file.read().split(',')
+        content = {int(item.strip()) for item in content if item.strip()}
+        return list(content)
+    except Exception as e: logger.error(f"获取文本失败: {e}"); return []
+
+# 追加文本 -> 用于记录学习过的课程ID
+def appendText(text):
+    if not os.path.exists(textPath): return
+    with open(textPath, 'a', encoding='utf-8') as file: file.write(f'{text}, ') 
+    
+
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -104,6 +126,8 @@ if __name__ == '__main__':
                 job_info = None
                 jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
                 
+                bookID = job_info["knowledgeid"] # 获取视频ID
+                
                 # 发现未开放章节，尝试回滚上一个任务重新完成一次
                 try:
                     if job_info.get('notOpen',False):
@@ -129,6 +153,13 @@ if __name__ == '__main__':
                 for job in jobs:
                     # 视频任务
                     if job["type"] == "video":
+
+                        TextBookID = getText() # 获取学习过的课程ID
+                        if TextBookID.count(bookID) > 0: 
+                            logger.info(f"课程: {course['title']} 章节: {point['title']} 任务: {job['title']} 已学习过或在学习中，跳过") # 如果已经学习过该课程，则跳过
+                            break # 如果已经学习过该课程，则跳过
+                        appendText(bookID) # 记录正在学习的课程ID
+
                         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
                         # 超星的接口没有返回当前任务是否为Audio音频任务
                         isAudio = False
