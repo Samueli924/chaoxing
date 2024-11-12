@@ -155,7 +155,9 @@ if __name__ == '__main__':
                     if job["type"] == "video":
 
                         TextBookID = getText() # 获取学习过的课程ID
-                        if TextBookID.count(bookID) > 0: break # 如果已经学习过该课程，则跳过
+                        if TextBookID.count(bookID) > 0: 
+                            logger.info(f"课程: {course['title']} 章节: {point['title']} 任务: {job['title']} 已学习过或在学习中，跳过") # 如果已经学习过该课程，则跳过
+                            break # 如果已经学习过该课程，则跳过
                         appendText(bookID) # 记录正在学习的课程ID
 
                         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
