@@ -200,6 +200,8 @@ def decode_questions_info(html_content) -> dict:
 
         # 尝试使用 data 属性来判断题型
         q_type_code = div_tag.find('div',class_='TiMu').attrs['data']
+        q_type = ''
+        # 此处可能需要完善更多题型的判断
         if q_type_code == '0':
             q_type = 'single'
         elif q_type_code == '1':
@@ -208,6 +210,9 @@ def decode_questions_info(html_content) -> dict:
             q_type = 'completion'
         elif q_type_code == '3':
             q_type = 'judgement'
+        else:
+            logger.info("未知题型代码 -> "+q_type_code)
+            q_type = 'unknown'      # 避免出现未定义取值错误
 
         form_data["questions"].append({
             'id': div_tag.attrs["data"],
