@@ -335,7 +335,7 @@ class Chaoxing:
             logger.info(f"开始任务: {job['name']}, 总时长: {duration}秒")
             
             # 循环提交播放进度
-            while True:  # 使用 True 替代 1，更符合 Python 规范
+            while not is_finished:
                 if is_finished:
                     playing_time = duration
                     
@@ -349,14 +349,14 @@ class Chaoxing:
                     
                 # 计算等待时间    
                 wait_time = get_random_seconds()
-                if playing_time + int(speed * wait_time) >= int(duration):
-                    # 计算剩余时间,确保不会超过总时长
-                    wait_time = max(1, int((duration - playing_time) / speed))
+                if playing_time + wait_time >= int(duration):
+                    wait_time = int(duration) - playing_time
                     is_finished = True
                     
                 # 显示进度
                 show_progress(job['name'], playing_time, wait_time, duration, speed)
-                playing_time += int(speed * wait_time)  # 根据播放速度调整增加的时间
+                playing_time += wait_time
+                
             print("\r", end="", flush=True)
             logger.info(f"任务完成: {job['name']}")
             
