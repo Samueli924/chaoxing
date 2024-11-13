@@ -126,7 +126,7 @@ def init_config() -> Config:
     parser.add_argument("-u", "--username", type=str, help="手机号账号")
     parser.add_argument("-p", "--password", type=str, help="登录密码") 
     parser.add_argument("-l", "--list", type=str, help="要学习的课程ID列表")
-    parser.add_argument("-s", "--speed", type=float, default=1.0, help="视频播放倍速(默认1)")
+    parser.add_argument("-s", "--speed", type=float, default=1.0, help="视频播放倍速(默认1，最大2)")
     
     args = parser.parse_args()
     
@@ -137,7 +137,7 @@ def init_config() -> Config:
         username=args.username,
         password=args.password,
         course_list=args.list.split(",") if args.list else None,
-        speed=max(1.0, args.speed),
+        speed=min(2.0, max(1.0, args.speed)),
         tiku_config=None
     )
 
