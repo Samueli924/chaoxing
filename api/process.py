@@ -12,10 +12,10 @@ def sec2time(sec: int):
     return '--:--'
 
 
-def show_progress(name: str, start: int, span: int, total: int, _speed: float):
+def show_progress(name: str, start: int, span: int, total: int, speed: float):
     start_time = time.time()
-    while int(time.time() - start_time) < int(span / _speed):
-        current = start + int((time.time() - start_time) * _speed)
+    while int(time.time() - start_time) < int(span / speed):
+        current = start + int((time.time() - start_time) * speed)
         percent = int(current / total * 100)
         length = int(percent * 40 // 100)
         progress = ("#" * length).ljust(40, " ")
