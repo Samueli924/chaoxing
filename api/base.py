@@ -1,150 +1,106 @@
 # -*- coding: utf-8 -*-
-"""
-学习通API基础模块
-包含账号登录、课程获取、任务点处理等基础功能
-"""
 import re
 import time
 import random
 import requests
 from hashlib import md5
 from requests.adapters import HTTPAdapter
-from typing import Dict, List, Optional, Union, Any
 
 from api.cipher import AESCipher
 from api.logger import logger
 from api.cookies import save_cookies, use_cookies
 from api.process import show_progress
 from api.config import GlobalConst as gc
-from api.decode import (
-    decode_course_list,
-    decode_course_point, 
-    decode_course_card,
-    decode_course_folder,
-    decode_questions_info
-)
+from api.decode import (decode_course_list,
+                        decode_course_point,
+                        decode_course_card,
+                        decode_course_folder,
+                        decode_questions_info
+                        )
 from api.answer import *
 
-
-def get_timestamp() -> str:
-    """获取毫秒级时间戳"""
+def get_timestamp():
     return str(int(time.time() * 1000))
 
 
-def get_random_seconds() -> int:
-    """获取随机等待时间(30-90秒)"""
+def get_random_seconds():
     return random.randint(30, 90)
 
 
-def init_session(is_video: bool = False, is_audio: bool = False) -> requests.Session:
-    """
-    初始化requests会话
-    
-    Args:
-        is_video: 是否为视频请求
-        is_audio: 是否为音频请求
-    
-    Returns:
-        配置好的requests.Session对象
-    """
-    session = requests.session()
-    session.verify = False
-    # 配置重试机制
-    adapter = HTTPAdapter(max_retries=3)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    
-    # 根据请求类型设置对应headers
-    if is_video:
-        session.headers = gc.VIDEO_HEADERS
-    elif is_audio:
-        session.headers = gc.AUDIO_HEADERS
+def init_session(isVideo: bool = False, isAudio: bool = False):
+    _session = requests.session()
+    _session.verify = False
+    _session.mount('http://', HTTPAdapter(max_retries=3))
+    _session.mount('https://', HTTPAdapter(max_retries=3))
+    if isVideo:
+        _session.headers = gc.VIDEO_HEADERS
+    elif isAudio:
+        _session.headers = gc.AUDIO_HEADERS
     else:
-        session.headers = gc.HEADERS
-        
-    session.cookies.update(use_cookies())
-    return session
+        _session.headers = gc.HEADERS
+    _session.cookies.update(use_cookies())
+    return _session
 
 
 class Account:
-    """账号信息类"""
-    def __init__(self, username: str, password: str):
-        self.username = username
-        self.password = password
-        self.last_login = None
-        self.is_success = None
+    username = None
+    password = None
+    last_login = None
+    isSuccess = None
+    def __init__(self, _username, _password):
+        self.username = _username
+        self.password = _password
 
 
 class Chaoxing:
-    """超星学习通API封装类"""
-    
-    def __init__(self, account: Optional[Account] = None, tiku: Optional['Tiku'] = None):
+    def __init__(self, account: Account = None,tiku:Tiku=None):
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
 
-    def login(self) -> Dict[str, Union[bool, str]]:
-        """
-        登录学习通
-        
-        Returns:
-            登录结果字典 {"status": bool, "msg": str}
-        """
-        session = requests.session()
-        session.verify = False
-        url = "https://passport2.chaoxing.com/fanyalogin"
-        
-        data = {
-            "fid": "-1",
-            "uname": self.cipher.encrypt(self.account.username),
-            "password": self.cipher.encrypt(self.account.password),
-            "refer": "https%3A%2F%2Fi.chaoxing.com",
-            "t": True,
-            "forbidotherlogin": 0,
-            "validate": "",
-            "doubleFactorLogin": 0,
-            "independentId": 0
-        }
-        
+    def login(self):
+        _session = requests.session()
+        _session.verify = False
+        _url = "https://passport2.chaoxing.com/fanyalogin"
+        _data = {"fid": "-1",
+                    "uname": self.cipher.encrypt(self.account.username),
+                    "password": self.cipher.encrypt(self.account.password),
+                    "refer": "https%3A%2F%2Fi.chaoxing.com",
+                    "t": True,
+                    "forbidotherlogin": 0,
+                    "validate": "",
+                    "doubleFactorLogin": 0,
+                    "independentId": 0
+                }
         logger.trace("正在尝试登录...")
-        resp = session.post(url, headers=gc.HEADERS, data=data)
-        
-        if resp and resp.json()["status"]:
-            save_cookies(session)
+        resp = _session.post(_url, headers=gc.HEADERS, data=_data)
+        if resp and resp.json()["status"] == True:
+            save_cookies(_session)
             logger.info("登录成功...")
             return {"status": True, "msg": "登录成功"}
-        return {"status": False, "msg": str(resp.json()["msg2"])}
+        else:
+            return {"status": False, "msg": str(resp.json()["msg2"])}
 
-    def get_fid(self) -> str:
-        """获取fid"""
-        return init_session().cookies.get("fid")
+    def get_fid(self):
+        _session = init_session()
+        return _session.cookies.get("fid")
 
-    def get_uid(self) -> str:
-        """获取用户ID"""
-        return init_session().cookies.get("_uid")
+    def get_uid(self):
+        _session = init_session()
+        return _session.cookies.get("_uid")
 
-    def get_course_list(self) -> List[Dict]:
-        """
-        获取课程列表
-        
-        Returns:
-            课程信息列表
-        """
-        session = init_session()
-        url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
-        
-        # 基础请求数据
-        data = {
+    def get_course_list(self):
+        _session = init_session()
+        _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
+        _data = {
             "courseType": 1,
             "courseFolderId": 0,
             "query": "",
             "superstarClass": 0
         }
-        
         logger.trace("正在读取所有的课程列表...")
-        
-        # 设置专用headers
-        headers = {
+        # 接口突然抽风，增加headers
+        _headers = {
             "Host": "mooc2-ans.chaoxing.com",
             "sec-ch-ua-platform": "\"Windows\"",
             "X-Requested-With": "XMLHttpRequest",
@@ -160,240 +116,138 @@ class Chaoxing:
             "Referer": "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction?moocDomain=https://mooc1-1.chaoxing.com/mooc-ans",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5"
         }
-        
-        # 获取主课程列表
-        resp = session.post(url, headers=headers, data=data)
+        _resp = _session.post(_url,headers=_headers,data=_data)
+        # logger.trace(f"原始课程列表内容:\n{_resp.text}")
         logger.info("课程列表读取完毕...")
-        course_list = decode_course_list(resp.text)
+        course_list = decode_course_list(_resp.text)
 
-        # 获取文件夹中的课程
-        interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
-        interaction_resp = session.get(interaction_url)
-        course_folder = decode_course_folder(interaction_resp.text)
-        
-        # 遍历文件夹获取课程
+        _interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
+        _interaction_resp = _session.get(_interaction_url)
+        course_folder = decode_course_folder(_interaction_resp.text)
         for folder in course_folder:
-            folder_data = data.copy()
-            folder_data["courseFolderId"] = folder["id"]
-            resp = session.post(url, data=folder_data)
-            course_list.extend(decode_course_list(resp.text))
-            
+            _data = {
+                "courseType": 1,
+                "courseFolderId": folder["id"],
+                "query": "",
+                "superstarClass": 0
+            }
+            _resp = _session.post(_url, data=_data)
+            course_list += decode_course_list(_resp.text)
         return course_list
 
-    def get_course_point(self, courseid: str, clazzid: str, cpi: str) -> List[Dict]:
-        """
-        获取课程章节信息
-        
-        Args:
-            courseid: 课程ID
-            clazzid: 班级ID  
-            cpi: 课程参数
-            
-        Returns:
-            章节信息列表
-        """
-        session = init_session()
-        url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={courseid}&clazzid={clazzid}&cpi={cpi}&ut=s"
-        
+    def get_course_point(self, _courseid, _clazzid, _cpi):
+        _session = init_session()
+        _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         logger.trace("开始读取课程所有章节...")
-        resp = session.get(url)
+        _resp = _session.get(_url)
+        # logger.trace(f"原始章节列表内容:\n{_resp.text}")
         logger.info("课程章节读取成功...")
-        
-        return decode_course_point(resp.text)
+        return decode_course_point(_resp.text)
 
-    def get_job_list(self, clazzid: str, courseid: str, cpi: str, knowledgeid: str) -> tuple[List[Dict], Dict]:
-        """
-        获取章节任务点列表
-        
-        Args:
-            clazzid: 班级ID
-            courseid: 课程ID
-            cpi: 课程参数
-            knowledgeid: 知识点ID
-            
-        Returns:
-            (任务点列表, 任务点信息)
-        """
-        session = init_session()
+    def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
+        _session = init_session()
         job_list = []
         job_info = {}
-        
-        # 遍历可能的任务卡片数量
-        for num in ["0", "1", "2"]:
-            url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={clazzid}&courseid={courseid}&knowledgeid={knowledgeid}&num={num}&ut=s&cpi={cpi}&v=20160407-3&mooc2=1"
-            
+        for _possible_num in ["0", "1","2"]:    # 学习界面任务卡片数，很少有3个的，但是对于章节解锁任务点少一个都不行，可以从API /mooc-ans/mycourse/studentstudyAjax获取值，或者干脆直接加，但二者都会造成额外的请求
+            _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
-            resp = session.get(url)
-            tasks, info = decode_course_card(resp.text)
-            
-            # 检查章节是否开放
-            if info.get('notOpen', False):
+            _resp = _session.get(_url)
+            _job_list, _job_info = decode_course_card(_resp.text)
+            if _job_info.get('notOpen',False):
+                # 直接返回，节省一次请求
                 logger.info("该章节未开放")
-                return [], info
-                
-            job_list.extend(tasks)
-            job_info.update(info)
-            
+                return [], _job_info
+            job_list += _job_list
+            job_info.update(_job_info)
+            # if _job_list and len(_job_list) != 0:
+            #     break
+        # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
         return job_list, job_info
 
-    def get_enc(self, clazz_id: str, jobid: str, object_id: str, playing_time: int, 
-                duration: int, userid: str) -> str:
-        """
-        生成视频播放加密参数
-        """
-        raw = f"[{clazz_id}][{userid}][{jobid}][{object_id}][{playing_time * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]"
-        return md5(raw.encode()).hexdigest()
+    def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
+        return md5(
+            f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]"
+            .encode()).hexdigest()
 
-    def video_progress_log(self, session: requests.Session, course: Dict, job: Dict,
-                          job_info: Dict, dtoken: str, duration: int, playing_time: int,
-                          type_: str = "Video") -> Union[Dict, bool]:
-        """
-        记录视频播放进度
-        
-        Args:
-            session: 请求会话
-            course: 课程信息
-            job: 任务信息
-            job_info: 任务详细信息
-            dtoken: 播放token
-            duration: 视频总时长
-            playing_time: 当前播放时间
-            type_: 媒体类型(Video/Audio)
-            
-        Returns:
-            响应结果或False(失败)
-        """
-        # 构建otherInfo参数
-        other_info = (f"otherInfo={job['otherinfo']}&courseId={course['courseId']}&" 
-                     if "courseId" not in job['otherinfo'] 
-                     else f"otherInfo={job['otherinfo']}&")
-        
-        success = False
-        # 尝试不同的rt参数
-        for rt in ["0.9", "1"]:
-            url = (
-                f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/{course['cpi']}/{dtoken}?"
-                f"clazzId={course['clazzId']}&"
-                f"playingTime={playing_time}&"
-                f"duration={duration}&"
-                f"clipTime=0_{duration}&"
-                f"objectId={job['objectid']}&"
-                f"{other_info}"
-                f"jobid={job['jobid']}&"
-                f"userid={self.get_uid()}&"
-                f"isdrag=3&"
-                f"view=pc&"
-                f"enc={self.get_enc(course['clazzId'], job['jobid'], job['objectid'], playing_time, duration, self.get_uid())}&"
-                f"rt={rt}&"
-                f"dtype={type_}&"
-                f"_t={get_timestamp()}"
-            )
-            
-            resp = session.get(url)
+    def video_progress_log(self, _session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type: str = "Video"):
+        if "courseId" in _job['otherinfo']:
+            _mid_text = f"otherInfo={_job['otherinfo']}&"
+        else:
+            _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
+        _success = False
+        for _possible_rt in ["0.9", "1"]:
+            _url = (f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
+                    f"{_course['cpi']}/"
+                    f"{_dtoken}?"
+                    f"clazzId={_course['clazzId']}&"
+                    f"playingTime={_playingTime}&"
+                    f"duration={_duration}&"
+                    f"clipTime=0_{_duration}&"
+                    f"objectId={_job['objectid']}&"
+                    f"{_mid_text}"
+                    f"jobid={_job['jobid']}&"
+                    f"userid={self.get_uid()}&"
+                    f"isdrag=3&"
+                    f"view=pc&"
+                    f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
+                    f"rt={_possible_rt}&"
+                    f"dtype={_type}&"
+                    f"_t={get_timestamp()}")
+            resp = _session.get(_url)
             if resp.status_code == 200:
-                success = True
-                break
-                
-        if success:
+                _success = True
+                break # 如果返回为200正常，则跳出循环
+            elif resp.status_code == 403:
+                continue # 如果出现403无权限报错，则继续尝试不同的rt参数
+        if _success:
             return resp.json()
-            
-        logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
-        return False
+        else:
+            # 若出现两个rt参数都返回403的情况，则跳过当前任务
+            logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
+            return False
 
-    def study_video(self, course: Dict, job: Dict, job_info: Dict, 
-                   speed: float = 1.0, type_: str = "Video") -> None:
-        """
-        学习视频/音频任务
-        
-        Args:
-            course: 课程信息
-            job: 任务信息
-            job_info: 任务详细信息  
-            speed: 播放速度
-            type_: 媒体类型(Video/Audio)
-        """
-        # 初始化会话
-        session = init_session(is_video=(type_=="Video"), is_audio=(type_=="Audio"))
-        
-        # 获取视频信息
-        info_url = f"https://mooc1.chaoxing.com/ananas/status/{job['objectid']}?k={self.get_fid()}&flag=normal"
-        video_info = session.get(info_url).json()
-        
-        if "status" not in video_info:
-            logger.info("获取视频信息失败，跳过当前任务点...")
-            return None
-            
-        if video_info["status"] == "success":
-            dtoken = video_info["dtoken"]
-            duration = video_info["duration"]
-            
-            is_passed = False
-            is_finished = False
-            playing_time = 0
-            
-            logger.info(f"开始任务: {job['name']}, 总时长: {duration}秒")
-            
-            # 循环提交播放进度
-            while not is_finished:
-                if is_finished:
-                    playing_time = duration
-                    
-                is_passed = self.video_progress_log(
-                    session, course, job, job_info, dtoken, 
-                    duration, playing_time, type_
-                )
-                
-                if not is_passed or (is_passed and is_passed["isPassed"]):
+    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"):
+        if _type == "Video":
+            _session = init_session(isVideo=True)
+        else:
+            _session = init_session(isAudio=True)
+        _session.headers.update()
+        _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
+        _video_info = _session.get(_info_url).json()
+        if _video_info["status"] == "success":
+            _dtoken = _video_info["dtoken"]
+            _duration = _video_info["duration"]
+            _crc = _video_info["crc"]
+            _key = _video_info["key"]
+            _isPassed = False
+            _isFinished = False
+            _playingTime = 0
+            logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
+            while not _isFinished:
+                if _isFinished:
+                    _playingTime = _duration
+                _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
+                if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
-                    
-                # 计算等待时间    
-                wait_time = get_random_seconds()
-                if playing_time + wait_time >= int(duration):
-                    wait_time = int(duration) - playing_time
-                    is_finished = True
-                    
-                # 显示进度
-                show_progress(job['name'], playing_time, wait_time, duration, speed)
-                playing_time += wait_time
-                
+                _wait_time = get_random_seconds()
+                if _playingTime + _wait_time >= int(_duration):
+                    _wait_time = int(_duration) - _playingTime
+                    _isFinished = True
+                # 播放进度条
+                show_progress(_job['name'], _playingTime, _wait_time, _duration, _speed)
+                _playingTime += _wait_time
             print("\r", end="", flush=True)
-            logger.info(f"任务完成: {job['name']}")
-            
-    def study_document(self, course: Dict, job: Dict) -> None:
-        """
-        学习文档任务
-        
-        Args:
-            course: 课程信息
-            job: 任务信息
-        """
-        session = init_session()
-        url = (f"https://mooc1.chaoxing.com/ananas/job/document?"
-               f"jobid={job['jobid']}&"
-               f"knowledgeid={re.findall(r'nodeId_(.*?)-', job['otherinfo'])[0]}&"
-               f"courseid={course['courseId']}&"
-               f"clazzid={course['clazzId']}&"
-               f"jtoken={job['jtoken']}&"
-               f"_dc={get_timestamp()}")
-        session.get(url)
+            logger.info(f"任务完成: {_job['name']}")
 
-    def study_work(self, course: Dict, job: Dict, job_info: Dict) -> None:
-        """
-        完成作业任务
-        
-        Args:
-            course: 课程信息
-            job: 任务信息
-            job_info: 任务详细信息
-        """
-        if not self.tiku:
-            logger.info("未配置题库，跳过答题")
-            return None
-        
+    def study_document(self, _course, _job):
+        _session = init_session()
+        _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
+        _resp = _session.get(_url)
+
+    def study_work(self, _course, _job,_job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
-        
         def random_answer(options:str) -> str:
             answer = ''
             if not options:
@@ -452,20 +306,20 @@ class Chaoxing:
             verify=False,
             params = {
                 "api": "1",
-                "workId": job['jobid'].replace("work-",""),
-                "jobid": job['jobid'],
-                "originJobId": job['jobid'],
+                "workId": _job['jobid'].replace("work-",""),
+                "jobid": _job['jobid'],
+                "originJobId": _job['jobid'],
                 "needRedirect": "true",
                 "skipHeader": "true",
-                "knowledgeid": str(job_info['knowledgeid']),
-                'ktoken': job_info['ktoken'], 
-                "cpi": job_info['cpi'],
+                "knowledgeid": str(_job_info['knowledgeid']),
+                'ktoken': _job_info['ktoken'], 
+                "cpi": _job_info['cpi'],
                 "ut": "s",
-                "clazzId": course['clazzId'],
+                "clazzId": _course['clazzId'],
                 "type": "",
-                "enc": job['enc'],
+                "enc": _job['enc'],
                 "mooc2": "1",
-                "courseid": course['courseId']
+                "courseid": _course['courseId']
             }
         )
         questions = decode_questions_info(_resp.text)   # 加载题目信息
@@ -543,29 +397,25 @@ class Chaoxing:
         else:
             logger.error(f"提交答题失败 -> {res.text}")
 
-    def strdy_read(self, course: Dict, job: Dict, job_info: Dict) -> None:
+    def strdy_read(self, _course, _job,_job_info) -> None:
         """
-        完成阅读任务(仅完成任务点,不增加时长)
-        
-        Args:
-            course: 课程信息
-            job: 任务信息
-            job_info: 任务详细信息
+        阅读任务学习，仅完成任务点，并不增长时长
         """
-        session = init_session()
-        resp = session.get(
+        _session = init_session()
+        _resp = _session.get(
             url="https://mooc1.chaoxing.com/ananas/job/readv2",
             params={
-                'jobid': job['jobid'],
-                'knowledgeid': job_info['knowledgeid'],
-                'jtoken': job['jtoken'],
-                'courseid': course['courseId'],
-                'clazzid': course['clazzId']
+                'jobid': _job['jobid'],
+                'knowledgeid':_job_info['knowledgeid'],
+                'jtoken': _job['jtoken'],
+                'courseid': _course['courseId'],
+                'clazzid': _course['clazzId']
             }
         )
-        
-        if resp.status_code != 200:
-            logger.error(f"阅读任务学习失败 -> [{resp.status_code}]{resp.text}")
+        if _resp.status_code != 200:
+            logger.error(f"阅读任务学习失败 -> [{_resp.status_code}]{_resp.text}")
         else:
-            resp_json = resp.json()
-            logger.info(f"阅读任务学习 -> {resp_json['msg']}")
+            _resp_json = _resp.json()
+            logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
+
+
