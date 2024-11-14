@@ -156,7 +156,10 @@ def decode_course_card(html_text: str) -> tuple:
         # 跳过已完成任务
         if card.get("isPassed"):
             continue
-            
+        
+        if not card.get("type", None):
+            continue
+
         # 处理非任务点内容
         if not card.get("job"):
             if _should_process_read_task(card):

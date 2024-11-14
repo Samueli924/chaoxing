@@ -401,6 +401,8 @@ class Chaoxing:
             
             if q['type'] == "multiple":
                 _op_list = multi_cut(options)
+                if not _op_list:
+                    return answer
                 for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
@@ -497,6 +499,9 @@ class Chaoxing:
                             break
                 # 如果未能匹配，依然随机答题
                 answer = answer if answer else random_answer(q['options'])
+            if not answer:
+                logger.info(f"未找到答案，跳过答题")
+                return False
             # 填充答案
             q['answerField'][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
