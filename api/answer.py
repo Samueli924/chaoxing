@@ -1,6 +1,7 @@
 import configparser
 import requests
 from pathlib import Path
+from typing import Optional
 import json
 from api.logger import logger
 import random
@@ -19,7 +20,7 @@ class CacheDAO:
             self.cacheFile.open("w").write("{}")
         self.fp = self.cacheFile.open("r+", encoding="utf8")
 
-    def getCache(self, question: str):
+    def getCache(self, question: str) -> Optional[str]:
         self.fp.seek(0)
         data = json.load(self.fp)
         if isinstance(data, dict):
@@ -82,7 +83,7 @@ class Tiku:
         # 仅用于题库初始化，例如配置token，交由自定义题库完成
         pass
 
-    def config_set(self,config):
+    def config_set(self,config:configparser.ConfigParser|None):
         self._conf = config
 
     def _get_conf(self):
@@ -98,7 +99,7 @@ class Tiku:
             self.DISABLE = True
             return None
 
-    def query(self,q_info:dict):
+    def query(self,q_info:dict) -> str|None:
         if self.DISABLE:
             return None
 
