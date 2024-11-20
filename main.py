@@ -126,7 +126,7 @@ if __name__ == '__main__':
                 job_info = None
                 jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
                 
-                bookID = job_info["knowledgeid"] # 获取视频ID
+                # bookID = job_info["knowledgeid"] # 获取视频ID
                 
                 # 发现未开放章节，尝试回滚上一个任务重新完成一次
                 try:
