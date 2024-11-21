@@ -248,6 +248,8 @@ class Chaoxing:
     def study_work(self, _course, _job,_job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
+        _ORIGIN_HTML_CONTENT = ""   # 用于配合输出网页源码，帮助修复#391错误
+
         def random_answer(options:str) -> str:
             answer = ''
             if not options:
@@ -255,7 +257,7 @@ class Chaoxing:
             
             if q['type'] == "multiple":
                 _op_list = multi_cut(options)
-                for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):
+                for i in range(random.choices([2,3,4],weights=[0.1,0.5,0.4],k=1)[0]):   # 此处表示随机多选答案几率：2个 10%，3个 50% ，4个 40%
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
                     answer+=_choice[:1] # 取首字为答案，例如A或B
@@ -277,7 +279,9 @@ class Chaoxing:
                 res = answer.split(char)
                 if len(res)>1:
                     return res
-            return list(res)
+            logger.warning(f"未能从网页中提取题目信息，以下为相关信息：\n{answer}\n\n{_ORIGIN_HTML_CONTENT}\n")     # 尝试输出网页内容和选项信息
+            logger.warning("未能正确提取题目选项信息！请反馈并提供以上信息。")
+            return ['A','B','C','D']    # 默认多选题为4个选项
 
 
         # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
@@ -322,6 +326,7 @@ class Chaoxing:
                 "courseid": _course['courseId']
             }
         )
+        _ORIGIN_HTML_CONTENT = _resp.text   # 用于配合输出网页源码，帮助修复#391错误
         questions = decode_questions_info(_resp.text)   # 加载题目信息
 
         # 搜题
