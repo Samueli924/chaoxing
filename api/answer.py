@@ -241,14 +241,13 @@ class TikuAdapter(Tiku):
         elif q_info['type'] == 'multiple':
             type = 1
         elif q_info['type'] == 'completion':
-            type = 3
-        elif q_info['type'] == 'judgement':
-            type = 4
-        else:
             type = 2
+        elif q_info['type'] == 'judgement':
+            type = 3
+        else:
+            type = 4
 
         options = q_info['options']
-        logger.info('题目类型：' + q_info['type'] + "type:" + str(type))
         res = requests.post(
             self.api,
             json={
@@ -259,15 +258,13 @@ class TikuAdapter(Tiku):
             verify=False
         )
         if res.status_code == 200:
-            logger.info(res.text)
             res_json = res.json()
             if bool(res_json['plat']):
                 logger.error("查询失败，返回：" + res.text)
                 return None
-            logger.info(res_json['answer']['answerText'].strip())
             sep = "\n"
             return sep.join(res_json['answer']['allAnswer'][0]).strip()
-        else:
+        # else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
 
