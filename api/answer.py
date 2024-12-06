@@ -227,3 +227,47 @@ class TikuYanxi(Tiku):
     def _init_tiku(self):
         self.load_token()
 
+class TikuAdapter(Tiku):
+    # TikuAdapter题库实现 https://github.com/DokiDoki1103/tikuAdapter
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = 'TikuAdapter题库'
+        self.api = ''
+
+    def _query(self, q_info: dict):
+        # 判断题目类型
+        if q_info['type'] == "single":
+            type = 0
+        elif q_info['type'] == 'multiple':
+            type = 1
+        elif q_info['type'] == 'completion':
+            type = 2
+        elif q_info['type'] == 'judgement':
+            type = 3
+        else:
+            type = 4
+
+        options = q_info['options']
+        res = requests.post(
+            self.api,
+            json={
+                'question': q_info['title'],
+                'options': options.split('\n'),
+                'type': type
+            },
+            verify=False
+        )
+        if res.status_code == 200:
+            res_json = res.json()
+            if bool(res_json['plat']):
+                logger.error("查询失败，返回：" + res.text)
+                return None
+            sep = "\n"
+            return sep.join(res_json['answer']['allAnswer'][0]).strip()
+        # else:
+            logger.error(f'{self.name}查询失败:\n{res.text}')
+        return None
+
+    def _init_tiku(self):
+        # self.load_token()
+        self.api = self._conf['url']
