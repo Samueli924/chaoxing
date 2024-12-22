@@ -104,7 +104,9 @@ class Tiku:
 
         # 预处理，去除【单选题】这样与标题无关的字段
         # 此处需要改进！！！
+        logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
+        logger.debug(f"处理后标题：{q_info['title']}")
 
         # 先过缓存
         cache_dao = CacheDAO()

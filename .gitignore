@@ -139,9 +139,11 @@ cookies.txt
 .config.ini
 config.ini
 chaoxing.log
+config*.ini
 .chaoxing.log
 ./config.ini
 ./chaoxing.log
 ./cookies.txt
 .idea/
+.vscode/
 cache.json

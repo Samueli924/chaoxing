@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 import argparse
 import configparser
+import random
+
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError,MaxRollBackError
 from api.answer import Tiku
 from urllib3 import disable_warnings,exceptions
+import time
+import sys
 import os
 
 # # 定义全局变量，用于存储配置文件路径
@@ -32,25 +36,48 @@ import os
 disable_warnings(exceptions.InsecureRequestWarning)
 
 def init_config():
-    parser = argparse.ArgumentParser(description='Samueli924/chaoxing')  # 命令行传参
+    parser = argparse.ArgumentParser(
+        description='Samueli924/chaoxing',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
     parser.add_argument("-c", "--config", type=str, default=None, help="使用配置文件运行程序")
     parser.add_argument("-u", "--username", type=str, default=None, help="手机号账号")
     parser.add_argument("-p", "--password", type=str, default=None, help="登录密码")
-    parser.add_argument("-l", "--list", type=str, default=None, help="要学习的课程ID列表")
-    parser.add_argument("-s", "--speed", type=float, default=1.0, help="视频播放倍速(默认1，最大2)")
+    parser.add_argument("-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔")
+    parser.add_argument("-s", "--speed", type=float, default=1.0, help="视频播放倍速 (默认1, 最大2)")
+    parser.add_argument("-v", "--verbose", "--debug", action="store_true", help="启用调试模式, 输出DEBUG级别日志")
+
+
+    # 在解析之前捕获 -h 的行为
+    if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
+        parser.print_help()
+        # 返回一个 SystemExit 异常, 用于退出程序
+        raise SystemExit
+
+    # 提前检查 -h 和 --help 并退出
     args = parser.parse_args()
+
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config, encoding="utf8")
-        return (config.get("common", "username"),
-                config.get("common", "password"),
-                str(config.get("common", "course_list")).split(",") if config.get("common", "course_list") else None,
-                int(config.get("common", "speed")),
-                config['tiku']
-                )
+        return (
+            config.get("common", "username"),
+            config.get("common", "password"),
+            str(config.get("common", "course_list")).split(",") if config.get("common", "course_list") else None,
+            int(config.get("common", "speed")),
+            config['tiku']
+        )
     else:
-        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1,None)
+        return (
+            args.username,
+            args.password,
+            args.list.split(",") if args.list else None,
+            int(args.speed) if args.speed else 1,
+            None
+        )
 
+    
 class RollBackManager:
     def __init__(self) -> None:
         self.rollback_times = 0
@@ -84,6 +111,7 @@ if __name__ == '__main__':
         tiku.config_set(tiku_config)    # 载入配置
         tiku = tiku.get_tiku_from_config()  # 载入题库
         tiku.init_tiku()    # 初始化题库
+        
         # 实例化超星API
         chaoxing = Chaoxing(account=account,tiku=tiku)
         # 检查当前登录状态，并检查账号密码
@@ -117,10 +145,16 @@ if __name__ == '__main__':
             point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
 
             # 为了支持课程任务回滚，采用下标方式遍历任务点
-            __point_index = 0
+            # __point_index = 0
+            # __point_index = 26  # 当前章节: 13.3 《水浒传》是一部...
+            __point_index = 26
             while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
+                logger.debug(f'当前章节 __point_index: {__point_index}')  # 触发参数: -v
+                sleep_duration = random.uniform(1, 3)
+                logger.debug(f"本次随机等待时间: {sleep_duration}")
+                time.sleep(sleep_duration)   # 避免请求过快导致异常, 所以引入随机sleep
                 # 获取当前章节的所有任务点
                 jobs = []
                 job_info = None
@@ -160,7 +194,7 @@ if __name__ == '__main__':
                         #     break # 如果已经学习过该课程，则跳过
                         # appendText(bookID) # 记录正在学习的课程ID
 
-                        logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
+                        logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}") 
                         # 超星的接口没有返回当前任务是否为Audio音频任务
                         isAudio = False
                         try:
@@ -187,6 +221,12 @@ if __name__ == '__main__':
                         chaoxing.strdy_read(course, job,job_info)
                 __point_index += 1
         logger.info("所有课程学习任务已完成")
+    
+    except SystemExit as e:
+        if e.code == 0:  # 正常退出
+            sys.exit(0)
+        else:
+            raise
     except BaseException as e:
         import traceback
         logger.error(f"错误: {type(e).__name__}: {e}")
