@@ -145,9 +145,7 @@ if __name__ == '__main__':
             point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
 
             # 为了支持课程任务回滚，采用下标方式遍历任务点
-            # __point_index = 0
-            # __point_index = 26  # 当前章节: 13.3 《水浒传》是一部...
-            __point_index = 26
+            __point_index = 0
             while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
