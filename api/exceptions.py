@@ -13,7 +13,7 @@ class FormatError(Exception):
     def __init__(self, *args: object):
         super().__init__(*args)
 
+
 class MaxRollBackError(Exception):
     def __init__(self, *args: object):
         super().__init__(*args)
-        

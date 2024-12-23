@@ -267,6 +267,29 @@ class Chaoxing:
             logger.info(f"任务完成: {_job['name']}")
 
     def study_document(self, _course, _job):
+        """
+        Study a document in Chaoxing platform.
+
+        This method makes a GET request to fetch document information for a given course and job.
+
+        Args:
+            _course (dict): Dictionary containing course information with keys:
+                - courseId: ID of the course
+                - clazzId: ID of the class
+            _job (dict): Dictionary containing job information with keys:
+                - jobid: ID of the job
+                - otherinfo: String containing node information
+                - jtoken: Authentication token for the job
+
+        Returns:
+            requests.Response: Response object from the GET request
+
+        Note:
+            This method requires the following helper functions:
+            - init_session(): To initialize a new session
+            - get_timestamp(): To get current timestamp
+            - re module for regular expression matching
+        """
         _session = init_session()
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
@@ -357,9 +380,9 @@ class Chaoxing:
                 if len(res) > 1:
                     return res
             logger.warning(
-                f"未能从网页中提取题目信息，以下为相关信息：\n{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
+                f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
             )  # 尝试输出网页内容和选项信息
-            logger.warning("未能正确提取题目选项信息！请反馈并提供以上信息。")
+            logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
         # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle

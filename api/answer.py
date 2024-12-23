@@ -210,7 +210,7 @@ class TikuYanxi(Tiku):
                     self.load_token()
                     # 重新查询
                     return self._query(q_info)
-                logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n消息:{res_json["message"]}')
+                logger.error(f'{self.name}查询失败:\n\t剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n\t消息:{res_json["message"]}')
                 return None
             self._times = res_json["data"].get("times",self._times)
             return res_json['data']['answer'].strip()
