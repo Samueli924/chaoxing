@@ -68,7 +68,7 @@ class Tiku:
         self._token = value
 
     def init_tiku(self):
-        # 仅用于题库初始化，应该在题库载入后作初始化调用，随后才可以使用题库
+        # 仅用于题库初始化, 应该在题库载入后作初始化调用, 随后才可以使用题库
         # 尝试根据配置文件设置提交模式
         if not self._conf:
             self.config_set(self._get_conf())
@@ -79,7 +79,7 @@ class Tiku:
             self._init_tiku()
         
     def _init_tiku(self):
-        # 仅用于题库初始化，例如配置token，交由自定义题库完成
+        # 仅用于题库初始化, 例如配置token, 交由自定义题库完成
         pass
 
     def config_set(self,config):
@@ -87,14 +87,14 @@ class Tiku:
 
     def _get_conf(self):
         """
-        从默认配置文件查询配置，如果未能查到，停用题库
+        从默认配置文件查询配置, 如果未能查到, 停用题库
         """
         try:
             config = configparser.ConfigParser()
             config.read(self.CONFIG_PATH, encoding="utf8")
             return config['tiku']
         except KeyError or FileNotFoundError:
-            logger.info("未找到tiku配置，已忽略题库功能")
+            logger.info("未找到tiku配置, 已忽略题库功能")
             self.DISABLE = True
             return None
 
@@ -102,7 +102,7 @@ class Tiku:
         if self.DISABLE:
             return None
 
-        # 预处理，去除【单选题】这样与标题无关的字段
+        # 预处理, 去除【单选题】这样与标题无关的字段
         # 此处需要改进！！！
         logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
@@ -125,13 +125,13 @@ class Tiku:
         return None
     def _query(self,q_info:dict):
         """
-        查询接口，交由自定义题库实现
+        查询接口, 交由自定义题库实现
         """
         pass
 
     def get_tiku_from_config(self):
         """
-        从配置文件加载题库，这个配置可以是用户提供，可以是默认配置文件
+        从配置文件加载题库, 这个配置可以是用户提供, 可以是默认配置文件
         """
         if not self._conf:
             # 尝试从默认配置文件加载
@@ -143,7 +143,7 @@ class Tiku:
             if not cls_name:
                 raise KeyError
         except KeyError:
-            logger.error("未找到题库配置，已忽略题库功能")
+            logger.error("未找到题库配置, 已忽略题库功能")
             return self
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
@@ -151,7 +151,7 @@ class Tiku:
     
     def jugement_select(self,answer:str) -> bool:
         """
-        这是一个专用的方法，要求配置维护两个选项列表，一份用于正确选项，一份用于错误选项，以应对题库对判断题答案响应的各种可能的情况
+        这是一个专用的方法, 要求配置维护两个选项列表, 一份用于正确选项, 一份用于错误选项, 以应对题库对判断题答案响应的各种可能的情况
         它的作用是将获取到的答案answer与可能的选项列对比并返回对应的布尔值
         """
         if self.DISABLE:
@@ -165,15 +165,15 @@ class Tiku:
         elif answer in false_list:
             return False
         else:
-            # 无法判断，随机选择
-            logger.error(f'无法判断答案 -> {answer} 对应的是正确还是错误，请自行判断并加入配置文件重启脚本，本次将会随机选择选项')
+            # 无法判断, 随机选择
+            logger.error(f'无法判断答案 -> {answer} 对应的是正确还是错误, 请自行判断并加入配置文件重启脚本, 本次将会随机选择选项')
             return random.choice([True,False])
     
     def get_submit_params(self):
         """
-        这是一个专用方法，用于根据当前设置的提交模式，响应对应的答题提交API中的pyFlag值
+        这是一个专用方法, 用于根据当前设置的提交模式, 响应对应的答题提交API中的pyFlag值
         """
-        # 留空直接提交，1保存但不提交
+        # 留空直接提交, 1保存但不提交
         if self.SUBMIT:
             return ""
         else:
@@ -189,7 +189,7 @@ class TikuYanxi(Tiku):
         self.api = 'https://tk.enncy.cn/query'
         self._token = None
         self._token_index = 0   # token队列计数器
-        self._times = 100   # 查询次数剩余，初始化为100，查询后校对修正
+        self._times = 100   # 查询次数剩余, 初始化为100, 查询后校对修正
 
     def _query(self,q_info:dict):
         res = requests.get(
@@ -203,9 +203,9 @@ class TikuYanxi(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             if not res_json['code']:
-                # 如果是因为TOKEN次数到期，则更换token
+                # 如果是因为TOKEN次数到期, 则更换token
                 if self._times == 0 or '次数不足' in res_json['data']['answer']:
-                    logger.info(f'TOKEN查询次数不足，将会更换并重新搜题')
+                    logger.info(f'TOKEN查询次数不足, 将会更换并重新搜题')
                     self._token_index += 1
                     self.load_token()
                     # 重新查询
@@ -222,8 +222,8 @@ class TikuYanxi(Tiku):
         token_list = self._conf['tokens'].split(',')
         if self._token_index == len(token_list):
             # TOKEN 用完
-            logger.error('TOKEN用完，请自行更换再重启脚本')
-            raise Exception(f'{self.name} TOKEN 已用完，请更换')
+            logger.error('TOKEN用完, 请自行更换再重启脚本')
+            raise Exception(f'{self.name} TOKEN 已用完, 请更换')
         self._token = token_list[self._token_index]
 
     def _init_tiku(self):
@@ -262,7 +262,7 @@ class TikuAdapter(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             if bool(res_json['plat']):
-                logger.error("查询失败，返回：" + res.text)
+                logger.error("查询失败, 返回：" + res.text)
                 return None
             sep = "\n"
             return sep.join(res_json['answer']['allAnswer'][0]).strip()

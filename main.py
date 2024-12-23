@@ -12,7 +12,7 @@ import time
 import sys
 import os
 
-# # 定义全局变量，用于存储配置文件路径
+# # 定义全局变量, 用于存储配置文件路径
 # textPath = './resource/BookID.txt'
 
 # # 获取文本 -> 用于查看学习过的课程ID
@@ -101,7 +101,7 @@ class RollBackManager:
 
     def add_times(self, id: str) -> None:
         if id == self.rollback_id and self.rollback_times == 3:
-            raise MaxRollBackError("回滚次数已达3次，请手动检查学习通任务点完成情况")
+            raise MaxRollBackError("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         elif id != self.rollback_id:
             # 新job
             self.rollback_id = id
@@ -119,8 +119,8 @@ if __name__ == "__main__":
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
-            username = input("请输入你的手机号，按回车确认\n手机号:")
-            password = input("请输入你的密码，按回车确认\n密码:")
+            username = input("请输入你的手机号, 按回车确认\n手机号:")
+            password = input("请输入你的密码, 按回车确认\n密码:")
         account = Account(username, password)
         # 设置题库
         tiku = Tiku()
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
         # 实例化超星API
         chaoxing = Chaoxing(account=account, tiku=tiku)
-        # 检查当前登录状态，并检查账号密码
+        # 检查当前登录状态, 并检查账号密码
         _login_state = chaoxing.login()
         if not _login_state["status"]:
             raise LoginError(_login_state["msg"])
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         if not course_task:
             course_task = all_course
         # 开始遍历要学习的课程列表
-        logger.info(f"课程列表过滤完毕，当前课程任务数量: {len(course_task)}")
+        logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
         for course in course_task:
             logger.info(f"开始学习课程: {course['title']}")
             # 获取当前课程的所有章节
@@ -164,7 +164,7 @@ if __name__ == "__main__":
                 course["courseId"], course["clazzId"], course["cpi"]
             )
 
-            # 为了支持课程任务回滚，采用下标方式遍历任务点
+            # 为了支持课程任务回滚, 采用下标方式遍历任务点
             __point_index = 0
             while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
@@ -182,22 +182,22 @@ if __name__ == "__main__":
 
                 # bookID = job_info["knowledgeid"] # 获取视频ID
 
-                # 发现未开放章节，尝试回滚上一个任务重新完成一次
+                # 发现未开放章节, 尝试回滚上一个任务重新完成一次
                 try:
                     if job_info.get("notOpen", False):
                         __point_index -= 1  # 默认第一个任务总是开放的
                         # 针对题库启用情况
                         if not tiku or tiku.DISABLE or not tiku.SUBMIT:
-                            # 未启用题库或未开启题库提交，章节检测未完成会导致无法开始下一章，直接退出
+                            # 未启用题库或未开启题库提交, 章节检测未完成会导致无法开始下一章, 直接退出
                             logger.error(
-                                f"章节未开启，可能由于上一章节的章节检测未完成，请手动完成并提交再重试，或者开启题库并启用提交"
+                                f"章节未开启, 可能由于上一章节的章节检测未完成, 请手动完成并提交再重试, 或者开启题库并启用提交"
                             )
                             break
                         RB.add_times(point["id"])
                         continue
                 except MaxRollBackError as e:
-                    logger.error("回滚次数已达3次，请手动检查学习通任务点完成情况")
-                    # 跳过该课程，继续下一课程
+                    logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
+                    # 跳过该课程, 继续下一课程
                     break
 
                 # 可能存在章节无任何内容的情况
@@ -208,11 +208,11 @@ if __name__ == "__main__":
                 for job in jobs:
                     # 视频任务
                     if job["type"] == "video":
-                        # TODO: 目前这个记录功能还不够完善，中途退出的课程ID也会被记录
+                        # TODO: 目前这个记录功能还不够完善, 中途退出的课程ID也会被记录
                         # TextBookID = getText() # 获取学习过的课程ID
                         # if TextBookID.count(bookID) > 0:
-                        #     logger.info(f"课程: {course['title']} 章节: {point['title']} 任务: {job['title']} 已学习过或在学习中，跳过") # 如果已经学习过该课程，则跳过
-                        #     break # 如果已经学习过该课程，则跳过
+                        #     logger.info(f"课程: {course['title']} 章节: {point['title']} 任务: {job['title']} 已学习过或在学习中, 跳过") # 如果已经学习过该课程, 则跳过
+                        #     break # 如果已经学习过该课程, 则跳过
                         # appendText(bookID) # 记录正在学习的课程ID
 
                         logger.trace(
@@ -225,7 +225,7 @@ if __name__ == "__main__":
                                 course, job, job_info, _speed=speed, _type="Video"
                             )
                         except JSONDecodeError as e:
-                            logger.warning("当前任务非视频任务，正在尝试音频任务解码")
+                            logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
                             isAudio = True
                         if isAudio:
                             try:

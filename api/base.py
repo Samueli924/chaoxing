@@ -98,7 +98,7 @@ class Chaoxing:
         _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
         _data = {"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0}
         logger.trace("正在读取所有的课程列表...")
-        # 接口突然抽风，增加headers
+        # 接口突然抽风, 增加headers
         _headers = {
             "Host": "mooc2-ans.chaoxing.com",
             "sec-ch-ua-platform": '"Windows"',
@@ -151,13 +151,13 @@ class Chaoxing:
             "0",
             "1",
             "2",
-        ]:  # 学习界面任务卡片数，很少有3个的，但是对于章节解锁任务点少一个都不行，可以从API /mooc-ans/mycourse/studentstudyAjax获取值，或者干脆直接加，但二者都会造成额外的请求
+        ]:  # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
             _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
             if _job_info.get("notOpen", False):
-                # 直接返回，节省一次请求
+                # 直接返回, 节省一次请求
                 logger.info("该章节未开放")
                 return [], _job_info
             job_list += _job_list
@@ -212,14 +212,14 @@ class Chaoxing:
             resp = _session.get(_url)
             if resp.status_code == 200:
                 _success = True
-                break  # 如果返回为200正常，则跳出循环
+                break  # 如果返回为200正常, 则跳出循环
             elif resp.status_code == 403:
-                continue  # 如果出现403无权限报错，则继续尝试不同的rt参数
+                continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
         if _success:
             return resp.json()
         else:
-            # 若出现两个rt参数都返回403的情况，则跳过当前任务
-            logger.warning("出现403报错，尝试修复无效，正在跳过当前任务点...")
+            # 若出现两个rt参数都返回403的情况, 则跳过当前任务
+            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
             return False
 
     def study_video(
@@ -297,7 +297,7 @@ class Chaoxing:
     def study_work(self, _course, _job, _job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
-        _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码，帮助修复#391错误
+        _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
         def random_answer(options: str) -> str:
             answer = ""
@@ -317,16 +317,16 @@ class Chaoxing:
 
                 for i in range(
                     random.choices([2, 3, 4], weights=[0.1, 0.5, 0.4], k=1)[0]
-                ):  # 此处表示随机多选答案几率：2个 10%，3个 50% ，4个 40%
+                ):  # 此处表示随机多选答案几率：2个 10%, 3个 50%, 4个 40%
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
-                    answer += _choice[:1]  # 取首字为答案，例如A或B
-                # 对答案进行排序，否则会提交失败
+                    answer += _choice[:1]  # 取首字为答案, 例如A或B
+                # 对答案进行排序, 否则会提交失败
                 answer = "".join(sorted(answer))
             elif q["type"] == "single":
                 answer = random.choice(options.split("\n"))[
                     :1
-                ]  # 取首字为答案，例如A或B
+                ]  # 取首字为答案, 例如A或B
             # 判断题处理
             elif q["type"] == "judgement":
                 # answer = self.tiku.jugement_select(_answer)
@@ -336,16 +336,16 @@ class Chaoxing:
 
         def multi_cut(answer: str) -> list[str]:
             """
-            将多选题答案字符串按特定字符进行切割，并返回切割后的答案列表。
+            将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表.
 
             参数:
-            answer (str): 多选题答案字符串。
+            answer (str): 多选题答案字符串.
 
             返回:
-            list[str]: 切割后的答案列表。如果无法切割，则返回默认的选项列表 ['A', 'B', 'C', 'D']。
+            list[str]: 切割后的答案列表, 如果无法切割, 则返回默认的选项列表 ['A', 'B', 'C', 'D'].
 
             注意:
-            如果无法从网页中提取题目信息，将记录警告日志并返回默认选项列表。
+            如果无法从网页中提取题目信息, 将记录警告日志并返回默认选项列表.
             """
             # cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
             # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
@@ -385,7 +385,7 @@ class Chaoxing:
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
-        # 学习通这里根据参数差异能重定向至两个不同接口，需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
+        # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
         headers = {
             "Host": "mooc1.chaoxing.com",
@@ -426,7 +426,7 @@ class Chaoxing:
                 "courseid": _course["courseId"],
             },
         )
-        _ORIGIN_HTML_CONTENT = _resp.text  # 用于配合输出网页源码，帮助修复#391错误
+        _ORIGIN_HTML_CONTENT = _resp.text  # 用于配合输出网页源码, 帮助修复#391错误
         questions = decode_questions_info(_resp.text)  # 加载题目信息
 
         # 搜题
@@ -446,9 +446,9 @@ class Chaoxing:
                         for o in options_list:
                             if (
                                 _a.upper() in o
-                            ):  # 题库返回的答案可能包含选项，如A，B，C，全部转成大写与学习通一致
+                            ):  # 题库返回的答案可能包含选项, 如A, B, C, 全部转成大写与学习通一致
                                 answer += o[:1]
-                    # 对答案进行排序，否则会提交失败
+                    # 对答案进行排序, 否则会提交失败
                     answer = "".join(sorted(answer))
                 elif q["type"] == "judgement":
                     answer = "true" if self.tiku.jugement_select(res) else "false"
@@ -457,7 +457,7 @@ class Chaoxing:
                         if res in o:
                             answer = o[:1]
                             break
-                # 如果未能匹配，依然随机答题
+                # 如果未能匹配, 依然随机答题
                 logger.info(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
                 answer = answer if answer else random_answer(q["options"])
             # 填充答案
@@ -509,7 +509,7 @@ class Chaoxing:
 
     def strdy_read(self, _course, _job, _job_info) -> None:
         """
-        阅读任务学习，仅完成任务点，并不增长时长
+        阅读任务学习, 仅完成任务点, 并不增长时长
         """
         _session = init_session()
         _resp = _session.get(
