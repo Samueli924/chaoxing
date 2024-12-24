@@ -15,7 +15,7 @@ def celery_init_app(app: Flask) -> Celery:
     return celery_app
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = Flask(__name__)
     app.config.from_mapping(
         CELERY=dict(
