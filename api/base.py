@@ -317,7 +317,7 @@ class Chaoxing:
 
                 for i in range(
                     random.choices([2, 3, 4], weights=[0.1, 0.5, 0.4], k=1)[0]
-                ):  # 此处表示随机多选答案几率：2个 10%, 3个 50%, 4个 40%
+                ):  # 此处表示随机多选答案几率: 2个 10%, 3个 50%, 4个 40%
                     _choice = random.choice(_op_list)
                     _op_list.remove(_choice)
                     answer += _choice[:1]  # 取首字为答案, 例如A或B
@@ -380,7 +380,7 @@ class Chaoxing:
                 if len(res) > 1:
                     return res
             logger.warning(
-                f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
+                f"未能从网页中提取题目信息, 以下为相关信息: \n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
             )  # 尝试输出网页内容和选项信息
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
