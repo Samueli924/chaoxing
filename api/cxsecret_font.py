@@ -1,7 +1,7 @@
 ##
 # @Author: SocialSisterYi
 # @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
-# 
+#
 
 import base64
 import hashlib
@@ -24,6 +24,7 @@ KX_RADICALS_TAB = str.maketrans(
 
 class FontHashDAO:
     """原始字体hashmap DAO"""
+
     char_map: Dict[str, str]  # unicode -> hsah
     hash_map: Dict[str, str]  # hash -> unicode
 
