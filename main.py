@@ -3,6 +3,7 @@ import argparse
 import configparser
 import random
 
+from api import config
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError, MaxRollBackError
@@ -82,6 +83,13 @@ def init_config():
                 else None
             ),
             int(config.get("common", "speed")),
+            # 章节测验
+            # 0: 不做
+            # 1: 做完保存
+            # 2: 做完提交
+            # chapter_test
+            int(config.get("common", "chapter_test")),
+
             config["tiku"],
         )
     else:
@@ -90,6 +98,7 @@ def init_config():
             args.password,
             args.list.split(",") if args.list else None,
             int(args.speed) if args.speed else 1,
+            None,
             None,
         )
 
@@ -115,7 +124,7 @@ if __name__ == "__main__":
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        username, password, course_list, speed, tiku_config = init_config()
+        username, password, course_list, speed, chapter_test, tiku_config = init_config()
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
@@ -244,7 +253,12 @@ if __name__ == "__main__":
                         chaoxing.study_document(course, job)
                     # 测验任务
                     elif job["type"] == "workid":
+                        # 检测配置文件是否跳过测验任务
+                        if chapter_test == 0:
+                            logger.info(f"跳过章节测验任务, 任务章节: {course['title']}")
+                            continue
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
+                        # 有比直接跟在函数括号后面传参数更好看的写法, 传 self
                         chaoxing.study_work(course, job, job_info)
                     # 阅读任务
                     elif job["type"] == "read":
