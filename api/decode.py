@@ -127,9 +127,9 @@ def decode_course_card(_text: str):
             # 不属于任务点的任务
             if "job" not in _card or _card["job"] is False:
                 if _card.get("type") and _card["type"] == "read":
-                    # 发现有在视频任务下掺杂阅读任务，不完成可能会导致无法开启下一章节
+                    # 发现有在视频任务下掺杂阅读任务, 不完成可能会导致无法开启下一章节
                     if _card["property"].get("read", False):
-                        # 已阅读，跳过
+                        # 已阅读, 跳过
                         continue
                     _job = {}
                     _job["title"] = _card["property"]["title"]
@@ -153,7 +153,7 @@ def decode_course_card(_text: str):
                 try:
                     _job["mid"] = _card["mid"]
                 except KeyError:
-                    logger.warning("出现转码失败视频，已跳过...")
+                    logger.warning("出现转码失败视频, 已跳过...")
                     continue
                 _job["objectid"] = _card["objectId"]
                 _job["aid"] = _card["aid"]

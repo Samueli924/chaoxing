@@ -83,11 +83,7 @@ def init_config():
                 else None
             ),
             int(config.get("common", "speed")),
-            # 章节测验
-            # 0: 不做
-            # 1: 做完保存
-            # 2: 做完提交
-            # chapter_test
+            # chapter_test, 章节测验 0: 不做 1: 做
             int(config.get("common", "chapter_test")),
 
             config["tiku"],
@@ -258,7 +254,6 @@ if __name__ == "__main__":
                             logger.info(f"跳过章节测验任务, 任务章节: {course['title']}")
                             continue
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-                        # 使用更优雅的方式传递参数 -> self (chapter_test)
                         chaoxing.study_work(course, job, job_info)
                     # 阅读任务
                     elif job["type"] == "read":
