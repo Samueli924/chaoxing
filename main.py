@@ -3,7 +3,6 @@ import argparse
 import configparser
 import random
 
-from api import config
 from api.logger import logger
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, FormatError, JSONDecodeError, MaxRollBackError
@@ -35,6 +34,7 @@ import os
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
+
 
 
 def init_config():
