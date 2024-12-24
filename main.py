@@ -258,7 +258,7 @@ if __name__ == "__main__":
                             logger.info(f"跳过章节测验任务, 任务章节: {course['title']}")
                             continue
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-                        # 有比直接跟在函数括号后面传参数更好看的写法, 传 self
+                        # 使用更优雅的方式传递参数 -> self (chapter_test)
                         chaoxing.study_work(course, job, job_info)
                     # 阅读任务
                     elif job["type"] == "read":
