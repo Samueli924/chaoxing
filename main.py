@@ -2,6 +2,7 @@
 import argparse
 import configparser
 import random
+import traceback
 
 from api.logger import logger
 from api.base import Chaoxing, Account
@@ -11,33 +12,31 @@ from urllib3 import disable_warnings, exceptions
 import time
 import sys
 import os
-
-# # 定义全局变量, 用于存储配置文件路径
-# textPath = './resource/BookID.txt'
-
-# # 获取文本 -> 用于查看学习过的课程ID
-# def getText():
-#     try:
-#         if not os.path.exists(textPath):
-#             with open(textPath, 'x') as file: pass
-#             return []
-#         with open(textPath, 'r', encoding='utf-8') as file: content = file.read().split(',')
-#         content = {int(item.strip()) for item in content if item.strip()}
-#         return list(content)
-#     except Exception as e: logger.error(f"获取文本失败: {e}"); return []
-
-# # 追加文本 -> 用于记录学习过的课程ID
-# def appendText(text):
-#     if not os.path.exists(textPath): return
-#     with open(textPath, 'a', encoding='utf-8') as file: file.write(f'{text}, ')
-
+from dataclasses import dataclass
+from typing import Optional, List
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
 
+@dataclass
+class Config:
+    username: str
+    password: str
+    course_list: Optional[List[str]]
+    speed: float
+    chapter_test: Optional[int]
+    tiku_config: Optional[dict]
 
-def init_config():
+
+def parse_course_list(course_str: Optional[str]) -> Optional[List[str]]:
+    """解析课程列表字符串为列表"""
+    if not course_str:
+        return None
+    return [item.strip() for item in course_str.split(",") if item.strip()]
+
+
+def init_config() -> Config:
     parser = argparse.ArgumentParser(
         description="Samueli924/chaoxing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -49,7 +48,7 @@ def init_config():
     parser.add_argument("-u", "--username", type=str, default=None, help="手机号账号")
     parser.add_argument("-p", "--password", type=str, default=None, help="登录密码")
     parser.add_argument(
-        "-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔"
+        "-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔 (Optional)"
     )
     parser.add_argument(
         "-s", "--speed", type=float, default=1.0, help="视频播放倍速 (默认1, 最大2)"
@@ -74,28 +73,22 @@ def init_config():
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config, encoding="utf8")
-        return (
-            config.get("common", "username"),
-            config.get("common", "password"),
-            (
-                str(config.get("common", "course_list")).split(",")
-                if config.get("common", "course_list")
-                else None
-            ),
-            int(config.get("common", "speed")),
-            # chapter_test, 章节测验 0: 不做 1: 做
-            int(config.get("common", "chapter_test")),
-
-            config["tiku"],
+        return Config(
+            username=config.get("common", "username"),
+            password=config.get("common", "password"),
+            course_list=parse_course_list(config.get("common", "course_list")),
+            speed=float(config.get("common", "speed")),
+            chapter_test=config.getint("common", "chapter_test", fallback=None),
+            tiku_config=config["tiku"],
         )
     else:
-        return (
-            args.username,
-            args.password,
-            args.list.split(",") if args.list else None,
-            int(args.speed) if args.speed else 1,
-            None,
-            None,
+        return Config(
+            username=args.username,
+            password=args.password,
+            course_list=parse_course_list(args.list),
+            speed=float(args.speed) if args.speed else 1.0,
+            chapter_test=None,
+            tiku_config=None,
         )
 
 
@@ -120,16 +113,21 @@ if __name__ == "__main__":
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        username, password, course_list, speed, chapter_test, tiku_config = init_config()
+        config = init_config()
         # 规范化播放速度的输入值
-        speed = min(2.0, max(1.0, speed))
-        if (not username) or (not password):
-            username = input("请输入你的手机号, 按回车确认\n手机号:")
-            password = input("请输入你的密码, 按回车确认\n密码:")
-        account = Account(username, password)
+        config.speed = min(2.0, max(1.0, config.speed))
+        if (not config.username) or (not config.password):
+            config.username = input("请输入你的手机号, 按回车确认\n手机号:")
+            config.password = input("请输入你的密码, 按回车确认\n密码:")
+        logger.debug(
+            f"username: {config.username}, password: {config.password}, course_list: {config.course_list}, speed: {config.speed}"
+        )
+        account = Account(config.username, config.password)
         # 设置题库
         tiku = Tiku()
-        tiku.config_set(tiku_config)  # 载入配置
+        logger.debug(f"tiku_config: {config.tiku_config}")
+        # if config.tiku_config:
+        tiku.config_set(config.tiku_config)      # 载入配置
         tiku = tiku.get_tiku_from_config()  # 载入题库
         tiku.init_tiku()  # 初始化题库
 
@@ -143,24 +141,26 @@ if __name__ == "__main__":
         all_course = chaoxing.get_course_list()
         course_task = []
         # 手动输入要学习的课程ID列表
-        if not course_list:
+        if not config.course_list:
             print("*" * 10 + "课程列表" + "*" * 10)
             for course in all_course:
                 print(f"ID: {course['courseId']} 课程名: {course['title']}")
             print("*" * 28)
             try:
-                course_list = input(
+                config.course_list = input(
                     "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
                 ).split(",")
             except Exception as e:
                 raise FormatError("输入格式错误") from e
         # 筛选需要学习的课程
         for course in all_course:
-            if course["courseId"] in course_list:
+            if course["courseId"] in config.course_list:
                 course_task.append(course)
         if not course_task:
             course_task = all_course
+
         # 开始遍历要学习的课程列表
+        logger.debug(f"要学习的课程列表: {course_task}")
         logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
         for course in course_task:
             logger.info(f"开始学习课程: {course['title']}")
@@ -170,14 +170,16 @@ if __name__ == "__main__":
             )
 
             # 为了支持课程任务回滚, 采用下标方式遍历任务点
+            logger.debug(f"当前课程子任务点共计: {len(point_list['points'])}")
+
             __point_index = 0
             while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
-                logger.debug(f"当前章节 __point_index: {__point_index}")  # 触发参数: -v
+                logger.debug(f"当前 __point_index: {__point_index}")
                 sleep_duration = random.uniform(1, 3)
-                logger.debug(f"本次随机等待时间: {sleep_duration}")
-                time.sleep(sleep_duration)  # 避免请求过快导致异常, 所以引入随机sleep
+                logger.debug(f"本次随机等待时间: {sleep_duration:.1f}s")
+                time.sleep(sleep_duration)  # 避免请求过快导致异常, 所以引入随机 sleep
                 # 获取当前章节的所有任务点
                 jobs = []
                 job_info = None
@@ -227,7 +229,11 @@ if __name__ == "__main__":
                         isAudio = False
                         try:
                             chaoxing.study_video(
-                                course, job, job_info, _speed=speed, _type="Video"
+                                course,
+                                job,
+                                job_info,
+                                _speed=config.speed,
+                                _type="Video",
                             )
                         except JSONDecodeError as e:
                             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
@@ -235,7 +241,11 @@ if __name__ == "__main__":
                         if isAudio:
                             try:
                                 chaoxing.study_video(
-                                    course, job, job_info, _speed=speed, _type="Audio"
+                                    course,
+                                    job,
+                                    job_info,
+                                    _speed=config.speed,
+                                    _type="Audio",
                                 )
                             except JSONDecodeError as e:
                                 logger.warning(
@@ -250,8 +260,10 @@ if __name__ == "__main__":
                     # 测验任务
                     elif job["type"] == "workid":
                         # 检测配置文件是否跳过测验任务
-                        if chapter_test == 0:
-                            logger.info(f"跳过章节测验任务, 任务章节: {course['title']}")
+                        if config.chapter_test == 0:
+                            logger.info(
+                                f"跳过章节测验任务, 任务章节: {course['title']}"
+                            )
                             continue
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
                         chaoxing.study_work(course, job, job_info)
@@ -268,8 +280,6 @@ if __name__ == "__main__":
         else:
             raise
     except BaseException as e:
-        import traceback
-
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         raise e

@@ -210,7 +210,7 @@ class TikuYanxi(Tiku):
             if not res_json["code"]:
                 # 如果是因为TOKEN次数到期, 则更换token
                 if self._times == 0 or "次数不足" in res_json["data"]["answer"]:
-                    logger.info(f"TOKEN查询次数不足, 将会更换并重新搜题")
+                    logger.info("TOKEN查询次数不足, 将会更换并重新搜题")
                     self._token_index += 1
                     self.load_token()
                     # 重新查询
@@ -274,8 +274,8 @@ class TikuAdapter(Tiku):
                 return None
             sep = "\n"
             return sep.join(res_json["answer"]["allAnswer"][0]).strip()
-            # else:
-            logger.error(f"{self.name}查询失败:\n{res.text}")
+            # else: # https://github.com/Samueli924/chaoxing/blame/3369cae6e55a44d6d284e17bccefb56d1606f5bb/api/answer.py#L269
+            # logger.error(f"{self.name}查询失败:\n{res.text}") # Unreachable code
         return None
 
     def _init_tiku(self):
