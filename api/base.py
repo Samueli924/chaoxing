@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from calendar import LocaleHTMLCalendar
 import re
 import time
 import random
@@ -297,42 +298,55 @@ class Chaoxing:
     def study_work(self, _course, _job, _job_info) -> None:
         if self.tiku.DISABLE or not self.tiku:
             return None
-        _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
-        def random_answer(options: str) -> str:
-            answer = ""
+        def match_answer_with_options(answer: str, options_list: list[str], q_type: str) -> str:
+            # pretreatment
+            # del ';' '；' ',' '，' ' ' '、'
+            # Prevents incorrect answers due to poor matches with the question bank.
+            # It would be better to maintain the return in terms of correctness, starting with this.
+            def delete_option_separator(options: str) -> str:
+                return re.sub(r"[;,，、\s]", "", options)
+            """统一的答案匹配处理函数"""
+            matched_answer = ""
+            if q_type == "multiple":
+                for ans in multi_cut(answer):
+                    ans = delete_option_separator(ans)
+                    ans = ans.strip().upper()
+                    for opt in options_list:
+                        opt = delete_option_separator(opt)
+                        if ans == opt[:1].upper() or ans in opt.upper():
+                            matched_answer += opt[:1]
+                matched_answer = "".join(sorted(set(matched_answer)))  # 去重并排序
+            elif q_type == "judgement":
+                matched_answer = "true" if self.tiku.jugement_select(answer) else "false"
+            else:  # single
+                for opt in options_list:
+                    if answer.upper() in opt.upper():
+                        matched_answer = opt[:1]
+                        break
+            return matched_answer
+
+        def random_answer(options: str, q_type: str) -> str:
+            """改进的随机答案生成"""
             if not options:
-                return answer
+                return ""
 
-            if q["type"] == "multiple":
-                logger.debug(f"当前选项列表[cut前] -> {options}")
-                _op_list = multi_cut(options)
-                logger.debug(f"当前选项列表[cut后] -> {_op_list}")
+            options_list = multi_cut(options)
+            if not options_list:
+                logger.error("选项为空，未能正确提取题目选项信息!")
+                return ""
 
-                if not _op_list:
-                    logger.error(
-                        "选项为空, 未能正确提取题目选项信息! 请反馈并提供以上信息"
-                    )
-                    return answer
-
-                for i in range(
-                    random.choices([2, 3, 4], weights=[0.1, 0.5, 0.4], k=1)[0]
-                ):  # 此处表示随机多选答案几率: 2个 10%, 3个 50%, 4个 40%
-                    _choice = random.choice(_op_list)
-                    _op_list.remove(_choice)
-                    answer += _choice[:1]  # 取首字为答案, 例如A或B
-                # 对答案进行排序, 否则会提交失败
-                answer = "".join(sorted(answer))
-            elif q["type"] == "single":
-                answer = random.choice(options.split("\n"))[
-                    :1
-                ]  # 取首字为答案, 例如A或B
-            # 判断题处理
-            elif q["type"] == "judgement":
-                # answer = self.tiku.jugement_select(_answer)
-                answer = "true" if random.choice([True, False]) else "false"
-            logger.info(f"随机选择 -> {answer}")
-            return answer
+            if q_type == "multiple":
+                # 权重调整：2选项(10%), 3选项(50%), 4选项(40%)
+                num_choices = random.choices([2, 3, 4], weights=[0.1, 0.5, 0.4], k=1)[0]
+                num_choices = min(num_choices, len(options_list))  # 确保不超过可用选项数
+                selected = random.sample(options_list, num_choices)
+                return "".join(sorted(opt[:1] for opt in selected))
+            elif q_type == "single":
+                return random.choice(options_list)[:1]
+            elif q_type == "judgement":
+                return "true" if random.choice([True, False]) else "false"
+            return ""
 
         def multi_cut(answer: str) -> list[str]:
             """
@@ -353,6 +367,7 @@ class Chaoxing:
             # 同时为了避免没有考虑到的 case, 应该先按照 '\n' 匹配, 匹配不到再按照其他字符匹配
             cut_char = [
                 "\n",
+                "；",
                 ",",
                 "，",
                 "|",
@@ -374,18 +389,21 @@ class Chaoxing:
             ]  # 多选答案切割符
             res = []
             for char in cut_char:
+                # logger.debug(f"尝试使用字符 '{char}' 进行切割") # 输出的时候不要渲染
                 res = [
                     opt for opt in answer.split(char) if opt.strip()
                 ]  # Filter empty strings
                 if len(res) > 1:
+                    logger.debug(f"使用字符 '{char}' 切割成功")
+                    logger.debug(f"切割后的选项列表为: {res}")
                     return res
             logger.warning(
-                f"未能从网页中提取题目信息, 以下为相关信息: \n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
+                f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
             )  # 尝试输出网页内容和选项信息
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
-        # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
+        # 获取题目信息
         _session = init_session()
         headers = {
             "Host": "mooc1.chaoxing.com",
@@ -429,38 +447,23 @@ class Chaoxing:
         _ORIGIN_HTML_CONTENT = _resp.text  # 用于配合输出网页源码, 帮助修复#391错误
         questions = decode_questions_info(_resp.text)  # 加载题目信息
 
-        # 搜题
+        # 处理每个题目
         for q in questions["questions"]:
             logger.debug(f"当前题目信息 -> {q}")
+            options_list = multi_cut(q["options"])
             res = self.tiku.query(q)
-            answer = ""
+            
             if not res:
-                # 随机答题
-                answer = random_answer(q["options"])
+                answer = random_answer(q["options"], q["type"])
+                logger.info(f"未找到答案，随机选择 -> {answer}")
             else:
-                # 根据响应结果选择答案
-                options_list = multi_cut(q["options"])
-                if q["type"] == "multiple":
-                    # 多选处理
-                    for _a in multi_cut(res):
-                        for o in options_list:
-                            if (
-                                _a.upper() in o
-                            ):  # 题库返回的答案可能包含选项, 如A, B, C, 全部转成大写与学习通一致
-                                answer += o[:1]
-                    # 对答案进行排序, 否则会提交失败
-                    answer = "".join(sorted(answer))
-                elif q["type"] == "judgement":
-                    answer = "true" if self.tiku.jugement_select(res) else "false"
+                answer = match_answer_with_options(res, options_list, q["type"])
+                if not answer:
+                    answer = random_answer(q["options"], q["type"])
+                    logger.info(f"答案匹配失败，随机选择 -> {answer}")
                 else:
-                    for o in options_list:
-                        if res in o:
-                            answer = o[:1]
-                            break
-                # 如果未能匹配, 依然随机答题
-                logger.info(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
-                answer = answer if answer else random_answer(q["options"])
-            # 填充答案
+                    logger.info(f"找到匹配答案 -> {answer}")
+            
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
 
@@ -498,6 +501,7 @@ class Chaoxing:
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
             },
         )
+        # TODO 提交答案后查询分数和正确率
         if res.status_code == 200:
             res_json = res.json()
             if res_json["status"]:
