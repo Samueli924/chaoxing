@@ -6,6 +6,7 @@ from api.logger import logger
 import random
 from urllib3 import disable_warnings,exceptions
 from openai import OpenAI
+import httpx
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -282,7 +283,12 @@ class AI(Tiku):
         self.name = 'AI大模型答题'
 
     def _query(self, q_info: dict):
-        client = OpenAI(base_url = self.endpoint,api_key = self.key)
+        if self.http_proxy:
+            proxy = self.http_proxy
+            httpx_client = httpx.Client(proxy=proxy)
+            client = OpenAI(http_client=httpx_client, base_url = self.endpoint,api_key = self.key)
+        else:
+            client = OpenAI(base_url = self.endpoint,api_key = self.key)
         # 判断题目类型
         if q_info['type'] == "single":
             completion = client.chat.completions.create(
@@ -367,3 +373,4 @@ class AI(Tiku):
         self.endpoint = self._conf['endpoint']
         self.key = self._conf['key']
         self.model = self._conf['model']
+        self.http_proxy = self._conf['http_proxy']
