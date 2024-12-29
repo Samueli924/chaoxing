@@ -457,9 +457,11 @@ class Chaoxing:
                         if res in o:
                             answer = o[:1]
                             break
-                # 如果未能匹配, 依然随机答题
-                logger.info(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
-                answer = answer if answer else random_answer(q["options"])
+                if not answer:  # 检查 answer 是否为空
+                    logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
+                    answer = random_answer(q["options"])  # 如果为空，则随机选择答案
+                else:
+                    logger.info(f"成功获取到答案：{answer}")
             # 填充答案
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')

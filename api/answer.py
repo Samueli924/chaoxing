@@ -5,6 +5,8 @@ import json
 from api.logger import logger
 import random
 from urllib3 import disable_warnings,exceptions
+from openai import OpenAI
+import httpx
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -273,3 +275,102 @@ class TikuAdapter(Tiku):
     def _init_tiku(self):
         # self.load_token()
         self.api = self._conf['url']
+
+class AI(Tiku):
+    # AI大模型答题实现
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = 'AI大模型答题'
+
+    def _query(self, q_info: dict):
+        if self.http_proxy:
+            proxy = self.http_proxy
+            httpx_client = httpx.Client(proxy=proxy)
+            client = OpenAI(http_client=httpx_client, base_url = self.endpoint,api_key = self.key)
+        else:
+            client = OpenAI(base_url = self.endpoint,api_key = self.key)
+        # 判断题目类型
+        if q_info['type'] == "single":
+            completion = client.chat.completions.create(
+                model = self.model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                    }
+                ]
+            )
+        elif q_info['type'] == 'multiple':
+            completion = client.chat.completions.create(
+                model = self.model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                    }
+                ]
+            )
+        elif q_info['type'] == 'completion':
+            completion = client.chat.completions.create(
+                model = self.model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"题目：{q_info['title']}"
+                    }
+                ]
+            )
+        elif q_info['type'] == 'judgement':
+            completion = client.chat.completions.create(
+                model = self.model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"题目：{q_info['title']}"
+                    }
+                ]
+            )
+        else:
+            completion = client.chat.completions.create(
+                model = self.model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"题目：{q_info['title']}"
+                    }
+                ]
+            )
+
+        try:
+            response = json.loads(completion.choices[0].message.content)
+            sep = "\n"
+            return sep.join(response['Answer']).strip()
+        except:
+            logger.error("无法解析大模型输出内容")
+            return None
+
+    def _init_tiku(self):
+        self.endpoint = self._conf['endpoint']
+        self.key = self._conf['key']
+        self.model = self._conf['model']
+        self.http_proxy = self._conf['http_proxy']
