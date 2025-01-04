@@ -427,6 +427,12 @@ class Chaoxing:
             },
         )
         _ORIGIN_HTML_CONTENT = _resp.text  # 用于配合输出网页源码, 帮助修复#391错误
+
+        # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
+        if '教师未创建完成该测验' in _resp.text: 
+            logger.warning(f'教师未创建完成该测验')
+            return 0
+        
         questions = decode_questions_info(_resp.text)  # 加载题目信息
 
         # 搜题
