@@ -198,8 +198,6 @@ def decode_questions_info(html_content) -> dict:
     form_data = {}
     form_tag = soup.find("form")
 
-    fd = FontDecoder(html_content)  # 加载字体
-
     # 抽取表单信息
     for input_tag in form_tag.find_all("input"):
         if "name" not in input_tag.attrs or "answer" in input_tag.attrs["name"]:
@@ -207,13 +205,26 @@ def decode_questions_info(html_content) -> dict:
         form_data.update({input_tag.attrs["name"]: input_tag.attrs.get("value", "")})
 
     form_data["questions"] = []
+
+    if soup.find("style", id="cxSecretStyle") is None:  # 未找到字体文件，目前只有可能是空或者无中文内容。
+        logger.warning("未找到字体文件，可能是未加密的题目不进行解密")
+    else:
+        fd = FontDecoder(html_content)  # 加载字体
+
     for div_tag in form_tag.find_all(
         "div", class_="singleQuesId"
     ):  # 目前来说无论是单选还是多选的题class都是这个
-        q_title = replace_rtn(fd.decode(div_tag.find("div", class_="Zy_TItle").text))
-        q_options = ""
-        for li_tag in div_tag.find("ul").find_all("li"):
-            q_options += replace_rtn(fd.decode(li_tag.text)) + "\n"
+        if 'fd' in locals():
+            q_title = replace_rtn(fd.decode(div_tag.find("div", class_="Zy_TItle").text))
+            q_options = ""
+            for li_tag in div_tag.find("ul").find_all("li"):
+                q_options += replace_rtn(fd.decode(li_tag.text)) + "\n"
+        else:
+            q_title = replace_rtn(div_tag.find("div", class_="Zy_TItle").text)
+            q_options = ""
+            for li_tag in div_tag.find("ul").find_all("li"):
+                q_options += replace_rtn(li_tag.text) + "\n"
+        print(q_title,q_options)
         q_options = q_options[:-1]  # 去除尾部'\n'
 
         # 尝试使用 data 属性来判断题型
