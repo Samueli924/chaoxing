@@ -218,12 +218,13 @@ def decode_questions_info(html_content) -> dict:
             q_title = replace_rtn(fd.decode(div_tag.find("div", class_="Zy_TItle").text))
             q_options = ""
             for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(fd.decode(li_tag.text)) + "\n"
+                q_options += replace_rtn(fd.decode(li_tag.attrs["aria-label"])).rstrip('选择') + "\n"
         else:
             q_title = replace_rtn(div_tag.find("div", class_="Zy_TItle").text)
             q_options = ""
             for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(li_tag.text) + "\n"
+                q_options += replace_rtn(li_tag.attrs["aria-label"]).rstrip('选择') + "\n"
+                
         print(q_title,q_options)
         q_options = q_options[:-1]  # 去除尾部'\n'
 
