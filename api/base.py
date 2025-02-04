@@ -445,9 +445,9 @@ class Chaoxing:
                 answer = random_answer(q["options"])
             else:
                 # 根据响应结果选择答案
-                options_list = multi_cut(q["options"])
                 if q["type"] == "multiple":
                     # 多选处理
+                    options_list = multi_cut(q["options"])
                     for _a in multi_cut(res):
                         for o in options_list:
                             if (
@@ -456,13 +456,19 @@ class Chaoxing:
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
                     answer = "".join(sorted(answer))
-                elif q["type"] == "judgement":
-                    answer = "true" if self.tiku.jugement_select(res) else "false"
-                else:
+                elif q["type"] == "single":
+                    # 单选也进行切割，主要是防止返回的答案有异常字符
+                    options_list = multi_cut(q["options"])
                     for o in options_list:
                         if res in o:
                             answer = o[:1]
                             break
+                elif q["type"] == "judgement":
+                    answer = "true" if self.tiku.jugement_select(res) else "false"
+                else:
+                    # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
+                    answer = res
+
                 if not answer:  # 检查 answer 是否为空
                     logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
                     answer = random_answer(q["options"])  # 如果为空，则随机选择答案
