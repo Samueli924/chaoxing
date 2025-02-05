@@ -259,7 +259,9 @@ class Chaoxing:
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
                     _wait_time = int(_duration) - _playingTime
-                    _isFinished = True
+                    _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
+                    if _isPassed['isPassed']:
+                        _isFinished = True
                 # 播放进度条
                 show_progress(_job["name"], _playingTime, _wait_time, _duration, _speed)
                 _playingTime += _wait_time
