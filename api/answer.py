@@ -237,7 +237,7 @@ class TikuLike(Tiku):
     def __init__(self) -> None:
         super().__init__()
         self.name = 'Like知识库'
-        self.ver = '1.0.6'
+        self.ver = '1.0.6' #对应官网API版本
         self.query_api = 'https://api.datam.site/search'
         self.balance_api = 'https://api.datam.site/balance'
         self.homepage = 'https://www.datam.site'
@@ -307,8 +307,19 @@ class TikuLike(Tiku):
         token = self._conf['tokens'].split(',')[-1] if ',' in self._conf['tokens'] else self._conf['tokens']
         self._token = token
 
+    def load_config(self):
+        var_params = {"likeapi_search":self._search,"likeapi_model":self._model}
+        config_params = {"likeapi_search":False, "likeapi_model":None}
+
+        for k,v in config_params.items():
+            if k in self._conf:
+                var_params[k] = self._conf[k]
+            else:
+                var_params[k] = v
+
     def _init_tiku(self):
         self.load_token()
+        self.load_config()
         self.update_times()
 
 class TikuAdapter(Tiku):
