@@ -220,7 +220,7 @@ class Chaoxing:
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            return False
+            return {"isPassed": False}  # 返回一个字典，确保调用代码不会出错
 
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
