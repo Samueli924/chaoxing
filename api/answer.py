@@ -125,6 +125,7 @@ class Tiku:
                 return answer
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
+    
     def _query(self,q_info:dict):
         """
         查询接口, 交由自定义题库实现
@@ -230,6 +231,96 @@ class TikuYanxi(Tiku):
 
     def _init_tiku(self):
         self.load_token()
+
+class TikuLike(Tiku):
+    # Like知识库实现
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = 'Like知识库'
+        self.ver = '1.0.6' #对应官网API版本
+        self.query_api = 'https://api.datam.site/search'
+        self.balance_api = 'https://api.datam.site/balance'
+        self.homepage = 'https://www.datam.site'
+        self._model = None
+        self._token = None
+        self._times = -1
+        self._search = False
+        self._count = 0
+
+    def _query(self,q_info:dict):
+        q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
+        api_params_map = {0:"others",1:"choose",2:"fill",3:"judge"}
+        q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
+        options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
+        question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
+        ret = ""
+        ans = ""
+        res = requests.post(
+            self.query_api,
+            json={
+                'query': question,
+                'token': self._token,
+                'model': self._model if self._model else '',
+                'search': self._search
+            },
+            verify=False
+        )
+
+        if res.status_code == 200:
+            res_json = res.json()
+            q_type = res_json['data'].get('type',0)
+            params = api_params_map.get(q_type,"")
+            ans = res_json['data'].get(params,"")
+            if q_type == 3:
+                ans = "正确" if ans ==1 else "错误"
+        else:
+            logger.error(f'{self.name}查询失败:\n{res.text}')
+            return None
+
+        ret += str(ans)
+
+        self._times -= 1
+
+        #10次查询后更新实际次数
+        self._count = (self._count+1) % 10
+
+        if self._count == 0:
+            self.update_times()
+        
+        return ret
+    
+    def update_times(self):
+        res = requests.post(
+            self.balance_api,
+            json={
+                'token': self._token,
+            },
+            verify=False
+        )
+        if res.status_code == 200:
+            res_json = res.json()
+            self._times = res_json["data"].get("balance",self._times)
+        else:
+            logger.error('TOKEN出现错误，请检查后再试')
+
+    def load_token(self): 
+        token = self._conf['tokens'].split(',')[-1] if ',' in self._conf['tokens'] else self._conf['tokens']
+        self._token = token
+
+    def load_config(self):
+        var_params = {"likeapi_search":self._search,"likeapi_model":self._model}
+        config_params = {"likeapi_search":False, "likeapi_model":None}
+
+        for k,v in config_params.items():
+            if k in self._conf:
+                var_params[k] = self._conf[k]
+            else:
+                var_params[k] = v
+
+    def _init_tiku(self):
+        self.load_token()
+        self.load_config()
+        self.update_times()
 
 class TikuAdapter(Tiku):
     # TikuAdapter题库实现 https://github.com/DokiDoki1103/tikuAdapter
