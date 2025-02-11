@@ -387,6 +387,34 @@ class Chaoxing:
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
+        def with_retry(max_retries=3, delay=1):
+            def decorator(func):
+                def wrapper(*args, **kwargs):
+                    retries = 0
+                    while retries < max_retries:
+                        try:
+                            _resp = func(*args, **kwargs)
+                            
+                            # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
+                            if '教师未创建完成该测验' in _resp.text:
+                                raise Exception(f"教师未创建完成该测验")
+
+                            questions = decode_questions_info(_resp.text)
+                    
+                            if _resp.status_code == 200 and questions.get("questions"):
+                                return (_resp, questions)
+                    
+                            logger.warning(f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中... ({retries+1}/{max_retries})")
+                
+                        except requests.exceptions.RequestException as e:
+                            logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries+1}/{max_retries})")
+                        retries += 1
+                        time.sleep(delay * (2 ** retries))
+                    raise Exception(f"超过最大重试次数 ({max_retries})")
+                return wrapper
+            return decorator
+
+
         # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
         headers = {
@@ -405,37 +433,43 @@ class Chaoxing:
         cookies = _session.cookies.get_dict()
 
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
-        _resp = requests.get(
-            _url,
-            headers=headers,
-            cookies=cookies,
-            verify=False,
-            params={
-                "api": "1",
-                "workId": _job["jobid"].replace("work-", ""),
-                "jobid": _job["jobid"],
-                "originJobId": _job["jobid"],
-                "needRedirect": "true",
-                "skipHeader": "true",
-                "knowledgeid": str(_job_info["knowledgeid"]),
-                "ktoken": _job_info["ktoken"],
-                "cpi": _job_info["cpi"],
-                "ut": "s",
-                "clazzId": _course["clazzId"],
-                "type": "",
-                "enc": _job["enc"],
-                "mooc2": "1",
-                "courseid": _course["courseId"],
-            },
-        )
-        _ORIGIN_HTML_CONTENT = _resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
-        # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
-        if '教师未创建完成该测验' in _resp.text: 
-            logger.warning(f'教师未创建完成该测验')
+        @with_retry(max_retries=3, delay=1)
+        def fetch_response():
+            return requests.get(
+                    _url,
+                    headers=headers,
+                    cookies=cookies,
+                    verify=False,
+                    params={
+                        "api": "1",
+                        "workId": _job["jobid"].replace("work-", ""),
+                        "jobid": _job["jobid"],
+                        "originJobId": _job["jobid"],
+                        "needRedirect": "true",
+                        "skipHeader": "true",
+                        "knowledgeid": str(_job_info["knowledgeid"]),
+                        "ktoken": _job_info["ktoken"],
+                        "cpi": _job_info["cpi"],
+                        "ut": "s",
+                        "clazzId": _course["clazzId"],
+                        "type": "",
+                        "enc": _job["enc"],
+                        "mooc2": "1",
+                        "courseid": _course["courseId"],
+                    }
+            )
+
+        final_resp = {}
+        questions = {}
+
+        try:
+            final_resp, questions = fetch_response()
+        except Exception as e:
+            logger.error(f"请求失败: {e}")
             return 0
         
-        questions = decode_questions_info(_resp.text)  # 加载题目信息
+        _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
         # 搜题
         for q in questions["questions"]:
