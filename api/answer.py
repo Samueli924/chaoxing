@@ -146,6 +146,7 @@ class Tiku:
             if not cls_name:
                 raise KeyError
         except KeyError:
+            self.DISABLE = False
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
         new_cls = globals()[cls_name]()
