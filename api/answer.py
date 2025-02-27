@@ -95,7 +95,7 @@ class Tiku:
             config = configparser.ConfigParser()
             config.read(self.CONFIG_PATH, encoding="utf8")
             return config['tiku']
-        except KeyError or FileNotFoundError:
+        except (KeyError, FileNotFoundError):
             logger.info("未找到tiku配置, 已忽略题库功能")
             self.DISABLE = True
             return None
@@ -146,7 +146,7 @@ class Tiku:
             if not cls_name:
                 raise KeyError
         except KeyError:
-            self.DISABLE = False
+            self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
         new_cls = globals()[cls_name]()
