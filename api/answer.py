@@ -94,10 +94,6 @@ class Tiku:
         try:
             config = configparser.ConfigParser()
             config.read(self.CONFIG_PATH, encoding="utf8")
-            if self._conf['provider'] == "":
-                logger.info("tiku方法为空, 已忽略题库功能")
-                self.DISABLE = True
-                return None
             return config['tiku']
         except KeyError or FileNotFoundError:
             logger.info("未找到tiku配置, 已忽略题库功能")
