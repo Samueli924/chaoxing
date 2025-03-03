@@ -56,10 +56,11 @@ class Account:
 
 
 class Chaoxing:
-    def __init__(self, account: Account = None, tiku: Tiku = None):
+    def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
+        self.kwargs = kwargs 
 
     def login(self):
         _session = requests.session()
@@ -474,6 +475,9 @@ class Chaoxing:
         # 搜题
         for q in questions["questions"]:
             logger.debug(f"当前题目信息 -> {q}")
+            # 添加搜题延迟 #428 - 默认0s延迟
+            query_delay = self.kwargs.get("query_delay",0)
+            time.sleep(query_delay)
             res = self.tiku.query(q)
             answer = ""
             if not res:

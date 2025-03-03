@@ -73,25 +73,16 @@ def init_config():
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config, encoding="utf8")
-        return (
-            config.get("common", "username"),
-            config.get("common", "password"),
-            (
-                str(config.get("common", "course_list")).split(",")
-                if config.get("common", "course_list")
-                else None
-            ),
-            int(config.get("common", "speed")),
-            config["tiku"],
-        )
+        common_config = config.get("common",{})
+        tiku_config = config.get("tiku",{})
+        return common_config,tiku_config
     else:
-        return (
-            args.username,
-            args.password,
-            args.list.split(",") if args.list else None,
-            int(args.speed) if args.speed else 1,
-            None,
-        )
+        build_params = {'common':{},"tiku":{}}
+        build_params['common']['username'] = args.username
+        build_params['common']['password'] = args.password
+        build_params['common']['course_list'] = args.list.split(",") if args.list else None
+        build_params['common']['speed'] = args.speed if args.speed else 1
+        return build_params['common'],build_params['tiku']
 
 
 class RollBackManager:
@@ -115,7 +106,12 @@ if __name__ == "__main__":
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        username, password, course_list, speed, tiku_config = init_config()
+        common_config,tiku_config = init_config()
+        username = common_config.get("username","")
+        password = common_config.get("password","")
+        course_list = common_config.get("course_list",None)
+        speed = common_config.get("speed",1)
+        query_delay = tiku_config.get("delay",0)
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
@@ -129,7 +125,7 @@ if __name__ == "__main__":
         tiku.init_tiku()  # 初始化题库
 
         # 实例化超星API
-        chaoxing = Chaoxing(account=account, tiku=tiku)
+        chaoxing = Chaoxing(account=account, tiku=tiku,query_delay = query_delay)
         # 检查当前登录状态, 并检查账号密码
         _login_state = chaoxing.login()
         if not _login_state["status"]:
