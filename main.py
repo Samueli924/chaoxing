@@ -73,9 +73,27 @@ def init_config():
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config, encoding="utf8")
-        common_config = config.get("common",{})
-        tiku_config = config.get("tiku",{})
-        return common_config,tiku_config
+        common_config = {}
+        tiku_config = {}
+        
+        # 检查并读取common节
+        if config.has_section("common"):
+            common_config = dict(config.items("common"))
+            # 处理course_list，将字符串转换为列表
+            if "course_list" in common_config and common_config["course_list"]:
+                common_config["course_list"] = common_config["course_list"].split(",")
+            # 处理speed，将字符串转换为浮点数
+            if "speed" in common_config:
+                common_config["speed"] = float(common_config["speed"])
+        
+        # 检查并读取tiku节
+        if config.has_section("tiku"):
+            tiku_config = dict(config.items("tiku"))
+            # 处理delay，将字符串转换为整数
+            if "delay" in tiku_config:
+                tiku_config["delay"] = float(tiku_config["delay"])
+                
+        return common_config, tiku_config
     else:
         build_params = {'common':{},"tiku":{}}
         build_params['common']['username'] = args.username
