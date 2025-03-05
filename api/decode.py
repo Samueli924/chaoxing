@@ -144,6 +144,8 @@ def decode_course_card(_text: str):
                     _job_list.append(_job)
                 continue
             # 视频任务
+            if not "type" in _card:
+                continue
             if _card["type"] == "video":
                 _job = {}
                 _job["type"] = "video"
