@@ -238,7 +238,7 @@ class TikuLike(Tiku):
     def __init__(self) -> None:
         super().__init__()
         self.name = 'Like知识库'
-        self.ver = '1.0.6' #对应官网API版本
+        self.ver = '1.0.8' #对应官网API版本
         self.query_api = 'https://api.datam.site/search'
         self.balance_api = 'https://api.datam.site/balance'
         self.homepage = 'https://www.datam.site'
@@ -250,7 +250,7 @@ class TikuLike(Tiku):
 
     def _query(self,q_info:dict):
         q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
-        api_params_map = {0:"others",1:"choose",2:"fill",3:"judge"}
+        api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
         q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
         question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
@@ -301,6 +301,7 @@ class TikuLike(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             self._times = res_json["data"].get("balance",self._times)
+            logger.info("当前LIKE知识库Token剩余查询次数为: {}".format(str(self._times)))
         else:
             logger.error('TOKEN出现错误，请检查后再试')
 

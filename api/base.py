@@ -505,6 +505,11 @@ class Chaoxing:
                             break
                 elif q["type"] == "judgement":
                     answer = "true" if self.tiku.jugement_select(res) else "false"
+                elif q["type"] == "completion":
+                    if isinstance(res,list):
+                        answer = "".join(answer)
+                    elif isinstance(res,str):
+                        answer = res
                 else:
                     # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
                     answer = res
