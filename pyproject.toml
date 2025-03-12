@@ -1,0 +1,18 @@
+[project]
+name = "chaoxing"
+version = "3.1.1"
+description = "超星学习通/超星尔雅/泛雅超星全自动无人值守完成任务点"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "argparse>=1.4.0",
+    "beautifulsoup4>=4.13.3",
+    "celery>=5.4.0",
+    "flask>=3.1.0",
+    "fonttools>=4.56.0",
+    "loguru>=0.7.3",
+    "lxml>=5.3.1",
+    "openai>=1.66.2",
+    "pyaes>=1.6.1",
+    "requests>=2.32.3",
+]
