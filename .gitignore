@@ -133,6 +133,10 @@ build/
 dist/
 *.spec
 
+# python-uv.lock
+# just like Pipfile.lock,
+uv.lock
+
 # Custom files
 .cookies.txt
 cookies.txt
