@@ -481,6 +481,8 @@ class Chaoxing:
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
         # 搜题
+        total_questions = len(questions["questions"])
+        found_answers = 0
         for q in questions["questions"]:
             logger.debug(f"当前题目信息 -> {q}")
             # 添加搜题延迟 #428 - 默认0s延迟
@@ -531,7 +533,8 @@ class Chaoxing:
             # 填充答案
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
-
+        cover_rate = (found_answers / total_questions) * 100
+        logger.info(f"章节检测题库覆盖率： {cover_rate:.2f}%")
         # 提交模式  现在与题库绑定
         questions["pyFlag"] = self.tiku.get_submit_params()
 
