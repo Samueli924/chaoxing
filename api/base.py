@@ -388,6 +388,14 @@ class Chaoxing:
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
+        def clean_res(res):
+            cleaned_res = []
+            if isinstance(res, str):
+                res = [res]
+            for c in res:
+                cleaned_res.append(re.sub(r'^[A-Za-z]\.?、?\s?', '', c))
+            return cleaned_res
+
         def with_retry(max_retries=3, delay=1):
             def decorator(func):
                 def wrapper(*args, **kwargs):
@@ -488,10 +496,10 @@ class Chaoxing:
                 if q["type"] == "multiple":
                     # 多选处理
                     options_list = multi_cut(q["options"])
-                    for _a in multi_cut(res):
+                    for _a in clean_res(multi_cut(res)):
                         for o in options_list:
                             if (
-                                _a.upper() in o
+                                _a in o
                             ):  # 题库返回的答案可能包含选项, 如A, B, C, 全部转成大写与学习通一致
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
@@ -499,8 +507,9 @@ class Chaoxing:
                 elif q["type"] == "single":
                     # 单选也进行切割，主要是防止返回的答案有异常字符
                     options_list = multi_cut(q["options"])
+                    t_res = clean_res(res)
                     for o in options_list:
-                        if res in o:
+                        if t_res[0] in o:
                             answer = o[:1]
                             break
                 elif q["type"] == "judgement":
