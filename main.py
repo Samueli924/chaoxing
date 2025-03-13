@@ -208,6 +208,8 @@ if __name__ == "__main__":
                             )
                             break
                         RB.add_times(point["id"])
+                    else:
+                        RB.rollback_times = 0
                         continue
                 except MaxRollBackError as e:
                     logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
@@ -218,6 +220,8 @@ if __name__ == "__main__":
                 if not jobs:
                     __point_index += 1
                     continue
+                # 记录当前为第几次回滚
+                chaoxing.rollback_times = RB.rollback_times
                 # 遍历所有任务点
                 for job in jobs:
                     # 视频任务

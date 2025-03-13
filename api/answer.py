@@ -7,6 +7,7 @@ import random
 from urllib3 import disable_warnings,exceptions
 from openai import OpenAI
 import httpx
+from re import sub
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -39,7 +40,7 @@ class Tiku:
     CONFIG_PATH = "config.ini"  # 默认配置文件路径
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
-
+    FOUND_RATE = 0.8    # 搜到率
     def __init__(self) -> None:
         self._name = None
         self._api = None
@@ -77,6 +78,7 @@ class Tiku:
         if not self.DISABLE:
             # 设置提交模式
             self.SUBMIT = True if self._conf['submit'] == 'true' else False
+            self.FOUND_RATE = float(self._conf['found_rate'])
             # 调用自定义题库初始化
             self._init_tiku()
         
@@ -105,9 +107,10 @@ class Tiku:
             return None
 
         # 预处理, 去除【单选题】这样与标题无关的字段
-        # 此处需要改进！！！
         logger.debug(f"原始标题：{q_info['title']}")
-        q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
+        q_info['title'] = sub(r'^\d+', '', q_info['title'])
+        q_info['title'] = sub(r'^(?:【.*?】)+', '', q_info['title'])
+        q_info['title'] = sub(r'（\d+\.\d+分）$', '', q_info['title'])
         logger.debug(f"处理后标题：{q_info['title']}")
 
         # 先过缓存
@@ -348,14 +351,17 @@ class TikuAdapter(Tiku):
             self.api,
             json={
                 'question': q_info['title'],
-                'options': options.split('\n'),
+                'options': [sub(r'^[A-Za-z]\.?、?\s?', '', option) for option in options.split('\n')],
                 'type': type
             },
             verify=False
         )
         if res.status_code == 200:
             res_json = res.json()
-            if bool(res_json['plat']):
+            # if bool(res_json['plat']):
+            # plat无论搜没搜到答案都返回0
+            # 这个参数是tikuadapter用来设定自定义的平台类型
+            if not len(res_json['answer']['allAnswer']):
                 logger.error("查询失败, 返回：" + res.text)
                 return None
             sep = "\n"
