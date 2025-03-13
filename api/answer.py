@@ -7,6 +7,7 @@ import random
 from urllib3 import disable_warnings,exceptions
 from openai import OpenAI
 import httpx
+from re import sub
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -349,7 +350,7 @@ class TikuAdapter(Tiku):
             self.api,
             json={
                 'question': q_info['title'],
-                'options': options.split('\n'),
+                'options': [sub(r'^[A-Za-z]\.?、?\s?', '', option) for option in options.split('\n')],
                 'type': type
             },
             verify=False
