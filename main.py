@@ -111,13 +111,17 @@ class RollBackManager:
     def add_times(self, id: str) -> None:
         if id == self.rollback_id and self.rollback_times == 3:
             raise MaxRollBackError("回滚次数已达3次, 请手动检查学习通任务点完成情况")
-        elif id != self.rollback_id:
-            # 新job
-            self.rollback_id = id
-            self.rollback_times = 1
+        # elif id != self.rollback_id:
+        #     # 新job
+        #     self.rollback_id = id
+        #     self.rollback_times = 1
         else:
             self.rollback_times += 1
 
+    def new_job(self, id: str) -> None:
+        if id != self.rollback_id:
+            self.rollback_id = id
+            self.rollback_times = 0
 
 if __name__ == "__main__":
     try:
@@ -209,11 +213,12 @@ if __name__ == "__main__":
                             break
                         RB.add_times(point["id"])
                         continue
+                    RB.new_job(point["id"])
                 except MaxRollBackError as e:
                     logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
                     # 跳过该课程, 继续下一课程
                     break
-
+                chaoxing.rollback_times = RB.rollback_times
                 # 可能存在章节无任何内容的情况
                 if not jobs:
                     __point_index += 1
