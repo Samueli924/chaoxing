@@ -504,7 +504,7 @@ class Chaoxing:
                         for o in options_list:
                             if (
                                 _a in o
-                            ):  # 题库返回的答案可能包含选项, 如A, B, C, 全部转成大写与学习通一致
+                            ):
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
                     answer = "".join(sorted(answer))
@@ -534,18 +534,20 @@ class Chaoxing:
                 else:
                     logger.info(f"成功获取到答案：{answer}")
                     q[f'answerSource{q["id"]}'] = "cover"
+                    found_answers += 1
             # 填充答案
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
         cover_rate = (found_answers / total_questions) * 100
-        logger.info(f"章节检测题库覆盖率： {cover_rate:.2f}%")
+        logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
         # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
         if self.tiku.get_submit_params() == "1":
             questions["pyFlag"] = "1"
-        elif cover_rate >= self.tiku.COVER_RATE or self.rollback_times >= 1:
+        elif cover_rate >= self.tiku.COVER_RATE*100 or self.rollback_times >= 1:
             questions["pyFlag"] = ""
         else:
             questions["pyFlag"] = "1"
+            logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE*100:.0f}%，不予提交")
         # 组建提交表单
         if questions["pyFlag"] == "1":
             for q in questions["questions"]:
