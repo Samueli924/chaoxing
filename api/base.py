@@ -60,7 +60,8 @@ class Chaoxing:
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
-        self.kwargs = kwargs 
+        self.kwargs = kwargs
+        self.rollback_times = 0
 
     def login(self):
         _session = requests.session()
@@ -493,6 +494,7 @@ class Chaoxing:
             if not res:
                 # 随机答题
                 answer = random_answer(q["options"])
+                q[f'answerSource{q["id"]}'] = "random"
             else:
                 # 根据响应结果选择答案
                 if q["type"] == "multiple":
@@ -528,24 +530,40 @@ class Chaoxing:
                 if not answer:  # 检查 answer 是否为空
                     logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
                     answer = random_answer(q["options"])  # 如果为空，则随机选择答案
+                    q[f'answerSource{q["id"]}'] = "random"
                 else:
                     logger.info(f"成功获取到答案：{answer}")
+                    q[f'answerSource{q["id"]}'] = "cover"
             # 填充答案
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
         cover_rate = (found_answers / total_questions) * 100
         logger.info(f"章节检测题库覆盖率： {cover_rate:.2f}%")
-        # 提交模式  现在与题库绑定
-        questions["pyFlag"] = self.tiku.get_submit_params()
-
+        # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
+        if self.tiku.get_submit_params() == "1":
+            questions["pyFlag"] = "1"
+        elif cover_rate >= self.tiku.COVER_RATE or self.rollback_times >= 1:
+            questions["pyFlag"] = ""
+        else:
+            questions["pyFlag"] = "1"
         # 组建提交表单
-        for q in questions["questions"]:
-            questions.update(
-                {
-                    f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
-                    f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                }
-            )
+        if questions["pyFlag"] == "1":
+            for q in questions["questions"]:
+                questions.update(
+                    {
+                        f'answer{q["id"]}':
+                            q["answerField"][f'answer{q["id"]}'] if q[f'answerSource{q["id"]}'] == "cover" else '',
+                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                    }
+                )
+        else:
+            for q in questions["questions"]:
+                questions.update(
+                    {
+                        f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
+                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                    }
+                )
 
         del questions["questions"]
 
