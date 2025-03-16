@@ -60,7 +60,8 @@ class Chaoxing:
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
-        self.kwargs = kwargs 
+        self.kwargs = kwargs
+        self.rollback_times = 0
 
     def login(self):
         _session = requests.session()
@@ -388,6 +389,14 @@ class Chaoxing:
             logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
             return ["A", "B", "C", "D"]  # 默认多选题为4个选项
 
+        def clean_res(res):
+            cleaned_res = []
+            if isinstance(res, str):
+                res = [res]
+            for c in res:
+                cleaned_res.append(re.sub(r'^[A-Za-z]\.?、?\s?', '', c))
+            return cleaned_res
+
         def with_retry(max_retries=3, delay=1):
             def decorator(func):
                 def wrapper(*args, **kwargs):
@@ -473,6 +482,8 @@ class Chaoxing:
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
         # 搜题
+        total_questions = len(questions["questions"])
+        found_answers = 0
         for q in questions["questions"]:
             logger.debug(f"当前题目信息 -> {q}")
             # 添加搜题延迟 #428 - 默认0s延迟
@@ -483,28 +494,35 @@ class Chaoxing:
             if not res:
                 # 随机答题
                 answer = random_answer(q["options"])
+                q[f'answerSource{q["id"]}'] = "random"
             else:
                 # 根据响应结果选择答案
                 if q["type"] == "multiple":
                     # 多选处理
                     options_list = multi_cut(q["options"])
-                    for _a in multi_cut(res):
+                    for _a in clean_res(multi_cut(res)):
                         for o in options_list:
                             if (
-                                _a.upper() in o
-                            ):  # 题库返回的答案可能包含选项, 如A, B, C, 全部转成大写与学习通一致
+                                _a in o
+                            ):
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
                     answer = "".join(sorted(answer))
                 elif q["type"] == "single":
                     # 单选也进行切割，主要是防止返回的答案有异常字符
                     options_list = multi_cut(q["options"])
+                    t_res = clean_res(res)
                     for o in options_list:
-                        if res in o:
+                        if t_res[0] in o:
                             answer = o[:1]
                             break
                 elif q["type"] == "judgement":
                     answer = "true" if self.tiku.jugement_select(res) else "false"
+                elif q["type"] == "completion":
+                    if isinstance(res,list):
+                        answer = "".join(answer)
+                    elif isinstance(res,str):
+                        answer = res
                 else:
                     # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
                     answer = res
@@ -512,23 +530,42 @@ class Chaoxing:
                 if not answer:  # 检查 answer 是否为空
                     logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
                     answer = random_answer(q["options"])  # 如果为空，则随机选择答案
+                    q[f'answerSource{q["id"]}'] = "random"
                 else:
                     logger.info(f"成功获取到答案：{answer}")
+                    q[f'answerSource{q["id"]}'] = "cover"
+                    found_answers += 1
             # 填充答案
             q["answerField"][f'answer{q["id"]}'] = answer
             logger.info(f'{q["title"]} 填写答案为 {answer}')
-
-        # 提交模式  现在与题库绑定
-        questions["pyFlag"] = self.tiku.get_submit_params()
-
+        cover_rate = (found_answers / total_questions) * 100
+        logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
+        # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
+        if self.tiku.get_submit_params() == "1":
+            questions["pyFlag"] = "1"
+        elif cover_rate >= self.tiku.COVER_RATE*100 or self.rollback_times >= 1:
+            questions["pyFlag"] = ""
+        else:
+            questions["pyFlag"] = "1"
+            logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE*100:.0f}%，不予提交")
         # 组建提交表单
-        for q in questions["questions"]:
-            questions.update(
-                {
-                    f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
-                    f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                }
-            )
+        if questions["pyFlag"] == "1":
+            for q in questions["questions"]:
+                questions.update(
+                    {
+                        f'answer{q["id"]}':
+                            q["answerField"][f'answer{q["id"]}'] if q[f'answerSource{q["id"]}'] == "cover" else '',
+                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                    }
+                )
+        else:
+            for q in questions["questions"]:
+                questions.update(
+                    {
+                        f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
+                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
+                    }
+                )
 
         del questions["questions"]
 

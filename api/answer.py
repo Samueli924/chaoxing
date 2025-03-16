@@ -7,6 +7,7 @@ import random
 from urllib3 import disable_warnings,exceptions
 from openai import OpenAI
 import httpx
+from re import sub
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -39,6 +40,7 @@ class Tiku:
     CONFIG_PATH = "config.ini"  # 默认配置文件路径
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
+    COVER_RATE = 0.8    # 覆盖率
 
     def __init__(self) -> None:
         self._name = None
@@ -77,6 +79,7 @@ class Tiku:
         if not self.DISABLE:
             # 设置提交模式
             self.SUBMIT = True if self._conf['submit'] == 'true' else False
+            self.COVER_RATE = float(self._conf['cover_rate'])
             # 调用自定义题库初始化
             self._init_tiku()
         
@@ -107,7 +110,9 @@ class Tiku:
         # 预处理, 去除【单选题】这样与标题无关的字段
         # 此处需要改进！！！
         logger.debug(f"原始标题：{q_info['title']}")
-        q_info['title'] = q_info['title'][6:]   # 暂时直接用裁切解决
+        q_info['title'] = sub(r'^\d+', '', q_info['title'])
+        q_info['title'] = sub(r'^(?:【.*?】)+', '', q_info['title'])
+        q_info['title'] = sub(r'（\d+\.\d+分）$', '', q_info['title'])
         logger.debug(f"处理后标题：{q_info['title']}")
 
         # 先过缓存
@@ -238,7 +243,7 @@ class TikuLike(Tiku):
     def __init__(self) -> None:
         super().__init__()
         self.name = 'Like知识库'
-        self.ver = '1.0.6' #对应官网API版本
+        self.ver = '1.0.8' #对应官网API版本
         self.query_api = 'https://api.datam.site/search'
         self.balance_api = 'https://api.datam.site/balance'
         self.homepage = 'https://www.datam.site'
@@ -250,7 +255,7 @@ class TikuLike(Tiku):
 
     def _query(self,q_info:dict):
         q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
-        api_params_map = {0:"others",1:"choose",2:"fill",3:"judge"}
+        api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
         q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
         question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
@@ -301,6 +306,7 @@ class TikuLike(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             self._times = res_json["data"].get("balance",self._times)
+            logger.info("当前LIKE知识库Token剩余查询次数为: {}".format(str(self._times)))
         else:
             logger.error('TOKEN出现错误，请检查后再试')
 
@@ -348,20 +354,23 @@ class TikuAdapter(Tiku):
             self.api,
             json={
                 'question': q_info['title'],
-                'options': options.split('\n'),
+                'options': [sub(r'^[A-Za-z]\.?、?\s?', '', option) for option in options.split('\n')],
                 'type': type
             },
             verify=False
         )
         if res.status_code == 200:
             res_json = res.json()
-            if bool(res_json['plat']):
+            # if bool(res_json['plat']):
+            # plat无论搜没搜到答案都返回0
+            # 这个参数是tikuadapter用来设定自定义的平台类型
+            if not len(res_json['answer']['allAnswer']):
                 logger.error("查询失败, 返回：" + res.text)
                 return None
             sep = "\n"
             return sep.join(res_json['answer']['allAnswer'][0]).strip()
         # else:
-            logger.error(f'{self.name}查询失败:\n{res.text}')
+        #   logger.error(f'{self.name}查询失败:\n{res.text}')
         return None
 
     def _init_tiku(self):

@@ -26,7 +26,7 @@
 ### 源码运行
 1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
 2. `cd chaoxing`
-3. `pip install -r requirements.txt`
+3. `pip install -r requirements.txt` 或者 `pip install .`(通过 pyproject.toml 安装依赖)
 4. (可选直接运行) `python main.py`
 5. (可选配置文件运行) 复制config_template.ini文件为config.ini文件，修改文件内的账号密码内容, 执行 `python main.py -c config.ini`
 6. (可选命令行运行)`python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选)`
@@ -47,10 +47,11 @@
 
 **提交模式与答题**
 不配置题库（既不提供配置文件，也没有放置默认配置文件`config.ini`或填写要使用的题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
-
+题库覆盖率：搜到的题目占总题目的比例
 提交模式`submit`值为
-- `true`：会答完题自动提交，**正确率不做保证**。
-- `false`：会答题，但是不会提交，仅保存，随后你可以自行前往学习通查看、修改、提交。**任何填写不正确的`submit`值会被视为`false`**
+
+- `true`：会答完题，达到题库题目覆盖率提交，没达到只保存，**正确率不做保证**。
+- `false`：会答题，但是不会提交，仅保存搜到答案的，随后你可以自行前往学习通查看、修改、提交。**任何填写不正确的`submit`值会被视为`false`**
 
 > 题库名即`answer.py`模块中根据`Tiku`类实现的具体题库类，例如`TikuYanxi`（言溪题库），在填写时，请务必保持大小写一致。
 
