@@ -184,6 +184,10 @@ if __name__ == "__main__":
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
                 logger.debug(f"当前章节 __point_index: {__point_index}")  # 触发参数: -v
+                if point["has_finished"]:
+                    logger.info(f'章节：{point["title"]} 已完成所有任务点')
+                    __point_index += 1
+                    continue
                 sleep_duration = random.uniform(1, 3)
                 logger.debug(f"本次随机等待时间: {sleep_duration}")
                 time.sleep(sleep_duration)  # 避免请求过快导致异常, 所以引入随机sleep
