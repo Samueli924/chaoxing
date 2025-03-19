@@ -57,10 +57,16 @@ class Account:
 
 class Chaoxing:
     class StudyResult(Enum):
-        SUCCESS = 0  # 任务成功完成
+        SUCCESS = 0
         FORBIDDEN = 1  # 403
         ERROR = 2
         TIMEOUT = 3
+
+        def is_success(self, result):
+            return result == self.SUCCESS
+
+        def is_failure(self, result):
+            return result != self.SUCCESS
 
     def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
         self.account = account
@@ -487,7 +493,7 @@ class Chaoxing:
             final_resp, questions = fetch_response()
         except Exception as e:
             logger.error(f"请求失败: {e}")
-            return 0
+            return self.StudyResult.ERROR
         
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 

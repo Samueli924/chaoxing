@@ -245,12 +245,11 @@ if __name__ == "__main__":
                         video_result = chaoxing.study_video(
                             course, job, job_info, _speed=speed, _type="Video"
                         )
-                        if video_result == chaoxing.StudyResult.FORBIDDEN:
+                        if chaoxing.StudyResult.is_failure(video_result):
                             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
                             video_result = chaoxing.study_video(
                                 course, job, job_info, _speed=speed, _type="Audio")
-                        if (video_result == chaoxing.StudyResult.FORBIDDEN
-                                or video_result == chaoxing.StudyResult.ERROR):
+                        if chaoxing.StudyResult.is_failure(video_result):
                             logger.warning(
                                 f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
                             )
