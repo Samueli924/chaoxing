@@ -62,11 +62,13 @@ class Chaoxing:
         ERROR = 2
         TIMEOUT = 3
 
-        def is_success(self, result):
-            return result == self.SUCCESS
+        @staticmethod
+        def is_success(result):
+            return result == Chaoxing.StudyResult.SUCCESS
 
-        def is_failure(self, result):
-            return result != self.SUCCESS
+        @staticmethod
+        def is_failure(result):
+            return result != Chaoxing.StudyResult.SUCCESS
 
     def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
         self.account = account
@@ -230,12 +232,11 @@ class Chaoxing:
             elif resp.status_code == 403:
                 continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
         if _success:
-            return resp.json()
+            return resp.json(), 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            return {"isPassed": False, "403": True}  # 返回一个字典，确保调用代码不会出错
-
+            return {"isPassed": False}, 403  # 返回一个字典和当前状态
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
     ) -> StudyResult:
@@ -255,10 +256,11 @@ class Chaoxing:
             _isFinished = False
             _playingTime = 0
             logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
+            state = 200
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
-                _isPassed = self.video_progress_log(
+                _isPassed, state = self.video_progress_log(
                     _session,
                     _course,
                     _job,
@@ -270,12 +272,12 @@ class Chaoxing:
                 )
                 if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
-                if _isPassed and not _isPassed["isPassed"] and _isPassed["403"]:
+                if _isPassed and not _isPassed["isPassed"] and state == 403:
                     return self.StudyResult.FORBIDDEN
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
                     _wait_time = int(_duration) - _playingTime
-                    _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
+                    _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
                     if _isPassed['isPassed']:
                         _isFinished = True
                 # 播放进度条
@@ -316,7 +318,7 @@ class Chaoxing:
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
-            return None
+            return self.StudyResult.SUCCESS
         _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
         def random_answer(options: str) -> str:
