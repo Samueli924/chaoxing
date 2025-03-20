@@ -412,8 +412,13 @@ class Chaoxing:
             if isinstance(res, str):
                 res = [res]
             for c in res:
-                cleaned_res.append(re.sub(r'^[A-Za-z]\.?、?\s?', '', c))
+                cleaned_res.append(re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c))
+
             return cleaned_res
+
+        def is_subsequence(a, o):
+            iter_o = iter(o)
+            return all(c in iter_o for c in a)
 
         def with_retry(max_retries=3, delay=1):
             def decorator(func):
@@ -441,7 +446,6 @@ class Chaoxing:
                     raise Exception(f"超过最大重试次数 ({max_retries})")
                 return wrapper
             return decorator
-
 
         # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
@@ -521,7 +525,7 @@ class Chaoxing:
                     for _a in clean_res(multi_cut(res)):
                         for o in options_list:
                             if (
-                                _a in o
+                                is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
                             ):
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
@@ -531,7 +535,7 @@ class Chaoxing:
                     options_list = multi_cut(q["options"])
                     t_res = clean_res(res)
                     for o in options_list:
-                        if t_res[0] in o:
+                        if is_subsequence(t_res[0], o):
                             answer = o[:1]
                             break
                 elif q["type"] == "judgement":
