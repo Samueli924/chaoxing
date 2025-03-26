@@ -2,6 +2,7 @@
 import argparse
 import configparser
 import random
+from http.client import HTTPException
 
 from api.logger import logger
 from api.base import Chaoxing, Account
@@ -75,7 +76,7 @@ def init_config():
         config.read(args.config, encoding="utf8")
         common_config = {}
         tiku_config = {}
-        
+
         # 检查并读取common节
         if config.has_section("common"):
             common_config = dict(config.items("common"))
@@ -85,22 +86,22 @@ def init_config():
             # 处理speed，将字符串转换为浮点数
             if "speed" in common_config:
                 common_config["speed"] = float(common_config["speed"])
-        
+
         # 检查并读取tiku节
         if config.has_section("tiku"):
             tiku_config = dict(config.items("tiku"))
             # 处理delay，将字符串转换为整数
             if "delay" in tiku_config:
                 tiku_config["delay"] = float(tiku_config["delay"])
-                
+
         return common_config, tiku_config
     else:
-        build_params = {'common':{},"tiku":{}}
+        build_params = {'common': {}, "tiku": {}}
         build_params['common']['username'] = args.username
         build_params['common']['password'] = args.password
         build_params['common']['course_list'] = args.list.split(",") if args.list else None
         build_params['common']['speed'] = args.speed if args.speed else 1
-        return build_params['common'],build_params['tiku']
+        return build_params['common'], build_params['tiku']
 
 
 class RollBackManager:
@@ -123,17 +124,18 @@ class RollBackManager:
             self.rollback_id = id
             self.rollback_times = 0
 
+
 if __name__ == "__main__":
     try:
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        common_config,tiku_config = init_config()
-        username = common_config.get("username","")
-        password = common_config.get("password","")
-        course_list = common_config.get("course_list",None)
-        speed = common_config.get("speed",1)
-        query_delay = tiku_config.get("delay",0)
+        common_config, tiku_config = init_config()
+        username = common_config.get("username", "")
+        password = common_config.get("password", "")
+        course_list = common_config.get("course_list", None)
+        speed = common_config.get("speed", 1)
+        query_delay = tiku_config.get("delay", 0)
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
@@ -147,7 +149,7 @@ if __name__ == "__main__":
         tiku.init_tiku()  # 初始化题库
 
         # 实例化超星API
-        chaoxing = Chaoxing(account=account, tiku=tiku,query_delay = query_delay)
+        chaoxing = Chaoxing(account=account, tiku=tiku, query_delay=query_delay)
         # 检查当前登录状态, 并检查账号密码
         _login_state = chaoxing.login()
         if not _login_state["status"]:
@@ -238,15 +240,12 @@ if __name__ == "__main__":
                             f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}"
                         )
                         # 超星的接口没有返回当前任务是否为Audio音频任务
-                        isAudio = False
                         try:
                             chaoxing.study_video(
                                 course, job, job_info, _speed=speed, _type="Video"
                             )
                         except JSONDecodeError as e:
                             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
-                            isAudio = True
-                        if isAudio:
                             try:
                                 chaoxing.study_video(
                                     course, job, job_info, _speed=speed, _type="Audio"
@@ -255,6 +254,9 @@ if __name__ == "__main__":
                                 logger.warning(
                                     f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
                                 )
+                        except HTTPException:
+                            logger.error("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+
                     # 文档任务
                     elif job["type"] == "document":
                         logger.trace(
