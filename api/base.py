@@ -618,12 +618,12 @@ class Chaoxing:
         if res.status_code == 200:
             res_json = res.json()
             if res_json["status"]:
-                logger.info(f'提交答题成功 -> {res_json["msg"]}')
+                logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
             else:
-                logger.error(f'提交答题失败 -> {res_json["msg"]}')
+                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}提交答题失败 -> {res_json["msg"]}')
                 return self.StudyResult.ERROR
         else:
-            logger.error(f"提交答题失败 -> {res.text}")
+            logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}提交答题失败 -> {res.text}')
             return self.StudyResult.ERROR
         return self.StudyResult.SUCCESS
 
