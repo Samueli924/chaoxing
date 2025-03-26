@@ -649,3 +649,26 @@ class Chaoxing:
             _resp_json = _resp.json()
             logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
             return self.StudyResult.SUCCESS
+
+    def study_emptypage(self, _course, _chapterId):
+        _session = init_session()
+        # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
+        _resp = _session.get(
+            url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
+            params={
+                "courseId": _course["courseId"],
+                "clazzid": _course["clazzId"],
+                "chapterId": _chapterId['id'],
+                "cpi": 0,
+                "verificationcode": "",
+                "mooc2": 1,
+                "microTopicId": 0,
+                "editorPreview": 0,
+            },
+        )
+        if _resp.status_code != 200:
+            logger.error(f"空页面任务失败 -> [{_resp.status_code}]{_chapterId['title']}")
+            return self.StudyResult.ERROR
+        else:
+            logger.info(f"空页面任务完成 -> {_chapterId['title']}")
+            return self.StudyResult.SUCCESS

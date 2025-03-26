@@ -225,6 +225,9 @@ if __name__ == "__main__":
                 chaoxing.rollback_times = RB.rollback_times
                 # 可能存在章节无任何内容的情况
                 if not jobs:
+                    if RB.rollback_times > 0:
+                        logger.trace(f"回滚中 尝试空页面任务, 任务章节: {course['title']}")
+                        chaoxing.study_emptypage(course, point)
                     __point_index += 1
                     continue
                 # 遍历所有任务点
