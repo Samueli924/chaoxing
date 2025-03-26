@@ -288,7 +288,7 @@ class Chaoxing:
             return self.StudyResult.SUCCESS
         else:
             return self.StudyResult.ERROR
-    def study_document(self, _course, _job):
+    def study_document(self, _course, _job) -> StudyResult:
         """
         Study a document in Chaoxing platform.
 
@@ -315,6 +315,10 @@ class Chaoxing:
         _session = init_session()
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
+        if _resp.status_code != 200:
+            return self.StudyResult.ERROR
+        else:
+            return self.StudyResult.SUCCESS
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
