@@ -2,6 +2,8 @@
 import re
 import time
 import random
+from http.client import HTTPException
+
 import requests
 from hashlib import md5
 from requests.adapters import HTTPAdapter
@@ -221,7 +223,7 @@ class Chaoxing:
             return resp.json()
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+            logger.warning("出现403报错, 尝试修复无效...")
             return {"isPassed": False}  # 返回一个字典，确保调用代码不会出错
 
     def study_video(
@@ -243,7 +245,10 @@ class Chaoxing:
             _isFinished = False
             _playingTime = 0
             logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
+            err_403_sum = 0
             while not _isFinished:
+                if err_403_sum > 5:
+                    raise HTTPException("403 Forbidden")
                 if _isFinished:
                     _playingTime = _duration
                 _isPassed = self.video_progress_log(
@@ -264,6 +269,10 @@ class Chaoxing:
                     _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
                     if _isPassed['isPassed']:
                         _isFinished = True
+                    if not _isPassed['isPassed']:
+                        time.sleep(1.2321)
+                        err_403_sum += 1
+                        continue
                 # 播放进度条
                 show_progress(_job["name"], _playingTime, _wait_time, _duration, _speed)
                 _playingTime += _wait_time
