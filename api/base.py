@@ -19,7 +19,7 @@ from api.decode import (
     decode_questions_info,
 )
 from api.answer import *
-
+from enum import Enum
 
 def get_timestamp():
     return str(int(time.time() * 1000))
@@ -56,6 +56,20 @@ class Account:
 
 
 class Chaoxing:
+    class StudyResult(Enum):
+        SUCCESS = 0
+        FORBIDDEN = 1  # 403
+        ERROR = 2
+        TIMEOUT = 3
+
+        @staticmethod
+        def is_success(result):
+            return result == Chaoxing.StudyResult.SUCCESS
+
+        @staticmethod
+        def is_failure(result):
+            return result != Chaoxing.StudyResult.SUCCESS
+
     def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
         self.account = account
         self.cipher = AESCipher()
@@ -218,15 +232,14 @@ class Chaoxing:
             elif resp.status_code == 403:
                 continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
         if _success:
-            return resp.json()
+            return resp.json(), 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            return {"isPassed": False}  # 返回一个字典，确保调用代码不会出错
-
+            return {"isPassed": False}, 403  # 返回一个字典和当前状态
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
-    ):
+    ) -> StudyResult:
         if _type == "Video":
             _session = init_session(isVideo=True)
         else:
@@ -243,10 +256,11 @@ class Chaoxing:
             _isFinished = False
             _playingTime = 0
             logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
+            state = 200
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
-                _isPassed = self.video_progress_log(
+                _isPassed, state = self.video_progress_log(
                     _session,
                     _course,
                     _job,
@@ -258,10 +272,12 @@ class Chaoxing:
                 )
                 if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
+                if _isPassed and not _isPassed["isPassed"] and state == 403:
+                    return self.StudyResult.FORBIDDEN
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
                     _wait_time = int(_duration) - _playingTime
-                    _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
+                    _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
                     if _isPassed['isPassed']:
                         _isFinished = True
                 # 播放进度条
@@ -269,8 +285,10 @@ class Chaoxing:
                 _playingTime += _wait_time
             print("\r", end="", flush=True)
             logger.info(f"任务完成: {_job['name']}")
-
-    def study_document(self, _course, _job):
+            return self.StudyResult.SUCCESS
+        else:
+            return self.StudyResult.ERROR
+    def study_document(self, _course, _job) -> StudyResult:
         """
         Study a document in Chaoxing platform.
 
@@ -297,10 +315,14 @@ class Chaoxing:
         _session = init_session()
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
+        if _resp.status_code != 200:
+            return self.StudyResult.ERROR
+        else:
+            return self.StudyResult.SUCCESS
 
-    def study_work(self, _course, _job, _job_info) -> None:
+    def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
-            return None
+            return self.StudyResult.SUCCESS
         _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
         def random_answer(options: str) -> str:
@@ -394,8 +416,13 @@ class Chaoxing:
             if isinstance(res, str):
                 res = [res]
             for c in res:
-                cleaned_res.append(re.sub(r'^[A-Za-z]\.?、?\s?', '', c))
+                cleaned_res.append(re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c))
+
             return cleaned_res
+
+        def is_subsequence(a, o):
+            iter_o = iter(o)
+            return all(c in iter_o for c in a)
 
         def with_retry(max_retries=3, delay=1):
             def decorator(func):
@@ -423,7 +450,6 @@ class Chaoxing:
                     raise Exception(f"超过最大重试次数 ({max_retries})")
                 return wrapper
             return decorator
-
 
         # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = init_session()
@@ -477,7 +503,7 @@ class Chaoxing:
             final_resp, questions = fetch_response()
         except Exception as e:
             logger.error(f"请求失败: {e}")
-            return 0
+            return self.StudyResult.ERROR
         
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
@@ -503,7 +529,7 @@ class Chaoxing:
                     for _a in clean_res(multi_cut(res)):
                         for o in options_list:
                             if (
-                                _a in o
+                                is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
                             ):
                                 answer += o[:1]
                     # 对答案进行排序, 否则会提交失败
@@ -513,7 +539,7 @@ class Chaoxing:
                     options_list = multi_cut(q["options"])
                     t_res = clean_res(res)
                     for o in options_list:
-                        if t_res[0] in o:
+                        if is_subsequence(t_res[0], o):
                             answer = o[:1]
                             break
                 elif q["type"] == "judgement":
@@ -592,13 +618,16 @@ class Chaoxing:
         if res.status_code == 200:
             res_json = res.json()
             if res_json["status"]:
-                logger.info(f'提交答题成功 -> {res_json["msg"]}')
+                logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
             else:
-                logger.error(f'提交答题失败 -> {res_json["msg"]}')
+                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}提交答题失败 -> {res_json["msg"]}')
+                return self.StudyResult.ERROR
         else:
-            logger.error(f"提交答题失败 -> {res.text}")
+            logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}提交答题失败 -> {res.text}')
+            return self.StudyResult.ERROR
+        return self.StudyResult.SUCCESS
 
-    def strdy_read(self, _course, _job, _job_info) -> None:
+    def strdy_read(self, _course, _job, _job_info) -> StudyResult:
         """
         阅读任务学习, 仅完成任务点, 并不增长时长
         """
@@ -615,6 +644,31 @@ class Chaoxing:
         )
         if _resp.status_code != 200:
             logger.error(f"阅读任务学习失败 -> [{_resp.status_code}]{_resp.text}")
+            return self.StudyResult.ERROR
         else:
             _resp_json = _resp.json()
             logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
+            return self.StudyResult.SUCCESS
+
+    def study_emptypage(self, _course, _chapterId):
+        _session = init_session()
+        # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
+        _resp = _session.get(
+            url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
+            params={
+                "courseId": _course["courseId"],
+                "clazzid": _course["clazzId"],
+                "chapterId": _chapterId['id'],
+                "cpi": 0,
+                "verificationcode": "",
+                "mooc2": 1,
+                "microTopicId": 0,
+                "editorPreview": 0,
+            },
+        )
+        if _resp.status_code != 200:
+            logger.error(f"空页面任务失败 -> [{_resp.status_code}]{_chapterId['title']}")
+            return self.StudyResult.ERROR
+        else:
+            logger.info(f"空页面任务完成 -> {_chapterId['title']}")
+            return self.StudyResult.SUCCESS
