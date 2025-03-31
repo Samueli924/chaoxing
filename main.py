@@ -225,6 +225,9 @@ if __name__ == "__main__":
                 chaoxing.rollback_times = RB.rollback_times
                 # 可能存在章节无任何内容的情况
                 if not jobs:
+                    if RB.rollback_times > 0:
+                        logger.trace(f"回滚中 尝试空页面任务, 任务章节: {course['title']}")
+                        chaoxing.study_emptypage(course, point)
                     __point_index += 1
                     continue
                 # 遍历所有任务点
@@ -242,23 +245,17 @@ if __name__ == "__main__":
                             f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}"
                         )
                         # 超星的接口没有返回当前任务是否为Audio音频任务
-                        isAudio = False
-                        try:
-                            chaoxing.study_video(
-                                course, job, job_info, _speed=speed, _type="Video"
-                            )
-                        except JSONDecodeError as e:
+                        video_result = chaoxing.study_video(
+                            course, job, job_info, _speed=speed, _type="Video"
+                        )
+                        if chaoxing.StudyResult.is_failure(video_result):
                             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
-                            isAudio = True
-                        if isAudio:
-                            try:
-                                chaoxing.study_video(
-                                    course, job, job_info, _speed=speed, _type="Audio"
-                                )
-                            except JSONDecodeError as e:
-                                logger.warning(
-                                    f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
-                                )
+                            video_result = chaoxing.study_video(
+                                course, job, job_info, _speed=speed, _type="Audio")
+                        if chaoxing.StudyResult.is_failure(video_result):
+                            logger.warning(
+                                f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
+                            )
                     # 文档任务
                     elif job["type"] == "document":
                         logger.trace(
