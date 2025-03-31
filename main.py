@@ -60,6 +60,11 @@ def init_config():
         action="store_true",
         help="启用调试模式, 输出DEBUG级别日志",
     )
+    parser.add_argument(
+        "-a", "--notopen-action", type=str, default="retry", 
+        choices=["retry", "ask", "continue"],
+        help="遇到关闭任务点时的行为: retry-重试, ask-询问, continue-继续"
+    )
 
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
@@ -85,6 +90,9 @@ def init_config():
             # 处理speed，将字符串转换为浮点数
             if "speed" in common_config:
                 common_config["speed"] = float(common_config["speed"])
+            # 处理notopen_action，设置默认值为retry
+            if "notopen_action" not in common_config:
+                common_config["notopen_action"] = "retry"
         
         # 检查并读取tiku节
         if config.has_section("tiku"):
@@ -100,6 +108,7 @@ def init_config():
         build_params['common']['password'] = args.password
         build_params['common']['course_list'] = args.list.split(",") if args.list else None
         build_params['common']['speed'] = args.speed if args.speed else 1
+        build_params['common']['notopen_action'] = args.notopen_action if args.notopen_action else "retry"
         return build_params['common'],build_params['tiku']
 
 
@@ -134,6 +143,7 @@ if __name__ == "__main__":
         course_list = common_config.get("course_list",None)
         speed = common_config.get("speed",1)
         query_delay = tiku_config.get("delay",0)
+        notopen_action = common_config.get("notopen_action", "retry")  # 获取未开放任务点处理方式
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
@@ -184,6 +194,8 @@ if __name__ == "__main__":
 
             # 为了支持课程任务回滚, 采用下标方式遍历任务点
             __point_index = 0
+            # 记录用户是否选择继续跳过连续的未开放任务点
+            auto_skip_notopen = False
             while __point_index < len(point_list["points"]):
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
@@ -204,19 +216,46 @@ if __name__ == "__main__":
 
                 # bookID = job_info["knowledgeid"] # 获取视频ID
 
-                # 发现未开放章节, 尝试回滚上一个任务重新完成一次
+                # 发现未开放章节, 根据配置处理
                 try:
                     if job_info.get("notOpen", False):
-                        __point_index -= 1  # 默认第一个任务总是开放的
-                        # 针对题库启用情况
-                        if not tiku or tiku.DISABLE or not tiku.SUBMIT:
-                            # 未启用题库或未开启题库提交, 章节检测未完成会导致无法开始下一章, 直接退出
-                            logger.error(
-                                f"章节未开启, 可能由于上一章节的章节检测未完成, 请手动完成并提交再重试, 或者开启题库并启用提交"
-                            )
-                            break
-                        RB.add_times(point["id"])
-                        continue
+                        # 根据配置选择处理方式
+                        if notopen_action == "retry":
+                            # 默认处理方式：重试
+                            __point_index -= 1  # 默认第一个任务总是开放的
+                            # 针对题库启用情况
+                            if not tiku or tiku.DISABLE or not tiku.SUBMIT:
+                                # 未启用题库或未开启题库提交, 章节检测未完成会导致无法开始下一章, 直接退出
+                                logger.error(
+                                    f"章节未开启, 可能由于上一章节的章节检测未完成, 也可能由于该章节因为时效已关闭，"
+                                    f"请手动检查完成并提交再重试。或者在配置中配置(自动跳过关闭章节/开启题库并启用提交)"
+                                )
+                                break
+                            RB.add_times(point["id"])
+                            continue
+                        elif notopen_action == "ask":
+                            # 询问模式 - 判断是否需要询问
+                            if not auto_skip_notopen:
+                                user_choice = input(f"章节 {point['title']} 未开放，是否继续检查后续章节？(y/n): ")
+                                if user_choice.lower() != 'y':
+                                    # 用户选择停止
+                                    logger.info("根据用户选择停止检查后续章节")
+                                    break
+                                # 用户选择继续，设置自动跳过标志
+                                auto_skip_notopen = True
+                                logger.info("用户选择继续检查后续章节，将自动跳过连续的未开放章节")
+                            else:
+                                logger.info(f"章节 {point['title']} 未开放，自动跳过")
+                            # 无论是否自动跳过，都继续到下一章节
+                            __point_index += 1
+                            continue
+                        else:  # notopen_action == "continue"
+                            # 继续模式，直接跳过当前章节
+                            logger.info(f"章节 {point['title']} 未开放，根据配置跳过此章节")
+                            __point_index += 1
+                            continue
+                    # 遇到开放的章节，重置自动跳过状态
+                    auto_skip_notopen = False
                     RB.new_job(point["id"])
                 except MaxRollBackError as e:
                     logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
