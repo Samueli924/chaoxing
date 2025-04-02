@@ -79,7 +79,7 @@ class Tiku:
         if not self.DISABLE:
             # 设置提交模式
             self.SUBMIT = True if self._conf['submit'] == 'true' else False
-            self.COVER_RATE = float(self._conf['cover_rate'])
+            self.COVER_RATE = self._conf['cover_rate']
             # 调用自定义题库初始化
             self._init_tiku()
         

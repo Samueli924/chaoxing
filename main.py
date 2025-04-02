@@ -100,6 +100,9 @@ def init_config():
             # 处理delay，将字符串转换为整数
             if "delay" in tiku_config:
                 tiku_config["delay"] = float(tiku_config["delay"])
+            # 处理delay，将字符串转换为小数
+            if "cover_rate" in tiku_config:
+                tiku_config["cover_rate"] = float(tiku_config["cover_rate"])
                 
         return common_config, tiku_config
     else:
