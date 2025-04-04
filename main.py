@@ -110,13 +110,13 @@ def init_config():
             notification_config = dict(config.items("notification"))
         return common_config, tiku_config, notification_config
     else:
-        build_params = {'common':{},"tiku":{}}
+        build_params = {'common':{},"tiku":{},"notification":{}}
         build_params['common']['username'] = args.username
         build_params['common']['password'] = args.password
         build_params['common']['course_list'] = args.list.split(",") if args.list else None
         build_params['common']['speed'] = args.speed if args.speed else 1
         build_params['common']['notopen_action'] = args.notopen_action if args.notopen_action else "retry"
-        return build_params['common'],build_params['tiku']
+        return build_params['common'],build_params['tiku'],build_params['notification']
 
 
 class RollBackManager:

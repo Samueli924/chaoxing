@@ -89,6 +89,9 @@ class ServerChan(Notification):
         return None
 
     def _init_notification(self):
+        if self._conf['url'] == "":
+            self.DISABLE = True
+            logger.info("未找到Server酱url配置, 已忽略外部通知功能")
         self.url = self._conf['url']
 
 class Qmsg(Notification):
@@ -113,4 +116,7 @@ class Qmsg(Notification):
         return None
 
     def _init_notification(self):
+        if self._conf['url'] == "":
+            self.DISABLE = True
+            logger.info("未找到Qmsg酱url配置, 已忽略外部通知功能")
         self.url = self._conf['url']
