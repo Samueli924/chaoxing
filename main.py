@@ -11,6 +11,7 @@ from urllib3 import disable_warnings, exceptions
 import time
 import sys
 import os
+from api.notification import Notification
 
 # # 定义全局变量, 用于存储配置文件路径
 # textPath = './resource/BookID.txt'
@@ -80,7 +81,7 @@ def init_config():
         config.read(args.config, encoding="utf8")
         common_config = {}
         tiku_config = {}
-        
+        notification_config = {}
         # 检查并读取common节
         if config.has_section("common"):
             common_config = dict(config.items("common"))
@@ -100,8 +101,14 @@ def init_config():
             # 处理delay，将字符串转换为整数
             if "delay" in tiku_config:
                 tiku_config["delay"] = float(tiku_config["delay"])
-                
-        return common_config, tiku_config
+            # 处理delay，将字符串转换为小数
+            if "cover_rate" in tiku_config:
+                tiku_config["cover_rate"] = float(tiku_config["cover_rate"])
+
+        # 检查并读取notification节
+        if config.has_section("notification"):
+            notification_config = dict(config.items("notification"))
+        return common_config, tiku_config, notification_config
     else:
         build_params = {'common':{},"tiku":{}}
         build_params['common']['username'] = args.username
@@ -137,7 +144,7 @@ if __name__ == "__main__":
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        common_config,tiku_config = init_config()
+        common_config, tiku_config, notification_config = init_config()
         username = common_config.get("username","")
         password = common_config.get("password","")
         course_list = common_config.get("course_list",None)
@@ -155,7 +162,11 @@ if __name__ == "__main__":
         tiku.config_set(tiku_config)  # 载入配置
         tiku = tiku.get_tiku_from_config()  # 载入题库
         tiku.init_tiku()  # 初始化题库
-
+        # 设置外部通知
+        notification = Notification()
+        notification.config_set(notification_config)
+        notification = notification.get_notification_from_config()
+        notification.init_notification()
         # 实例化超星API
         chaoxing = Chaoxing(account=account, tiku=tiku,query_delay = query_delay)
         # 检查当前登录状态, 并检查账号密码
@@ -311,7 +322,7 @@ if __name__ == "__main__":
                         chaoxing.strdy_read(course, job, job_info)
                 __point_index += 1
         logger.info("所有课程学习任务已完成")
-
+        notification.send( "chaoxing : 所有课程学习任务已完成")
     except SystemExit as e:
         if e.code == 0:  # 正常退出
             sys.exit(0)
@@ -319,7 +330,7 @@ if __name__ == "__main__":
             raise
     except BaseException as e:
         import traceback
-
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
+        notification.send(f"chaoxing : 出现错误", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
         raise e
