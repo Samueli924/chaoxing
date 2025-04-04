@@ -469,11 +469,9 @@ class AI(Tiku):
                 interval_time = time.time() - self.last_request_time
                 if interval_time < self.min_interval_seconds:
                     sleep_time = self.min_interval_seconds - interval_time
-                    logger.debug(f", 等待 {sleep_time} 秒")
+                    logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
                     time.sleep(sleep_time)
-                    self.last_request_time = time.time()
-            else:
-                self.last_request_time = time.time()
+            self.last_request_time = time.time()
             response = json.loads(completion.choices[0].message.content)
             sep = "\n"
             return sep.join(response['Answer']).strip()
