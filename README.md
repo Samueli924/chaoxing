@@ -69,7 +69,14 @@
 python main.py -a ask  # 使用询问模式
 ```
 
+**外部通知配置说明**
+
+这功能会在所有课程学习任务结束后，或是程序出现错误时，使用外部通知服务推送消息告知你（~~有用但不多~~）
+
+与题库配置类似，不填写视为不使用，按照注释填写想要使用的外部通知服务（也是`provider`，大小写要一致），并填写必要的`url`
+
 ## :heart: CONTRIBUTORS
+
 ![Alt](https://repobeats.axiom.co/api/embed/d3931e84b4b2f17cbe60cafedb38114bdf9931cb.svg "Repobeats analytics image")  
 
 <a style="margin-top: 15px" href="https://github.com/Samueli924/chaoxing/graphs/contributors">
