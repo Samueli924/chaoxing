@@ -8,6 +8,7 @@ from urllib3 import disable_warnings,exceptions
 from openai import OpenAI
 import httpx
 from re import sub
+import time
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -382,6 +383,7 @@ class AI(Tiku):
     def __init__(self) -> None:
         super().__init__()
         self.name = 'AI大模型答题'
+        self.last_request_time = None
 
     def _query(self, q_info: dict):
         if self.http_proxy:
@@ -463,6 +465,13 @@ class AI(Tiku):
             )
 
         try:
+            if self.last_request_time:
+                interval_time = time.time() - self.last_request_time
+                if interval_time < self.min_interval_seconds:
+                    sleep_time = self.min_interval_seconds - interval_time
+                    logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
+                    time.sleep(sleep_time)
+            self.last_request_time = time.time()
             response = json.loads(completion.choices[0].message.content)
             sep = "\n"
             return sep.join(response['Answer']).strip()
@@ -475,3 +484,4 @@ class AI(Tiku):
         self.key = self._conf['key']
         self.model = self._conf['model']
         self.http_proxy = self._conf['http_proxy']
+        self.min_interval_seconds = int(self._conf['min_interval_seconds'])
