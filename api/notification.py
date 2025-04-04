@@ -23,7 +23,7 @@ class Notification:
 
     def _get_conf(self):
         """
-            从默认配置文件查询配置, 如果未能查到, 停用题库
+            从默认配置文件查询配置, 如果未能查到, 停用外部通知功能
         """
         try:
             config = configparser.ConfigParser()
