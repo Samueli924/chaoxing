@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import json
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 from api.logger import logger
 from api.font_decoder import FontDecoder
 
@@ -13,7 +13,7 @@ def decode_course_list(_text):
     _course_list = list()
     for course in _raw_courses:
         if not course.select_one("a.not-open-tip") and not course.select_one(
-            "div.not-open-tip"
+                "div.not-open-tip"
         ):
             _course_detail = {}
             _course_detail["id"] = course.attrs["id"]
@@ -87,9 +87,9 @@ def decode_course_point(_text):
                 if "解锁" in _point.select_one("span.bntHoverTips").text:
                     _course_point["hasLocked"] = True
             if "已完成" in _point.select_one("span.bntHoverTips").text:
-                _point_detail["has_finished"]=True
+                _point_detail["has_finished"] = True
             else:
-                _point_detail["has_finished"]=False
+                _point_detail["has_finished"] = False
 
             _point_list.append(_point_detail)
         _course_point["points"] += _point_list
@@ -200,6 +200,16 @@ def decode_questions_info(html_content) -> dict:
     def replace_rtn(text):
         return text.replace("\r", "").replace("\t", "").replace("\n", "")
 
+    def extract_content(div):
+        text = []
+        for element in div.descendants:
+            if isinstance(element, NavigableString):
+                text.append(element.string)
+            elif element.name == "img":
+                img_url = element.get("src", "")
+                text.append(f'<img src="{img_url}">')
+        return "".join(text)
+
     soup = BeautifulSoup(html_content, "lxml")
     form_data = {}
     form_tag = soup.find("form")
@@ -218,20 +228,21 @@ def decode_questions_info(html_content) -> dict:
         fd = FontDecoder(html_content)  # 加载字体
 
     for div_tag in form_tag.find_all(
-        "div", class_="singleQuesId"
-    ):  # 目前来说无论是单选还是多选的题class都是这个
+            "div", class_="singleQuesId"):  # 目前来说无论是单选还是多选的题class都是这个
+        q_title = ""
+        q_options = ""
         if 'fd' in locals():
-            q_title = replace_rtn(fd.decode(div_tag.find("div", class_="Zy_TItle").text))
-            q_options = ""
+            q_title = replace_rtn(fd.decode(extract_content(div_tag.find("div", class_="Zy_TItle"))))
             for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(fd.decode(li_tag.attrs.get("aria-label", li_tag.text))).rstrip('选择') + "\n"
+                q_options += replace_rtn(
+                    fd.decode(extract_content(li_tag))) + "\n"
         else:
-            q_title = replace_rtn(div_tag.find("div", class_="Zy_TItle").text)
-            q_options = ""
+            q_title = replace_rtn(extract_content(div_tag.find("div", class_="Zy_TItle")))
             for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(li_tag.attrs.get("aria-label", li_tag.text)).rstrip('选择') + "\n"
+                q_options += replace_rtn(
+                    extract_content(li_tag)) + "\n"
 
-        print(q_title,q_options)
+        print(q_title, q_options, sep="\n")
         q_options = q_options[:-1]  # 去除尾部'\n'
 
         # 尝试使用 data 属性来判断题型
