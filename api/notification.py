@@ -120,3 +120,28 @@ class Qmsg(Notification):
             self.DISABLE = True
             logger.info("未找到Qmsg酱url配置, 已忽略外部通知功能")
         self.url = self._conf['url']
+
+class Bark(Notification):
+    def __init__(self):
+        super().__init__()
+        self.name = 'Bark'
+        self.url = ''
+
+    def _send(self, msg):
+        params = {
+            'body': msg,
+        }
+
+        response = requests.post(self.url, params=params)
+        result = response.json()
+        if response.status_code != 200:
+            logger.error(f"Bark发送通知失败{result}")
+        else:
+            logger.info("Bark发送通知成功")
+        return None
+
+    def _init_notification(self):
+        if self._conf['url'] == "":
+            self.DISABLE = True
+            logger.info("未找到Bark的url配置, 已忽略外部通知功能")
+        self.url = self._conf['url']
