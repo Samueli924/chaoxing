@@ -341,13 +341,39 @@ class Chaoxing:
                     )
                     return answer
 
-                for i in range(
-                    random.choices([2, 3, 4], weights=[0.1, 0.5, 0.4], k=1)[0]
-                ):  # 此处表示随机多选答案几率：2个 10%, 3个 50%, 4个 40%
-                    _choice = random.choice(_op_list)
-                    _op_list.remove(_choice)
-                    answer += _choice[:1]  # 取首字为答案, 例如A或B
-                # 对答案进行排序, 否则会提交失败
+                available_options = len(_op_list)
+                select_count = 0
+        
+                # 根据可用选项数量调整可能选择的选项数
+                if available_options <= 1:
+                    select_count = available_options
+                else:
+                    max_possible = min(4, available_options)
+                    min_possible = min(2, available_options)
+            
+                    weights_map = {
+                        2: [1.0],
+                        3: [0.3, 0.7],
+                        4: [0.1, 0.5, 0.4],
+                        5: [0.1, 0.4, 0.3, 0.2],
+                    }
+            
+                    weights = weights_map.get(max_possible, [0.3, 0.4, 0.3])
+                    possible_counts = list(range(min_possible, max_possible + 1))
+            
+                    weights = weights[:len(possible_counts)]
+            
+                    weights_sum = sum(weights)
+                    if weights_sum > 0:
+                        weights = [w/weights_sum for w in weights]
+                
+                    select_count = random.choices(possible_counts, weights=weights, k=1)[0]
+
+                selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
+
+                for option in selected_options:
+                    answer += option[:1]  # 取首字为答案，例如A或B
+
                 answer = "".join(sorted(answer))
             elif q["type"] == "single":
                 answer = random.choice(options.split("\n"))[
