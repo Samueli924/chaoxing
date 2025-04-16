@@ -9,6 +9,7 @@ from openai import OpenAI
 import httpx
 from re import sub
 import time
+import re
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -386,6 +387,12 @@ class AI(Tiku):
         self.last_request_time = None
 
     def _query(self, q_info: dict):
+        def remove_md_json_wrapper(md_str):
+            # 使用正则表达式匹配Markdown代码块并提取内容
+            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
+            match = re.search(pattern, md_str, re.DOTALL)
+            return match.group(1).strip() if match else md_str.strip()
+        
         if self.http_proxy:
             proxy = self.http_proxy
             httpx_client = httpx.Client(proxy=proxy)
@@ -472,7 +479,7 @@ class AI(Tiku):
                     logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
                     time.sleep(sleep_time)
             self.last_request_time = time.time()
-            response = json.loads(completion.choices[0].message.content)
+            response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
             sep = "\n"
             return sep.join(response['Answer']).strip()
         except:
