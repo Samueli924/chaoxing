@@ -9,6 +9,7 @@ from openai import OpenAI
 import httpx
 from re import sub
 import time
+import re
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -386,6 +387,12 @@ class AI(Tiku):
         self.last_request_time = None
 
     def _query(self, q_info: dict):
+        def remove_md_json_wrapper(md_str):
+            # 使用正则表达式匹配Markdown代码块并提取内容
+            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
+            match = re.search(pattern, md_str, re.DOTALL)
+            return match.group(1).strip() if match else md_str.strip()
+        
         if self.http_proxy:
             proxy = self.http_proxy
             httpx_client = httpx.Client(proxy=proxy)
@@ -399,7 +406,7 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
@@ -413,7 +420,7 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
@@ -427,7 +434,7 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
@@ -441,7 +448,7 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
@@ -455,7 +462,7 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
@@ -472,7 +479,7 @@ class AI(Tiku):
                     logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
                     time.sleep(sleep_time)
             self.last_request_time = time.time()
-            response = json.loads(completion.choices[0].message.content)
+            response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
             sep = "\n"
             return sep.join(response['Answer']).strip()
         except:
