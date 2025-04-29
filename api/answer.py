@@ -22,24 +22,35 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    def __init__(self, file: str = "cache.json"):
-        self.cacheFile = Path(file)
-        if not self.cacheFile.is_file():
-            self.cacheFile.open("w").write("{}")
-        self.fp = self.cacheFile.open("r+", encoding="utf8")
+    DEFAULT_CACHE_FILE = "cache.json"
 
-    def getCache(self, question: str):
-        self.fp.seek(0)
-        data = json.load(self.fp)
-        if isinstance(data, dict):
-            return data.get(question)
+    def __init__(self, file: str = DEFAULT_CACHE_FILE):
+        self.cache_file = Path(file)
+        if not self.cache_file.is_file():
+            self._write_cache({})
 
-    def addCache(self, question: str, answer: str):
-        self.fp.seek(0)
-        data: dict = json.load(self.fp)
+    def _read_cache(self) -> dict:
+        try:
+            with self.cache_file.open("r", encoding="utf8") as fp:
+                return json.load(fp)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _write_cache(self, data: dict) -> None:
+        try:
+            with self.cache_file.open("w", encoding="utf8") as fp:
+                json.dump(data, fp, ensure_ascii=False, indent=4)
+        except IOError as e:
+            logger.error(f"Failed to write cache: {e}")
+
+    def get_cache(self, question: str):
+        data = self._read_cache()
+        return data.get(question)
+
+    def add_cache(self, question: str, answer: str) -> None:
+        data = self._read_cache()
         data[question] = answer
-        self.fp.seek(0)
-        json.dump(data, self.fp, ensure_ascii=False, indent=4)
+        self._write_cache(data)
 
 
 class Tiku:
@@ -124,7 +135,7 @@ class Tiku:
 
         # 先过缓存
         cache_dao = CacheDAO()
-        answer = cache_dao.getCache(q_info['title'])
+        answer = cache_dao.get_cache(q_info['title'])
         if answer:
             logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
             return answer.strip()
@@ -132,7 +143,7 @@ class Tiku:
             answer = self._query(q_info)
             if answer:
                 answer = answer.strip()
-                cache_dao.addCache(q_info['title'], answer)
+                cache_dao.add_cache(q_info['title'], answer)
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
                 if check_answer(answer, q_info['type'], self):
                     return answer
