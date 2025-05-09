@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-import re
-import time
-import random
-import requests
+from enum import Enum
 from hashlib import md5
+
+import requests
 from requests.adapters import HTTPAdapter
 
+from api.answer import *
 from api.cipher import AESCipher
-from api.logger import logger
-from api.cookies import save_cookies, use_cookies
-from api.process import show_progress
 from api.config import GlobalConst as gc
+from api.cookies import save_cookies, use_cookies
 from api.decode import (
     decode_course_list,
     decode_course_point,
@@ -18,8 +16,8 @@ from api.decode import (
     decode_course_folder,
     decode_questions_info,
 )
-from api.answer import *
-from enum import Enum
+from api.process import show_progress
+
 
 def get_timestamp():
     return str(int(time.time() * 1000))
@@ -386,18 +384,18 @@ class Chaoxing:
             logger.info(f"随机选择 -> {answer}")
             return answer
 
-        def multi_cut(answer: str) -> list[str]:
+        def multi_cut(answer: str):
             """
-            将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表.
+            将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表
 
             参数:
-            answer (str): 多选题答案字符串.
+            answer(str): 多选题答案字符串.
 
             返回:
-            list[str]: 切割后的答案列表, 如果无法切割, 则返回默认的选项列表 ['A', 'B', 'C', 'D'].
+            list[str]: 切割后的答案列表, 如果无法切割, 则返回默认的选项列表None
 
             注意:
-            如果无法从网页中提取题目信息, 将记录警告日志并返回默认选项列表.
+            如果无法从网页中提取题目信息, 将记录警告日志并返回None
             """
             # cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
             # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
@@ -424,18 +422,15 @@ class Chaoxing:
                 " ",
                 "、",
             ]  # 多选答案切割符
-            res = []
-            for char in cut_char:
-                res = [
-                    opt for opt in answer.split(char) if opt.strip()
-                ]  # Filter empty strings
-                if len(res) > 1:
-                    return res
-            logger.warning(
-                f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
-            )  # 尝试输出网页内容和选项信息
-            logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
-            return ["A", "B", "C", "D"]  # 默认多选题为4个选项
+            res = cut(answer)
+            if res is None:
+                logger.warning(
+                    f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
+                )  # 尝试输出网页内容和选项信息
+                logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
+                return None
+            else:
+                return res
 
         def clean_res(res):
             cleaned_res = []
@@ -552,24 +547,28 @@ class Chaoxing:
                 if q["type"] == "multiple":
                     # 多选处理
                     options_list = multi_cut(q["options"])
-                    for _a in clean_res(multi_cut(res)):
-                        for o in options_list:
-                            if (
-                                is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
-                            ):
-                                answer += o[:1]
-                    # 对答案进行排序, 否则会提交失败
-                    answer = "".join(sorted(answer))
+                    res_list = multi_cut(res)
+                    if res_list is not None and options_list is not None:
+                        for _a in clean_res(res_list):
+                            for o in options_list:
+                                if (
+                                        is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
+                                ):
+                                    answer += o[:1]
+                        # 对答案进行排序, 否则会提交失败
+                        answer = "".join(sorted(answer))
+                    # else 如果分割失败那么就直接到下面去随机选
                 elif q["type"] == "single":
                     # 单选也进行切割，主要是防止返回的答案有异常字符
                     options_list = multi_cut(q["options"])
-                    t_res = clean_res(res)
-                    for o in options_list:
-                        if is_subsequence(t_res[0], o):
-                            answer = o[:1]
-                            break
+                    if options_list is not None:
+                        t_res = clean_res(res)
+                        for o in options_list:
+                            if is_subsequence(t_res[0], o):
+                                answer = o[:1]
+                                break
                 elif q["type"] == "judgement":
-                    answer = "true" if self.tiku.jugement_select(res) else "false"
+                    answer = "true" if self.tiku.judgement_select(res) else "false"
                 elif q["type"] == "completion":
                     if isinstance(res,list):
                         answer = "".join(answer)
