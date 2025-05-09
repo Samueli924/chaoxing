@@ -1,15 +1,19 @@
 import configparser
-import requests
-from pathlib import Path
 import json
-from api.logger import logger
 import random
-from urllib3 import disable_warnings,exceptions
-from openai import OpenAI
-import httpx
-from re import sub
-import time
 import re
+import time
+from pathlib import Path
+from re import sub
+
+import httpx
+import requests
+from openai import OpenAI
+from urllib3 import disable_warnings, exceptions
+
+from api.answer_check import *
+from api.logger import logger
+
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
@@ -18,24 +22,35 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    def __init__(self, file: str = "cache.json"):
-        self.cacheFile = Path(file)
-        if not self.cacheFile.is_file():
-            self.cacheFile.open("w").write("{}")
-        self.fp = self.cacheFile.open("r+", encoding="utf8")
+    DEFAULT_CACHE_FILE = "cache.json"
 
-    def getCache(self, question: str):
-        self.fp.seek(0)
-        data = json.load(self.fp)
-        if isinstance(data, dict):
-            return data.get(question)
+    def __init__(self, file: str = DEFAULT_CACHE_FILE):
+        self.cache_file = Path(file)
+        if not self.cache_file.is_file():
+            self._write_cache({})
 
-    def addCache(self, question: str, answer: str):
-        self.fp.seek(0)
-        data: dict = json.load(self.fp)
+    def _read_cache(self) -> dict:
+        try:
+            with self.cache_file.open("r", encoding="utf8") as fp:
+                return json.load(fp)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _write_cache(self, data: dict) -> None:
+        try:
+            with self.cache_file.open("w", encoding="utf8") as fp:
+                json.dump(data, fp, ensure_ascii=False, indent=4)
+        except IOError as e:
+            logger.error(f"Failed to write cache: {e}")
+
+    def get_cache(self, question: str):
+        data = self._read_cache()
+        return data.get(question)
+
+    def add_cache(self, question: str, answer: str) -> None:
+        data = self._read_cache()
         data[question] = answer
-        self.fp.seek(0)
-        json.dump(data, self.fp, ensure_ascii=False, indent=4)
+        self._write_cache(data)
 
 
 class Tiku:
@@ -43,7 +58,8 @@ class Tiku:
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
     COVER_RATE = 0.8    # 覆盖率
-
+    true_list = []
+    false_list = []
     def __init__(self) -> None:
         self._name = None
         self._api = None
@@ -82,6 +98,8 @@ class Tiku:
             # 设置提交模式
             self.SUBMIT = True if self._conf['submit'] == 'true' else False
             self.COVER_RATE = float(self._conf['cover_rate'])
+            self.true_list = self._conf['true_list'].split(',')
+            self.false_list = self._conf['false_list'].split(',')
             # 调用自定义题库初始化
             self._init_tiku()
         
@@ -104,13 +122,11 @@ class Tiku:
             logger.info("未找到tiku配置, 已忽略题库功能")
             self.DISABLE = True
             return None
-
     def query(self,q_info:dict):
         if self.DISABLE:
             return None
 
         # 预处理, 去除【单选题】这样与标题无关的字段
-        # 此处需要改进！！！
         logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = sub(r'^\d+', '', q_info['title'])
         q_info['title'] = sub(r'^(?:【.*?】)+', '', q_info['title'])
@@ -119,7 +135,7 @@ class Tiku:
 
         # 先过缓存
         cache_dao = CacheDAO()
-        answer = cache_dao.getCache(q_info['title'])
+        answer = cache_dao.get_cache(q_info['title'])
         if answer:
             logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
             return answer.strip()
@@ -127,9 +143,14 @@ class Tiku:
             answer = self._query(q_info)
             if answer:
                 answer = answer.strip()
-                cache_dao.addCache(q_info['title'], answer)
+                cache_dao.add_cache(q_info['title'], answer)
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
-                return answer
+                if check_answer(answer, q_info['type'], self):
+                    return answer
+                else:
+                    logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
+                    return None
+                    
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
     
@@ -159,21 +180,19 @@ class Tiku:
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
         return new_cls
-    
-    def jugement_select(self,answer:str) -> bool:
+
+    def judgement_select(self, answer: str) -> bool:
         """
         这是一个专用的方法, 要求配置维护两个选项列表, 一份用于正确选项, 一份用于错误选项, 以应对题库对判断题答案响应的各种可能的情况
         它的作用是将获取到的答案answer与可能的选项列对比并返回对应的布尔值
         """
         if self.DISABLE:
             return False
-        true_list = self._conf['true_list'].split(',')
-        false_list = self._conf['false_list'].split(',')
         # 对响应的答案作处理
         answer = answer.strip()
-        if answer in true_list:
+        if answer in self.true_list:
             return True
-        elif answer in false_list:
+        elif answer in self.false_list:
             return False
         else:
             # 无法判断, 随机选择
@@ -207,7 +226,9 @@ class TikuYanxi(Tiku):
             self.api,
             params={
                 'question':q_info['title'],
-                'token':self._token
+                'token': self._token,
+                # 'type':q_info['type'], #修复478题目类型与答案类型不符（不想写后处理了）
+                # 没用，就算有type和options，言溪题库还是可能返回类型不符，问了客服，type仅用于收集
             },
             verify=False
         )
