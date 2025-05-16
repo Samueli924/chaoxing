@@ -84,9 +84,9 @@ def decode_course_point(_text):
                 ).attrs["value"]
             else:
                 # 判断是不是因为需要解锁
-                if "解锁" in _point.select_one("span.bntHoverTips").text:
+                if _point.select_one("span.bntHoverTips") and "解锁" in _point.select_one("span.bntHoverTips").text:
                     _course_point["hasLocked"] = True
-            if "已完成" in _point.select_one("span.bntHoverTips").text:
+            if _point.select_one("span.bntHoverTips") and "已完成" in _point.select_one("span.bntHoverTips").text:
                 _point_detail["has_finished"] = True
             else:
                 _point_detail["has_finished"] = False
