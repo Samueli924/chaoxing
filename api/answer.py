@@ -22,7 +22,7 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    DEFAULT_CACHE_FILE = "../cache.json"
+    DEFAULT_CACHE_FILE = "cache.json"
 
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
         self.cache_file = Path(file)
@@ -557,7 +557,9 @@ class SiliconFlow(Tiku):
                 }
             ],
             "stream": False,
-            "max_tokens": 512,
+
+            "max_tokens": 4096,
+
             "temperature": 0.7,
             "top_p": 0.7,
             "response_format": {"type": "text"}
@@ -595,5 +597,8 @@ class SiliconFlow(Tiku):
         # 从配置文件读取参数
         self.api_endpoint = self._conf.get('siliconflow_endpoint', 'https://api.siliconflow.cn/v1/chat/completions')
         self.api_key = self._conf['siliconflow_key']
-        self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-R1')
+
+        self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-V3')
+
+
         self.min_interval = int(self._conf.get('min_interval_seconds', 3))
