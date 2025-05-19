@@ -6,6 +6,8 @@
 import base64
 import hashlib
 import json
+import os
+import sys
 from io import BytesIO
 from pathlib import Path
 from typing import IO, Union, Dict
@@ -22,14 +24,25 @@ KX_RADICALS_TAB = str.maketrans(
 )
 
 
+def resource_path(relative_path):
+    """获取PyInstaller打包后的资源路径"""
+    try:
+        # PyInstaller创建临时文件夹，定位路径
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
 class FontHashDAO:
     """原始字体hashmap DAO"""
 
     char_map: Dict[str, str]  # unicode -> hsah
     hash_map: Dict[str, str]  # hash -> unicode
 
-    def __init__(self, file: str = "./resource/font_map_table.json"):
-        with open(file, "r") as fp:
+    def __init__(self, file: str = "resource/font_map_table.json"):
+        font_file_path = resource_path(file)
+        with open(font_file_path, "r") as fp:
             _map: dict = json.load(fp)
         self.char_map = _map
         self.hash_map = dict(zip(_map.values(), _map.keys()))
@@ -74,12 +87,12 @@ def decrypt(dststr_fontmap: Dict[str, str], dst_str: str) -> str:
     ori_str = ""
     for char in dst_str:
         if dstchar_hash := dststr_fontmap.get(f"uni{ord(char):X}"):
-            # 存在于“密钥”字体，解密
+            # 存在于"密钥"字体，解密
             orichar_hash = fonthash_dao.find_char(dstchar_hash)
             if orichar_hash is not None:
                 ori_str += chr(int(orichar_hash[3:], 16))
         else:
-            # 不存在于“密钥”字体，直接复制
+            # 不存在于"密钥"字体，直接复制
             ori_str += char
     # 替换解密后的康熙部首
     ori_str = ori_str.translate(KX_RADICALS_TAB)
