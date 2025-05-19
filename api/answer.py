@@ -22,7 +22,7 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    DEFAULT_CACHE_FILE = "cache.json"
+    DEFAULT_CACHE_FILE = "../cache.json"
 
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
         self.cache_file = Path(file)
@@ -129,7 +129,6 @@ class Tiku:
         # 预处理, 去除【单选题】这样与标题无关的字段
         logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = sub(r'^\d+', '', q_info['title'])
-        q_info['title'] = sub(r'^(?:【.*?】)+', '', q_info['title'])
         q_info['title'] = sub(r'（\d+\.\d+分）$', '', q_info['title'])
         logger.debug(f"处理后标题：{q_info['title']}")
 
@@ -513,3 +512,88 @@ class AI(Tiku):
         self.model = self._conf['model']
         self.http_proxy = self._conf['http_proxy']
         self.min_interval_seconds = int(self._conf['min_interval_seconds'])
+class SiliconFlow(Tiku):
+    """硅基流动大模型答题实现"""
+    def __init__(self):
+        super().__init__()
+        self.name = '硅基流动大模型'
+        self.last_request_time = None
+
+    def _query(self, q_info: dict):
+        def remove_md_json_wrapper(md_str):
+            # 解析可能存在的JSON包装
+            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
+            match = re.search(pattern, md_str, re.DOTALL)
+            return match.group(1).strip() if match else md_str.strip()
+
+        # 构造请求头
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        # 构造系统提示词
+        system_prompt = ""
+        if q_info['type'] == "single":
+            system_prompt = "本题为单选题，请根据题目和选项选择唯一正确答案，输出的是选项的具体内容，而不是内容前的ABCD，并以JSON格式输出：示例回答：{\"Answer\": [\"正确选项内容\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+        elif q_info['type'] == 'multiple':
+            system_prompt = "本题为多选题，请选择所有正确选项，输出的是选项的具体内容，而不是内容前的ABCD，以JSON格式输出：示例回答：{\"Answer\": [\"选项1\",\"选项2\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+        elif q_info['type'] == 'completion':
+            system_prompt = "本题为填空题，请直接给出填空内容，以JSON格式输出：示例回答：{\"Answer\": [\"答案文本\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+        elif q_info['type'] == 'judgement':
+            system_prompt = "本题为判断题，请回答'正确'或'错误'，以JSON格式输出：示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+
+        # 构造请求体
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                }
+            ],
+            "stream": False,
+            "max_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.7,
+            "response_format": {"type": "text"}
+        }
+
+        # 处理请求间隔
+        if self.last_request_time:
+            interval = time.time() - self.last_request_time
+            if interval < self.min_interval:
+                time.sleep(self.min_interval - interval)
+
+        try:
+            response = requests.post(
+                self.api_endpoint,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            self.last_request_time = time.time()
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+                parsed = json.loads(remove_md_json_wrapper(content))
+                return "\n".join(parsed['Answer']).strip()
+            else:
+                logger.error(f"API请求失败：{response.status_code} {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"硅基流动API异常：{str(e)}")
+            return None
+
+    def _init_tiku(self):
+        # 从配置文件读取参数
+        self.api_endpoint = self._conf.get('siliconflow_endpoint', 'https://api.siliconflow.cn/v1/chat/completions')
+        self.api_key = self._conf['siliconflow_key']
+        self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-R1')
+        self.min_interval = int(self._conf.get('min_interval_seconds', 3))
