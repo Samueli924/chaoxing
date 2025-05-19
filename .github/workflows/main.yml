@@ -30,22 +30,17 @@ jobs:
           pip install pyinstaller
 
       - name: Build win bin
-        run: pyinstaller -F main.py -n  'chaoxing'
+        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource"
 
-      - name: run ls
+      - name: Create release package
         run: |
-          ls dist
-          echo ${{github.ref}}
-
-      - name: Publish
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: 'dist/chaoxing*'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          mkdir release
+          copy dist\chaoxing.exe release\
+          copy config_template.ini release\
+          cd release
+          7z a -tzip chaoxing.zip *
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: 'dist/chaoxing*'
+          path: 'release/chaoxing.zip'
