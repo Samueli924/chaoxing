@@ -1,280 +1,440 @@
 # -*- coding: utf-8 -*-
+"""
+超星学习通数据解析模块
+
+该模块负责解析超星学习通平台的课程、章节、任务点等各种数据，
+并转换为程序内部使用的结构化数据格式。
+"""
 import re
 import json
+from typing import List, Dict, Tuple, Any, Optional
 from bs4 import BeautifulSoup, NavigableString
 from api.logger import logger
 from api.font_decoder import FontDecoder
 
 
-def decode_course_list(_text):
+def decode_course_list(html_text: str) -> List[Dict[str, str]]:
+    """
+    解析课程列表页面，提取课程信息
+    
+    Args:
+        html_text: 课程列表页面的HTML内容
+        
+    Returns:
+        课程信息列表，每个课程包含id、title、teacher等信息
+    """
     logger.trace("开始解码课程列表...")
-    _soup = BeautifulSoup(_text, "lxml")
-    _raw_courses = _soup.select("div.course")
-    _course_list = list()
-    for course in _raw_courses:
-        if not course.select_one("a.not-open-tip") and not course.select_one(
-                "div.not-open-tip"
-        ):
-            _course_detail = {}
-            _course_detail["id"] = course.attrs["id"]
-            _course_detail["info"] = course.attrs["info"]
-            _course_detail["roleid"] = course.attrs["roleid"]
-
-            _course_detail["clazzId"] = course.select_one("input.clazzId").attrs[
-                "value"
-            ]
-            _course_detail["courseId"] = course.select_one("input.courseId").attrs[
-                "value"
-            ]
-            _course_detail["cpi"] = re.findall(
-                r"cpi=(.*?)&", course.select_one("a").attrs["href"]
-            )[0]
-            _course_detail["title"] = course.select_one("span.course-name").attrs[
-                "title"
-            ]
-            if course.select_one("p.margint10") is None:
-                _course_detail["desc"] = ""
-            else:
-                _course_detail["desc"] = course.select_one("p.margint10").attrs["title"]
-            _course_detail["teacher"] = course.select_one("p.color3").attrs["title"]
-            _course_list.append(_course_detail)
-    return _course_list
+    soup = BeautifulSoup(html_text, "lxml")
+    raw_courses = soup.select("div.course")
+    course_list = []
+    
+    for course in raw_courses:
+        # 跳过未开放课程
+        if course.select_one("a.not-open-tip") or course.select_one("div.not-open-tip"):
+            continue
+        
+        course_detail = {
+            "id": course.attrs["id"],
+            "info": course.attrs["info"],
+            "roleid": course.attrs["roleid"],
+            "clazzId": course.select_one("input.clazzId").attrs["value"],
+            "courseId": course.select_one("input.courseId").attrs["value"],
+            "cpi": re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0],
+            "title": course.select_one("span.course-name").attrs["title"],
+            "desc": course.select_one("p.margint10").attrs["title"] if course.select_one("p.margint10") else "",
+            "teacher": course.select_one("p.color3").attrs["title"]
+        }
+        course_list.append(course_detail)
+    
+    return course_list
 
 
-def decode_course_folder(_text):
+def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
+    """
+    解析二级课程列表页面，提取文件夹信息
+    
+    Args:
+        html_text: 二级课程列表页面的HTML内容
+        
+    Returns:
+        课程文件夹信息列表
+    """
     logger.trace("开始解码二级课程列表...")
-    _soup = BeautifulSoup(_text, "lxml")
-    _raw_courses = _soup.select("ul.file-list>li")
-    _course_folder_list = list()
-    for course in _raw_courses:
-        if course.attrs["fileid"]:
-            _course_folder_detail = {}
-            _course_folder_detail["id"] = course.attrs["fileid"]
-            _course_folder_detail["rename"] = course.select_one(
-                "input.rename-input"
-            ).attrs["value"]
-            _course_folder_list.append(_course_folder_detail)
-    return _course_folder_list
+    soup = BeautifulSoup(html_text, "lxml")
+    raw_courses = soup.select("ul.file-list>li")
+    course_folder_list = []
+    
+    for course in raw_courses:
+        if not course.attrs.get("fileid"):
+            continue
+            
+        course_folder_detail = {
+            "id": course.attrs["fileid"],
+            "rename": course.select_one("input.rename-input").attrs["value"]
+        }
+        course_folder_list.append(course_folder_detail)
+    
+    return course_folder_list
 
 
-def decode_course_point(_text):
+def decode_course_point(html_text: str) -> Dict[str, Any]:
+    """
+    解析章节列表页面，提取章节点信息
+    
+    Args:
+        html_text: 章节列表页面的HTML内容
+        
+    Returns:
+        章节信息字典，包含是否锁定状态和章节点列表
+    """
     logger.trace("开始解码章节列表...")
-    _soup = BeautifulSoup(_text, "lxml")
-    _course_point = {
+    soup = BeautifulSoup(html_text, "lxml")
+    course_point = {
         "hasLocked": False,  # 用于判断该课程任务是否是需要解锁
         "points": [],
     }
 
-    for _chapter_unit in _soup.find_all("div", class_="chapter_unit"):
-        _point_list = []
-        _raw_points = _chapter_unit.find_all("li")
-        for _point in _raw_points:
-            _point = _point.div
-            if not "id" in _point.attrs:
-                continue
-            _point_detail = {}
-            _point_detail["id"] = re.findall(r"^cur(\d{1,20})$", _point.attrs["id"])[0]
-            _point_detail["title"] = (
-                _point.select_one("a.clicktitle").text.replace("\n", "").strip(" ")
-            )
-            _point_detail["jobCount"] = 1  # 默认为1
-            if _point.select_one("input.knowledgeJobCount"):
-                _point_detail["jobCount"] = _point.select_one(
-                    "input.knowledgeJobCount"
-                ).attrs["value"]
-            else:
-                # 判断是不是因为需要解锁
-                if _point.select_one("span.bntHoverTips") and "解锁" in _point.select_one("span.bntHoverTips").text:
-                    _course_point["hasLocked"] = True
-            if _point.select_one("span.bntHoverTips") and "已完成" in _point.select_one("span.bntHoverTips").text:
-                _point_detail["has_finished"] = True
-            else:
-                _point_detail["has_finished"] = False
-
-            _point_list.append(_point_detail)
-        _course_point["points"] += _point_list
-    return _course_point
+    for chapter_unit in soup.find_all("div", class_="chapter_unit"):
+        points = _extract_points_from_chapter(chapter_unit)
+        # 检查是否有锁定内容
+        for point in points:
+            if point.get("need_unlock", False):
+                course_point["hasLocked"] = True
+                
+        course_point["points"].extend(points)
+    
+    return course_point
 
 
-def decode_course_card(_text: str):
+def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
+    """
+    从章节单元中提取章节点信息
+    
+    Args:
+        chapter_unit: BeautifulSoup对象，表示一个章节单元
+        
+    Returns:
+        章节点信息列表
+    """
+    point_list = []
+    raw_points = chapter_unit.find_all("li")
+    
+    for raw_point in raw_points:
+        point = raw_point.div
+        if "id" not in point.attrs:
+            continue
+            
+        point_id = re.findall(r"^cur(\d{1,20})$", point.attrs["id"])[0]
+        point_title = point.select_one("a.clicktitle").text.replace("\n", "").strip()
+        
+        # 提取任务数量
+        job_count = 1  # 默认为1
+        need_unlock = False
+        if point.select_one("input.knowledgeJobCount"):
+            job_count = point.select_one("input.knowledgeJobCount").attrs["value"]
+        elif point.select_one("span.bntHoverTips") and "解锁" in point.select_one("span.bntHoverTips").text:
+            need_unlock = True
+            
+        # 判断是否已完成
+        is_finished = False
+        if point.select_one("span.bntHoverTips") and "已完成" in point.select_one("span.bntHoverTips").text:
+            is_finished = True
+            
+        point_detail = {
+            "id": point_id,
+            "title": point_title,
+            "jobCount": job_count,
+            "has_finished": is_finished,
+            "need_unlock": need_unlock
+        }
+        point_list.append(point_detail)
+        
+    return point_list
+
+
+def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    解析任务点列表页面，提取任务点信息
+    
+    Args:
+        html_text: 任务点列表页面的HTML内容
+        
+    Returns:
+        任务点列表和任务信息的元组
+    """
     logger.trace("开始解码任务点列表...")
-    _job_info = {}
-    _job_list = []
-    # 对于未开放章节检测
-    if "章节未开放" in _text:
-        _job_info["notOpen"] = True
-        return [], _job_info
+    job_list = []
+    
+    # 检查章节是否未开放
+    if "章节未开放" in html_text:
+        return [], {"notOpen": True}
 
-    _temp = re.findall(r"mArg=\{(.*?)\};", _text.replace(" ", ""))
-    if _temp:
-        _temp = _temp[0]
-    else:
+    # 提取mArg参数
+    temp = re.findall(r"mArg=\{(.*?)\};", html_text.replace(" ", ""))
+    if not temp:
         return [], {}
-    _cards = json.loads("{" + _temp + "}")
+        
+    # 解析JSON数据
+    cards_data = json.loads("{" + temp[0] + "}")
+    if not cards_data:
+        return [], {}
 
-    if _cards:
-        _job_info = {}
-        _job_info["ktoken"] = _cards["defaults"]["ktoken"]
-        _job_info["mtEnc"] = _cards["defaults"]["mtEnc"]
-        _job_info["reportTimeInterval"] = _cards["defaults"]["reportTimeInterval"]  # 60
-        _job_info["defenc"] = _cards["defaults"]["defenc"]
-        _job_info["cardid"] = _cards["defaults"]["cardid"]
-        _job_info["cpi"] = _cards["defaults"]["cpi"]
-        _job_info["qnenc"] = _cards["defaults"]["qnenc"]
-        _job_info["knowledgeid"] = _cards["defaults"]["knowledgeid"]
-        _cards = _cards["attachments"]
-        _job_list = []
-        for _card in _cards:
-            # 已经通过的任务
-            if "isPassed" in _card and _card["isPassed"] is True:
-                continue
-            # 不属于任务点的任务
-            if "job" not in _card or _card["job"] is False:
-                if _card.get("type") and _card["type"] == "read":
-                    # 发现有在视频任务下掺杂阅读任务，不完成可能会导致无法开启下一章节
-                    if _card["property"].get("read", False):
-                        # 已阅读，跳过
-                        continue
-                    _job = {}
-                    _job["title"] = _card["property"]["title"]
-                    _job["type"] = "read"
-                    _job["id"] = _card["property"]["id"]
-                    _job["jobid"] = _card["jobid"]
-                    _job["jtoken"] = _card["jtoken"]
-                    _job["mid"] = _card["mid"]
-                    _job["otherinfo"] = _card["otherInfo"]
-                    _job["enc"] = _card["enc"]
-                    _job["aid"] = _card["aid"]
-                    _job_list.append(_job)
-                continue
-            # 视频任务
-            if not "type" in _card:
-                continue
-            if _card["type"] == "video":
-                _job = {}
-                _job["type"] = "video"
-                _job["jobid"] = _card["jobid"]
-                _job["name"] = _card["property"]["name"]
-                _job["otherinfo"] = _card["otherInfo"]
-                try:
-                    _job["mid"] = _card["mid"]
-                except KeyError:
-                    logger.warning("出现转码失败视频，已跳过...")
-                    continue
-                _job["objectid"] = _card["objectId"]
-                _job["aid"] = _card["aid"]
-                # _job["doublespeed"] = _card["property"]["doublespeed"]
-                _job_list.append(_job)
-                continue
-            if _card["type"] == "document":
-                _job = {}
-                _job["type"] = "document"
-                _job["jobid"] = _card["jobid"]
-                _job["otherinfo"] = _card["otherInfo"]
-                _job["jtoken"] = _card["jtoken"]
-                _job["mid"] = _card["mid"]
-                _job["enc"] = _card["enc"]
-                _job["aid"] = _card["aid"]
-                _job["objectid"] = _card["property"]["objectid"]
-                _job_list.append(_job)
-                continue
-            if _card["type"] == "workid":
-                # 章节检测
-                _job = {}
-                _job["type"] = "workid"
-                _job["jobid"] = _card["jobid"]
-                _job["otherinfo"] = _card["otherInfo"]
-                _job["mid"] = _card["mid"]
-                _job["enc"] = _card["enc"]
-                _job["aid"] = _card["aid"]
-                _job_list.append(_job)
-                continue
-
-            if _card["type"] == "vote":
-                # 调查问卷 同上
-                continue
-        return _job_list, _job_info
+    # 提取任务信息
+    job_info = _extract_job_info(cards_data)
+    
+    # 处理所有附件任务
+    cards = cards_data.get("attachments", [])
+    job_list = _process_attachment_cards(cards)
+    
+    return job_list, job_info
 
 
-def decode_questions_info(html_content) -> dict:
-    def replace_rtn(text):
-        return text.replace("\r", "").replace("\t", "").replace("\n", "")
+def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从卡片数据中提取任务基本信息
+    
+    Args:
+        cards_data: 卡片数据字典
+        
+    Returns:
+        任务基本信息字典
+    """
+    defaults = cards_data.get("defaults", {})
+    if not defaults:
+        return {}
+        
+    return {
+        "ktoken": defaults.get("ktoken", ""),
+        "mtEnc": defaults.get("mtEnc", ""),
+        "reportTimeInterval": defaults.get("reportTimeInterval", 60),
+        "defenc": defaults.get("defenc", ""),
+        "cardid": defaults.get("cardid", ""),
+        "cpi": defaults.get("cpi", ""),
+        "qnenc": defaults.get("qnenc", ""),
+        "knowledgeid": defaults.get("knowledgeid", "")
+    }
 
-    def extract_content(div):
-        text = []
-        for element in div.descendants:
-            if isinstance(element, NavigableString):
-                text.append(element.string)
-            elif element.name == "img":
-                img_url = element.get("src", "")
-                text.append(f'<img src="{img_url}">')
-        return "".join(text)
 
+def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    处理所有附件任务卡片
+    
+    Args:
+        cards: 附件任务卡片列表
+        
+    Returns:
+        处理后的任务列表
+    """
+    job_list = []
+    
+    for card in cards:
+        # 跳过已通过的任务
+        if card.get("isPassed", False):
+            continue
+            
+        # 处理不同类型的任务
+        if card.get("job", False) == False:
+            # 处理阅读类型任务
+            read_job = _process_read_task(card)
+            if read_job:
+                job_list.append(read_job)
+            continue
+            
+        # 根据任务类型处理
+        card_type = card.get("type", "")
+        if card_type == "video":
+            video_job = _process_video_task(card)
+            if video_job:
+                job_list.append(video_job)
+        elif card_type == "document":
+            doc_job = _process_document_task(card)
+            if doc_job:
+                job_list.append(doc_job)
+        elif card_type == "workid":
+            work_job = _process_work_task(card)
+            if work_job:
+                job_list.append(work_job)
+                
+    return job_list
+
+
+def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """处理阅读类型任务"""
+    if not (card.get("type") == "read" and not card.get("property", {}).get("read", False)):
+        return None
+        
+    return {
+        "title": card.get("property", {}).get("title", ""),
+        "type": "read",
+        "id": card.get("property", {}).get("id", ""),
+        "jobid": card.get("jobid", ""),
+        "jtoken": card.get("jtoken", ""),
+        "mid": card.get("mid", ""),
+        "otherinfo": card.get("otherInfo", ""),
+        "enc": card.get("enc", ""),
+        "aid": card.get("aid", "")
+    }
+
+
+def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """处理视频类型任务"""
+    try:
+        return {
+            "type": "video",
+            "jobid": card.get("jobid", ""),
+            "name": card.get("property", {}).get("name", ""),
+            "otherinfo": card.get("otherInfo", ""),
+            "mid": card["mid"],  # 必须字段，如果不存在会抛出异常
+            "objectid": card.get("objectId", ""),
+            "aid": card.get("aid", "")
+        }
+    except KeyError:
+        logger.warning("出现转码失败视频，已跳过...")
+        return None
+
+
+def _process_document_task(card: Dict[str, Any]) -> Dict[str, Any]:
+    """处理文档类型任务"""
+    return {
+        "type": "document",
+        "jobid": card.get("jobid", ""),
+        "otherinfo": card.get("otherInfo", ""),
+        "jtoken": card.get("jtoken", ""),
+        "mid": card.get("mid", ""),
+        "enc": card.get("enc", ""),
+        "aid": card.get("aid", ""),
+        "objectid": card.get("property", {}).get("objectid", "")
+    }
+
+
+def _process_work_task(card: Dict[str, Any]) -> Dict[str, Any]:
+    """处理作业类型任务"""
+    return {
+        "type": "workid",
+        "jobid": card.get("jobid", ""),
+        "otherinfo": card.get("otherInfo", ""),
+        "mid": card.get("mid", ""),
+        "enc": card.get("enc", ""),
+        "aid": card.get("aid", "")
+    }
+
+
+def decode_questions_info(html_content: str) -> Dict[str, Any]:
+    """
+    解析题目信息，提取表单数据和问题列表
+    
+    Args:
+        html_content: 题目页面HTML内容
+        
+    Returns:
+        包含表单数据和问题列表的字典
+    """
     soup = BeautifulSoup(html_content, "lxml")
+    form_data = _extract_form_data(soup)
+    
+    # 检查是否存在字体加密
+    has_font_encryption = bool(soup.find("style", id="cxSecretStyle"))
+    font_decoder = None
+    
+    if has_font_encryption:
+        font_decoder = FontDecoder(html_content)
+    else:
+        logger.warning("未找到字体文件，可能是未加密的题目不进行解密")
+    
+    # 处理所有问题
+    questions = []
+    for div_tag in soup.find("form").find_all("div", class_="singleQuesId"):
+        question = _process_question(div_tag, font_decoder)
+        if question:
+            questions.append(question)
+    
+    # 更新表单数据
+    form_data["questions"] = questions
+    form_data["answerwqbid"] = ",".join([q["id"] for q in questions]) + ","
+    
+    return form_data
+
+
+def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
+    """从BeautifulSoup对象中提取表单数据"""
     form_data = {}
     form_tag = soup.find("form")
-
-    # 抽取表单信息
+    
+    if not form_tag:
+        return form_data
+    
+    # 提取所有非答案字段的input
     for input_tag in form_tag.find_all("input"):
         if "name" not in input_tag.attrs or "answer" in input_tag.attrs["name"]:
             continue
-        form_data.update({input_tag.attrs["name"]: input_tag.attrs.get("value", "")})
-
-    form_data["questions"] = []
-
-    if soup.find("style", id="cxSecretStyle") is None:  # 未找到字体文件，目前只有可能是空或者无中文内容。
-        logger.warning("未找到字体文件，可能是未加密的题目不进行解密")
-    else:
-        fd = FontDecoder(html_content)  # 加载字体
-
-    for div_tag in form_tag.find_all(
-            "div", class_="singleQuesId"):  # 目前来说无论是单选还是多选的题class都是这个
-        q_title = ""
-        q_options = ""
-        if 'fd' in locals():
-            q_title = replace_rtn(fd.decode(extract_content(div_tag.find("div", class_="Zy_TItle"))))
-            for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(
-                    fd.decode(extract_content(li_tag))) + "\n"
-        else:
-            q_title = replace_rtn(extract_content(div_tag.find("div", class_="Zy_TItle")))
-            for li_tag in div_tag.find("ul").find_all("li"):
-                q_options += replace_rtn(
-                    extract_content(li_tag)) + "\n"
-
-        print(q_title, q_options, sep="\n")
-        q_options = q_options[:-1]  # 去除尾部'\n'
-
-        # 尝试使用 data 属性来判断题型
-        q_type_code = div_tag.find("div", class_="TiMu").attrs["data"]
-        q_type = ""
-        # 此处可能需要完善更多题型的判断
-        if q_type_code == "0":
-            q_type = "single"
-        elif q_type_code == "1":
-            q_type = "multiple"
-        elif q_type_code == "2":
-            q_type = "completion"
-        elif q_type_code == "3":
-            q_type = "judgement"
-        elif q_type_code == "4":
-            q_type = "shortanswer"
-        else:
-            logger.info("未知题型代码 -> " + q_type_code)
-            q_type = "unknown"  # 避免出现未定义取值错误
-
-        form_data["questions"].append(
-            {
-                "id": div_tag.attrs["data"],
-                "title": q_title,  # 题目
-                "options": q_options,  # 选项 可提供给题库作为辅助
-                "type": q_type,  # 题型 可提供给题库作为辅助
-                "answerField": {
-                    "answer" + div_tag.attrs["data"]: "",  # 答案填入处
-                    "answertype" + div_tag.attrs["data"]: q_type_code,
-                },
-            }
-        )
-    # 处理答题信息
-    form_data["answerwqbid"] = ",".join([q["id"] for q in form_data["questions"]]) + ","
+        form_data[input_tag.attrs["name"]] = input_tag.attrs.get("value", "")
+    
     return form_data
+
+
+def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
+    """处理单个问题"""
+    # 提取问题ID和题目类型
+    question_id = div_tag.attrs.get("data", "")
+    q_type_code = div_tag.find("div", class_="TiMu").attrs.get("data", "")
+    q_type = _get_question_type(q_type_code)
+    
+    # 提取题目内容和选项
+    title_div = div_tag.find("div", class_="Zy_TItle")
+    options_list = div_tag.find("ul").find_all("li") if div_tag.find("ul") else []
+    
+    # 解析题目和选项
+    q_title = _extract_content(title_div, font_decoder)
+    q_options = "\n".join([_extract_content(li, font_decoder) for li in options_list])
+    
+    return {
+        "id": question_id,
+        "title": q_title,
+        "options": q_options,
+        "type": q_type,
+        "answerField": {
+            f"answer{question_id}": "",
+            f"answertype{question_id}": q_type_code,
+        },
+    }
+
+
+def _get_question_type(type_code: str) -> str:
+    """根据题型代码返回题型名称"""
+    type_map = {
+        "0": "single",      # 单选题
+        "1": "multiple",    # 多选题
+        "2": "completion",  # 填空题
+        "3": "judgement",   # 判断题
+        "4": "shortanswer", # 简答题
+    }
+    
+    if type_code in type_map:
+        return type_map[type_code]
+    
+    logger.info(f"未知题型代码 -> {type_code}")
+    return "unknown"
+
+
+def _extract_content(element, font_decoder=None) -> str:
+    """提取元素内容，支持解码加密字体"""
+    if not element:
+        return ""
+        
+    # 收集元素中的所有文本和图片
+    content = []
+    for item in element.descendants:
+        if isinstance(item, NavigableString):
+            content.append(item.string or "")
+        elif item.name == "img":
+            img_url = item.get("src", "")
+            content.append(f'<img src="{img_url}">')
+    
+    raw_content = "".join(content)
+    cleaned_content = raw_content.replace("\r", "").replace("\t", "").replace("\n", "")
+    
+    # 如果有字体解码器，进行解码
+    if font_decoder:
+        return font_decoder.decode(cleaned_content)
+    
+    return cleaned_content

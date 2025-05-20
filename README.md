@@ -37,6 +37,26 @@
 3. (可选配置文件运行) 下载config_template.ini文件保存为config.ini文件，修改文件内的账号密码内容, 执行 `./chaoxing.exe -c config.ini`
 4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
 
+### Docker运行
+1. 构建Docker镜像
+   ```bash
+   docker build -t chaoxing .
+   ```
+
+2. 运行Docker容器
+   ```bash
+   # 直接运行（将使用默认配置模板）
+   docker run -it chaoxing
+   
+   # 使用自定义配置文件运行
+   docker run -it -v /本地路径/config.ini:/config/config.ini chaoxing
+   ```
+
+3. 配置说明
+   - Docker版本默认使用挂载到 `/config/config.ini` 的配置文件
+   - 首次运行时，会自动将 `config_template.ini` 复制到该位置作为模板
+   - 可以将本地编辑好的配置文件挂载到容器中，按照上述示例命令操作
+
 ### 题库配置说明
 
 在你的配置文件中找到`[tiku]`，按照注释填写想要使用的题库名（即`provider`，大小写要一致），并填写必要信息，如token，然后在启动时添加`-c [你的配置文件路径]`即可。
