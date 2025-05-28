@@ -152,7 +152,7 @@ def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
     font_hashmap = {}
     
     # 处理Base64编码的字体数据
-    if isinstance(font_data, str) and font_data.startswith("data:application/octet-stream;base64,"):
+    if isinstance(font_data, str) and font_data.startswith("data:application/font-ttf;charset=utf-8;base64,"):
         try:
             font_data = BytesIO(base64.b64decode(font_data[47:]))
         except Exception as e:
