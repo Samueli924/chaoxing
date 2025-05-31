@@ -10,7 +10,7 @@ from urllib3 import disable_warnings, exceptions
 
 from api.logger import logger
 from api.base import Chaoxing, Account
-from api.exceptions import LoginError, FormatError, MaxRollBackError
+from api.exceptions import LoginError, InputFormatError, MaxRollBackExceeded
 from api.answer import Tiku
 from api.notification import Notification
 
@@ -52,8 +52,7 @@ def parse_args():
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
         parser.print_help()
-        # 返回一个 SystemExit 异常, 用于退出程序
-        raise SystemExit
+        sys.exit(0)
 
     return parser.parse_args()
 
@@ -126,7 +125,7 @@ class RollBackManager:
     def add_times(self, id: str):
         """增加回滚次数"""
         if id == self.rollback_id and self.rollback_times == 3:
-            raise MaxRollBackError("回滚次数已达3次, 请手动检查学习通任务点完成情况")
+            raise MaxRollBackExceeded("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         else:
             self.rollback_times += 1
 
@@ -241,7 +240,7 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
     
     # 随机等待，避免请求过快
     sleep_duration = random.uniform(1, 3)
-    logger.debug(f"本次随机等待时间: {sleep_duration}")
+    logger.debug(f"本次随机等待时间: {sleep_duration:.3f}s")
     time.sleep(sleep_duration)
     
     # 获取当前章节的所有任务点
@@ -266,8 +265,8 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
         # 遇到开放的章节，重置自动跳过状态
         auto_skip_notopen = False
         RB.new_job(point["id"])
-        
-    except MaxRollBackError as e:
+
+    except MaxRollBackExceeded:
         logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         # 跳过该课程
         return -1, auto_skip_notopen  # 退出标记
@@ -333,8 +332,8 @@ def filter_courses(all_course, course_list):
                 "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
             ).split(",")
         except Exception as e:
-            raise FormatError("输入格式错误") from e
-    
+            raise InputFormatError("输入格式错误") from e
+
     # 筛选需要学习的课程
     course_task = []
     for course in all_course:
@@ -387,16 +386,17 @@ def main():
         notification.send("chaoxing : 所有课程学习任务已完成")
         
     except SystemExit as e:
-        if e.code == 0:  # 正常退出
-            sys.exit(0)
-        else:
-            raise
+        if e.code != 0:
+            logger.error(f"错误: 程序异常退出, 返回码: {e.code}")
+        sys.exit(e.code)
+    except KeyboardInterrupt as e:
+        logger.error(f"错误: 程序被用户手动中断, {e}")
     except BaseException as e:
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         try:
-            notification.send(f"chaoxing : 出现错误", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
-        except:
+            notification.send(f"chaoxing : 出现错误 {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        except Exception:
             pass  # 如果通知发送失败，忽略异常
         raise e
 
