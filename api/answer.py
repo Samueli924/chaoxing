@@ -254,7 +254,7 @@ class TikuYanxi(Tiku):
         if self._token_index == len(token_list):
             # TOKEN 用完
             logger.error('TOKEN用完, 请自行更换再重启脚本')
-            raise Exception(f'{self.name} TOKEN 已用完, 请更换')
+            raise PermissionError(f'{self.name} TOKEN 已用完, 请更换')
         self._token = token_list[self._token_index]
 
     def _init_tiku(self):

@@ -17,6 +17,7 @@ from api.decode import (
     decode_questions_info,
 )
 from api.process import show_progress
+from api.exceptions import MaxRetryExceeded
 
 
 def get_timestamp():
@@ -455,7 +456,7 @@ class Chaoxing:
                             
                             # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
                             if '教师未创建完成该测验' in _resp.text:
-                                raise Exception(f"教师未创建完成该测验")
+                                raise PermissionError("教师未创建完成该测验")
 
                             questions = decode_questions_info(_resp.text)
                     
@@ -468,7 +469,7 @@ class Chaoxing:
                             logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries+1}/{max_retries})")
                         retries += 1
                         time.sleep(delay * (2 ** retries))
-                    raise Exception(f"超过最大重试次数 ({max_retries})")
+                    raise MaxRetryExceeded(f"超过最大重试次数 ({max_retries})")
                 return wrapper
             return decorator
 

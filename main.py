@@ -10,7 +10,7 @@ from urllib3 import disable_warnings, exceptions
 
 from api.logger import logger
 from api.base import Chaoxing, Account
-from api.exceptions import LoginError, FormatError, MaxRollBackError
+from api.exceptions import LoginError, InputFormatError, MaxRollBackExceeded
 from api.answer import Tiku
 from api.notification import Notification
 
@@ -126,7 +126,7 @@ class RollBackManager:
     def add_times(self, id: str):
         """增加回滚次数"""
         if id == self.rollback_id and self.rollback_times == 3:
-            raise MaxRollBackError("回滚次数已达3次, 请手动检查学习通任务点完成情况")
+            raise MaxRollBackExceeded("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         else:
             self.rollback_times += 1
 
@@ -266,8 +266,8 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
         # 遇到开放的章节，重置自动跳过状态
         auto_skip_notopen = False
         RB.new_job(point["id"])
-        
-    except MaxRollBackError as e:
+
+    except MaxRollBackExceeded as e:
         logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         # 跳过该课程
         return -1, auto_skip_notopen  # 退出标记
@@ -333,8 +333,8 @@ def filter_courses(all_course, course_list):
                 "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
             ).split(",")
         except Exception as e:
-            raise FormatError("输入格式错误") from e
-    
+            raise InputFormatError("输入格式错误") from e
+
     # 筛选需要学习的课程
     course_task = []
     for course in all_course:

@@ -1,7 +1,9 @@
 from bs4 import BeautifulSoup
-import api.cxsecret_font as cxfont
 import re
 from typing import Dict, Optional
+
+import api.cxsecret_font as cxfont
+from api.exceptions import FontDecodeError
 
 
 class FontDecoder:
@@ -37,12 +39,12 @@ class FontDecoder:
             style_tag = soup.find("style", id="cxSecretStyle")
             
             if not style_tag or not style_tag.text:
-                raise ValueError("未找到加密字体样式标签")
-                
+                raise FontDecodeError("未找到加密字体样式标签")
+
             match = re.search(self.FONT_BASE64_PATTERN, style_tag.text)
             if not match:
-                raise ValueError("无法从样式标签中提取字体数据")
-                
+                raise FontDecodeError("无法从样式标签中提取字体数据")
+
             font_base64 = match.group(1)
             font_data_url = self.FONT_DATA_URL_PREFIX + font_base64
             self.__font_map = cxfont.font2map(font_data_url)
@@ -63,8 +65,8 @@ class FontDecoder:
             ValueError: 当字体映射未初始化时抛出
         """
         if not self.__font_map:
-            raise ValueError("字体映射未初始化，无法解码")
-        
+            raise FontDecodeError("字体映射未初始化，无法解码")
+
         return cxfont.decrypt(self.__font_map, target_str)
     
     def set_html_content(self, html_content: str) -> None:
