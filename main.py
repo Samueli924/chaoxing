@@ -395,7 +395,7 @@ def main():
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         try:
-            notification.send(f"chaoxing : 出现错误", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
+            notification.send(f"chaoxing : 出现错误 {type(e).__name__}: {e}\n{traceback.format_exc()}")
         except Exception:
             pass  # 如果通知发送失败，忽略异常
         raise e

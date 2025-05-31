@@ -16,6 +16,7 @@ from typing import Dict, IO, Optional, Union
 from fontTools.ttLib.tables._g_l_y_f import Glyph, table__g_l_y_f
 from fontTools.ttLib.ttFont import TTFont
 from api.exceptions import FontDecodeError
+from api.logger import logger
 
 
 # 康熙部首替换表
@@ -103,7 +104,7 @@ class FontHashDAO:
 try:
     fonthash_dao = FontHashDAO()
 except Exception as e:
-    print(f"警告: 初始化字体哈希数据失败 - {e}", file=sys.stderr)
+    logger.warning(f"初始化字体哈希数据失败 - {e}")
     fonthash_dao = FontHashDAO.__new__(FontHashDAO)
     fonthash_dao.char_map = {}
     fonthash_dao.hash_map = {}

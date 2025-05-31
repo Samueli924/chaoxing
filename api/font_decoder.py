@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 import api.cxsecret_font as cxfont
 from api.exceptions import FontDecodeError
+from api.logger import logger
 
 
 class FontDecoder:
@@ -49,7 +50,7 @@ class FontDecoder:
             font_data_url = self.FONT_DATA_URL_PREFIX + font_base64
             self.__font_map = cxfont.font2map(font_data_url)
         except Exception as e:
-            print(f"字体映射初始化失败: {e}")
+            logger.warning(f"初始化字体映射失败: {e}")
             self.__font_map = None
     
     def decode(self, target_str: str) -> str:
