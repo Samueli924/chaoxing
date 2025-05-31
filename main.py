@@ -52,8 +52,7 @@ def parse_args():
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
         parser.print_help()
-        # 返回一个 SystemExit 异常, 用于退出程序
-        raise SystemExit
+        sys.exit(0)
 
     return parser.parse_args()
 
@@ -241,7 +240,7 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
     
     # 随机等待，避免请求过快
     sleep_duration = random.uniform(1, 3)
-    logger.debug(f"本次随机等待时间: {sleep_duration}")
+    logger.debug(f"本次随机等待时间: {sleep_duration:.3f}s")
     time.sleep(sleep_duration)
     
     # 获取当前章节的所有任务点
@@ -267,7 +266,7 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
         auto_skip_notopen = False
         RB.new_job(point["id"])
 
-    except MaxRollBackExceeded as e:
+    except MaxRollBackExceeded:
         logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
         # 跳过该课程
         return -1, auto_skip_notopen  # 退出标记
@@ -387,16 +386,17 @@ def main():
         notification.send("chaoxing : 所有课程学习任务已完成")
         
     except SystemExit as e:
-        if e.code == 0:  # 正常退出
-            sys.exit(0)
-        else:
-            raise
+        if e.code != 0:
+            logger.error(f"错误: 程序异常退出, 返回码: {e.code}")
+        sys.exit(e.code)
+    except KeyboardInterrupt as e:
+        logger.error(f"错误: 程序被用户手动中断, {e}")
     except BaseException as e:
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         try:
             notification.send(f"chaoxing : 出现错误", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
-        except:
+        except Exception:
             pass  # 如果通知发送失败，忽略异常
         raise e
 
