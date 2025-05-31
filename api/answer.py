@@ -279,6 +279,8 @@ class TikuLike(Tiku):
         q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
         api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
         q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
+        option_map = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7, 'a': 0, "b": 1, "c": 2, "d": 3,
+                      "e": 4, "f": 5, "g": 6, "h": 7}
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
         question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
         ret = ""
@@ -296,11 +298,21 @@ class TikuLike(Tiku):
 
         if res.status_code == 200:
             res_json = res.json()
-            q_type = res_json['data'].get('type',0)
-            params = api_params_map.get(q_type,"")
-            ans = res_json['data'].get(params,"")
-            if q_type == 3:
-                ans = "正确" if ans ==1 else "错误"
+            q_type = res_json['data'].get('type', 0)
+            params = api_params_map.get(q_type, "")
+            tans = res_json['data'].get(params, "")
+            ans = ""
+            match q_type:
+                case 1:
+                    for i in tans:
+                        ans = ans + q_info['options'][option_map[i]] + '\n'
+                case 2:
+                    for i in tans:
+                        ans = ans + q_info['options'][int(i)-1] + '\n'
+                case 3:
+                    ans = "正确" if tans == 1 else "错误"
+                case 0:
+                    ans = tans
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
             return None
@@ -337,8 +349,10 @@ class TikuLike(Tiku):
         self._token = token
 
     def load_config(self):
-        var_params = {"likeapi_search":self._search,"likeapi_model":self._model}
-        config_params = {"likeapi_search":False, "likeapi_model":None}
+        self._search = self._conf['likeapi_search']
+        self._model = self._conf['likeapi_model']
+        var_params = {"likeapi_search": self._search, "likeapi_model": self._model}
+        config_params = {"likeapi_search": False, "likeapi_model": None}
 
         for k,v in config_params.items():
             if k in self._conf:
