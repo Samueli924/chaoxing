@@ -254,7 +254,7 @@ class TikuYanxi(Tiku):
         if self._token_index == len(token_list):
             # TOKEN 用完
             logger.error('TOKEN用完, 请自行更换再重启脚本')
-            raise Exception(f'{self.name} TOKEN 已用完, 请更换')
+            raise PermissionError(f'{self.name} TOKEN 已用完, 请更换')
         self._token = token_list[self._token_index]
 
     def _init_tiku(self):
@@ -280,7 +280,7 @@ class TikuLike(Tiku):
         api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
         q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
-        question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
+        question = f"{q_info_prefix}{q_info['title']}\n{options}"
         ret = ""
         ans = ""
         res = requests.post(
@@ -328,7 +328,7 @@ class TikuLike(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             self._times = res_json["data"].get("balance",self._times)
-            logger.info("当前LIKE知识库Token剩余查询次数为: {}".format(str(self._times)))
+            logger.info(f"当前LIKE知识库Token剩余查询次数为: {self._times}")
         else:
             logger.error('TOKEN出现错误，请检查后再试')
 
@@ -590,7 +590,7 @@ class SiliconFlow(Tiku):
                 return None
                 
         except Exception as e:
-            logger.error(f"硅基流动API异常：{str(e)}")
+            logger.error(f"硅基流动API异常：{e}")
             return None
 
     def _init_tiku(self):
