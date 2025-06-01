@@ -15,6 +15,8 @@ from typing import Dict, IO, Optional, Union
 
 from fontTools.ttLib.tables._g_l_y_f import Glyph, table__g_l_y_f
 from fontTools.ttLib.ttFont import TTFont
+from api.exceptions import FontDecodeError
+from api.logger import logger
 
 
 # 康熙部首替换表
@@ -71,7 +73,7 @@ class FontHashDAO:
                 self.char_map = json.load(fp)
                 self.hash_map = {hash_val: char for char, hash_val in self.char_map.items()}
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            raise type(e)(f"加载字体映射表失败: {full_path} - {str(e)}")
+            raise FontDecodeError(f"加载字体映射表失败: {full_path} - {e}") from e
 
     def find_char(self, font_hash: str) -> Optional[str]:
         """
@@ -102,7 +104,7 @@ class FontHashDAO:
 try:
     fonthash_dao = FontHashDAO()
 except Exception as e:
-    print(f"警告: 初始化字体哈希数据失败 - {e}", file=sys.stderr)
+    logger.warning(f"初始化字体哈希数据失败 - {e}")
     fonthash_dao = FontHashDAO.__new__(FontHashDAO)
     fonthash_dao.char_map = {}
     fonthash_dao.hash_map = {}
@@ -156,8 +158,8 @@ def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
         try:
             font_data = BytesIO(base64.b64decode(font_data[47:]))
         except Exception as e:
-            raise ValueError(f"无法解码Base64字体数据: {e}")
-    
+            raise FontDecodeError(f"无法解码Base64字体数据: {e}") from e
+
     try:
         with TTFont(font_data, lazy=False) as font_file:
             table: table__g_l_y_f = font_file["glyf"]
@@ -167,8 +169,8 @@ def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
                     if glyph_hash:
                         font_hashmap[name] = glyph_hash
     except Exception as e:
-        raise ValueError(f"无法解析字体文件: {e}")
-    
+        raise FontDecodeError(f"无法解析字体文件: {e}") from e
+
     return font_hashmap
 
 
