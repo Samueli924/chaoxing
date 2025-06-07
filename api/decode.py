@@ -384,8 +384,13 @@ def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
     options_list = div_tag.find("ul").find_all("li") if div_tag.find("ul") else []
     
     # 解析题目和选项
-    q_title = _extract_content(title_div, font_decoder)
-    q_options = "\n".join([_extract_content(li, font_decoder) for li in options_list])
+    q_title = _extract_title(title_div, font_decoder)
+    q_options = []
+    for li in options_list:
+        q_options.append(_extract_choices(li, font_decoder))
+    # 排序选项
+    q_options.sort()
+    q_options = '\n'.join(q_options)
     
     return {
         "id": question_id,
@@ -416,8 +421,8 @@ def _get_question_type(type_code: str) -> str:
     return "unknown"
 
 
-def _extract_content(element, font_decoder=None) -> str:
-    """提取元素内容，支持解码加密字体"""
+def _extract_title(element, font_decoder=None) -> str:
+    """提取标题内容，支持解码加密字体"""
     if not element:
         return ""
         
@@ -432,6 +437,22 @@ def _extract_content(element, font_decoder=None) -> str:
     
     raw_content = "".join(content)
     cleaned_content = raw_content.replace("\r", "").replace("\t", "").replace("\n", "")
+    
+    # 如果有字体解码器，进行解码
+    if font_decoder:
+        return font_decoder.decode(cleaned_content)
+    
+    return cleaned_content
+
+def _extract_choices(element, font_decoder=None) -> str:
+    """提取选项内容，支持解码加密字体"""
+    if not element:
+        return ""
+        
+    # 提取aria-label属性值作为选项，解决#474
+    choice = element.get('aria-label')
+    
+    cleaned_content = choice.replace("\r", "").replace("\t", "").replace("\n", "")
     
     # 如果有字体解码器，进行解码
     if font_decoder:

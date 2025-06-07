@@ -433,6 +433,10 @@ class AI(Tiku):
             client = OpenAI(http_client=httpx_client, base_url = self.endpoint,api_key = self.key)
         else:
             client = OpenAI(base_url = self.endpoint,api_key = self.key)
+        # 去除选项字母，防止大模型直接输出字母而非内容
+        options_list = q_info['options'].split('\n')
+        cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
+        options = "\n".join(cleaned_options)
         # 判断题目类型
         if q_info['type'] == "single":
             completion = client.chat.completions.create(
@@ -440,11 +444,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
             )
@@ -454,11 +458,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
             )
