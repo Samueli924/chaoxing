@@ -197,9 +197,9 @@ class ServerChan(NotificationService):
             result = response.json()
             logger.info(f"Server酱通知发送成功: {result}")
         except requests.RequestException as e:
-            logger.error(f"Server酱通知发送失败: {str(e)}")
+            logger.error(f"Server酱通知发送失败: {e}")
         except ValueError as e:
-            logger.error(f"Server酱返回数据解析失败: {str(e)}")
+            logger.error(f"Server酱返回数据解析失败: {e}")
 
 
 class Qmsg(NotificationService):
@@ -233,9 +233,9 @@ class Qmsg(NotificationService):
             result = response.json()
             logger.info(f"Qmsg酱通知发送成功: {result}")
         except requests.RequestException as e:
-            logger.error(f"Qmsg酱通知发送失败: {str(e)}")
+            logger.error(f"Qmsg酱通知发送失败: {e}")
         except ValueError as e:
-            logger.error(f"Qmsg酱返回数据解析失败: {str(e)}")
+            logger.error(f"Qmsg酱返回数据解析失败: {e}")
 
 
 class Bark(NotificationService):
@@ -268,9 +268,9 @@ class Bark(NotificationService):
             result = response.json()
             logger.info(f"Bark通知发送成功: {result}")
         except requests.RequestException as e:
-            logger.error(f"Bark通知发送失败: {str(e)}")
+            logger.error(f"Bark通知发送失败: {e}")
         except ValueError as e:
-            logger.error(f"Bark返回数据解析失败: {str(e)}")
+            logger.error(f"Bark返回数据解析失败: {e}")
 
 
 # 为了向后兼容，保留原来的Notification类
