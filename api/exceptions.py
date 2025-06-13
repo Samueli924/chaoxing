@@ -9,11 +9,21 @@ class LoginError(Exception):
         super().__init__(*args)
 
 
-class FormatError(Exception):
+class InputFormatError(Exception):
     def __init__(self, *args: object):
         super().__init__(*args)
 
 
-class MaxRollBackError(Exception):
+class MaxRollBackExceeded(Exception):
+    def __init__(self, *args: object):
+        super().__init__(*args)
+
+
+class MaxRetryExceeded(Exception):
+    def __init__(self, *args: object):
+        super().__init__(*args)
+
+
+class FontDecodeError(Exception):
     def __init__(self, *args: object):
         super().__init__(*args)

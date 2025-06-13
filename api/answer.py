@@ -254,7 +254,7 @@ class TikuYanxi(Tiku):
         if self._token_index == len(token_list):
             # TOKEN 用完
             logger.error('TOKEN用完, 请自行更换再重启脚本')
-            raise Exception(f'{self.name} TOKEN 已用完, 请更换')
+            raise PermissionError(f'{self.name} TOKEN 已用完, 请更换')
         self._token = token_list[self._token_index]
 
     def _init_tiku(self):
@@ -279,8 +279,10 @@ class TikuLike(Tiku):
         q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
         api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
         q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
+        option_map = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7, 'a': 0, "b": 1, "c": 2, "d": 3,
+                      "e": 4, "f": 5, "g": 6, "h": 7}
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
-        question = "{}{}\n{}".format(q_info_prefix,q_info['title'],options)
+        question = f"{q_info_prefix}{q_info['title']}\n{options}"
         ret = ""
         ans = ""
         res = requests.post(
@@ -296,11 +298,21 @@ class TikuLike(Tiku):
 
         if res.status_code == 200:
             res_json = res.json()
-            q_type = res_json['data'].get('type',0)
-            params = api_params_map.get(q_type,"")
-            ans = res_json['data'].get(params,"")
-            if q_type == 3:
-                ans = "正确" if ans ==1 else "错误"
+            q_type = res_json['data'].get('type', 0)
+            params = api_params_map.get(q_type, "")
+            tans = res_json['data'].get(params, "")
+            ans = ""
+            match q_type:
+                case 1:
+                    for i in tans:
+                        ans = ans + q_info['options'][option_map[i]] + '\n'
+                case 2:
+                    for i in tans:
+                        ans = ans + q_info['options'][int(i)-1] + '\n'
+                case 3:
+                    ans = "正确" if tans == 1 else "错误"
+                case 0:
+                    ans = tans
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
             return None
@@ -328,7 +340,7 @@ class TikuLike(Tiku):
         if res.status_code == 200:
             res_json = res.json()
             self._times = res_json["data"].get("balance",self._times)
-            logger.info("当前LIKE知识库Token剩余查询次数为: {}".format(str(self._times)))
+            logger.info(f"当前LIKE知识库Token剩余查询次数为: {self._times}")
         else:
             logger.error('TOKEN出现错误，请检查后再试')
 
@@ -337,8 +349,10 @@ class TikuLike(Tiku):
         self._token = token
 
     def load_config(self):
-        var_params = {"likeapi_search":self._search,"likeapi_model":self._model}
-        config_params = {"likeapi_search":False, "likeapi_model":None}
+        self._search = self._conf['likeapi_search']
+        self._model = self._conf['likeapi_model']
+        var_params = {"likeapi_search": self._search, "likeapi_model": self._model}
+        config_params = {"likeapi_search": False, "likeapi_model": None}
 
         for k,v in config_params.items():
             if k in self._conf:
@@ -419,6 +433,10 @@ class AI(Tiku):
             client = OpenAI(http_client=httpx_client, base_url = self.endpoint,api_key = self.key)
         else:
             client = OpenAI(base_url = self.endpoint,api_key = self.key)
+        # 去除选项字母，防止大模型直接输出字母而非内容
+        options_list = q_info['options'].split('\n')
+        cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
+        options = "\n".join(cleaned_options)
         # 判断题目类型
         if q_info['type'] == "single":
             completion = client.chat.completions.create(
@@ -426,11 +444,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
             )
@@ -440,11 +458,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，特别注意回答的内容需要去除选项内容前的字母，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
             )
@@ -590,7 +608,7 @@ class SiliconFlow(Tiku):
                 return None
                 
         except Exception as e:
-            logger.error(f"硅基流动API异常：{str(e)}")
+            logger.error(f"硅基流动API异常：{e}")
             return None
 
     def _init_tiku(self):

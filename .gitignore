@@ -137,6 +137,9 @@ dist/
 # just like Pipfile.lock,
 uv.lock
 
+# poetry
+poetry.lock
+
 # Custom files
 .cookies.txt
 cookies.txt
