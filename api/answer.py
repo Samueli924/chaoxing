@@ -308,7 +308,7 @@ class TikuLike(Tiku):
                         ans = ans + q_info['options'][option_map[i]] + '\n'
                 case 2:
                     for i in tans:
-                        ans = ans + q_info['options'][int(i)-1] + '\n'
+                        ans = ans + i + '\n'
                 case 3:
                     ans = "正确" if tans == 1 else "错误"
                 case 0:
