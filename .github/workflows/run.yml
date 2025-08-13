@@ -31,5 +31,5 @@ jobs:
       - name: Run script
         run: python main.py
         env: 
-          username: ${{ secrets.username }}
+          phone: ${{ secrets.phone }}
           password: ${{ secrets.password }}
