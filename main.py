@@ -138,12 +138,19 @@ class RollBackManager:
 
 def init_chaoxing(common_config, tiku_config):
     """初始化超星实例"""
-    username = common_config.get("username", "")
-    password = common_config.get("password", "")
+    # 从环境中读取用户名与密码
+    username = os.getenv("PHONE")
+    password = os.getenv("PASSWORD")
+
+    if not username or not password:
+        username = common_config.get("username", "")
+        password = common_config.get("password", "")
+    # 如果环境中没有 从配置中读取
     
     # 如果没有提供用户名密码，从命令行获取
-    if not username or not password:
+    if not username:
         username = input("请输入你的手机号, 按回车确认\n手机号:")
+    if not password:
         password = input("请输入你的密码, 按回车确认\n密码:")
     
     account = Account(username, password)
