@@ -140,7 +140,7 @@ def init_chaoxing(common_config, tiku_config):
     """初始化超星实例"""
 
     # 从环境中读取用户名与密码
-    username = os.getenv("username")
+    username = os.getenv("phone")
     password = os.getenv("password")
 
     if not username or not password:
