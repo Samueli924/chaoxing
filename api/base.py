@@ -85,7 +85,7 @@ class Chaoxing:
             "uname": self.cipher.encrypt(self.account.username),
             "password": self.cipher.encrypt(self.account.password),
             "refer": "https%3A%2F%2Fi.chaoxing.com",
-            "t": True,
+            "t": "true",
             "forbidotherlogin": 0,
             "validate": "",
             "doubleFactorLogin": 0,
