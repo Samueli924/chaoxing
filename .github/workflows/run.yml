@@ -1,28 +1,20 @@
 name: Run
 
 on:
-  push:
-
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            architecture: 'x86'
-            name: 'win32'
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
           python-version: '3.10'
-          architecture: ${{matrix.architecture}}
 
       - name: Install requirements
         run: |
@@ -33,3 +25,4 @@ jobs:
         env: 
           PHONE: ${{ secrets.PHONE }}
           PASSWORD: ${{ secrets.PASSWORD }}
+          # Settings-Security-Secrets and variables-Actions-Repository secrets
