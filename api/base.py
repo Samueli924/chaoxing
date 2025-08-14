@@ -252,7 +252,7 @@ class Chaoxing:
         _video_info = _session.get(_info_url).json()
         if _video_info["status"] == "success":
             _dtoken = _video_info["dtoken"]
-            _duration = _video_info["duration"]
+            _duration:int = _video_info["duration"]
             _crc = _video_info["crc"]
             _key = _video_info["key"]
             _isPassed = False
@@ -260,6 +260,14 @@ class Chaoxing:
             _playingTime = 0
             logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
             state = 200
+
+            _interactive_quiz = self.get_interactive_quiz(_course, _job)
+            if _interactive_quiz:
+                _eventid = _interactive_quiz["resourceId"]
+                _memberinfo = _interactive_quiz["memberinfo"]
+                _quiz_options:list = _interactive_quiz["options"]
+                _startTime = _interactive_quiz["startTime"]
+
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
@@ -273,13 +281,18 @@ class Chaoxing:
                     _playingTime,
                     _type,
                 )
+
+                if _interactive_quiz and _playingTime >= _startTime:
+                    self.do_interactive_quiz(_course, _job, _eventid, _memberinfo, _quiz_options)
+                
                 if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
                 if _isPassed and not _isPassed["isPassed"] and state == 403:
                     return self.StudyResult.FORBIDDEN
+
                 _wait_time = get_random_seconds()
-                if _playingTime + _wait_time >= int(_duration):
-                    _wait_time = int(_duration) - _playingTime
+                if _playingTime + _wait_time >= _duration:
+                    _wait_time = _duration - _playingTime
                     _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
                     if _isPassed['isPassed']:
                         _isFinished = True
@@ -291,6 +304,57 @@ class Chaoxing:
             return self.StudyResult.SUCCESS
         else:
             return self.StudyResult.ERROR
+    
+    def get_interactive_quiz(self, _course, card):
+        logger.trace("开始获取互动测验内容...")
+        _session = init_session(isVideo = True)
+        _url = (
+            f"https://mooc1.chaoxing.com/mooc-ans/richvideo/initdatawithviewerV2?"
+            f"mid={card["mid"]}&"
+            f"cpi={_course["cpi"]}&"
+            f"classid={_course['clazzId']}&"
+            f"courseid={_course['courseId']}&"
+            f"_dc={get_timestamp()}"
+        )
+        _resp = _session.get(_url)
+
+        if _resp.status_code == 200:
+            if _resp.json():
+                return _resp.json()[0]["datas"][0]
+            else:
+                logger.error("获取互动测验内容失败")
+    
+    def do_interactive_quiz(self, _course, _job, eventid, memberinfo, quiz_options):
+        _session = init_session()
+        _url = (
+            f"https://mooc1.chaoxing.com/mooc-ans/question/quiz-rightcount?"
+            f"classid={_course['clazzId']}&"
+            f"cpi={_course["cpi"]}&"
+            f"_dc={get_timestamp()}&"
+            f"eventid={eventid}&"
+            f"memberinfo={memberinfo}"
+        )
+        _session.get(_url)
+        # 开始答题
+
+        for option in quiz_options:
+            _url = (
+                f"https://mooc1.chaoxing.com/mooc-ans/question/quiz-validation?"
+                f"classid={_course['clazzId']}&"
+                f"cpi={_course["cpi"]}&"
+                f"objectid={_job["objectid"]}&"
+                f"_dc={get_timestamp()}&"
+                f"eventid={eventid}&"
+                f"memberinfo={memberinfo}&"
+                f"answerContent={option["name"]}"
+            )
+            _resp = _session.get(_url)
+            # 提交答案
+
+            if _resp.json()["isRight"]:
+                break
+        # 猜答案
+
     def study_document(self, _course, _job) -> StudyResult:
         """
         Study a document in Chaoxing platform.
