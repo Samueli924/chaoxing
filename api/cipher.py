@@ -30,8 +30,8 @@ def split_to_data_blocks(byte_str, block_size=16):
 
 class AESCipher:
     def __init__(self):
-        self.key = str(gc.AESKey).encode("utf8")
-        self.iv = str(gc.AESKey).encode("utf8")
+        self.key = str(gc.AES_KEY).encode("utf8")
+        self.iv = str(gc.AES_KEY).encode("utf8")
 
     def encrypt(self, plaintext: str):
         ciphertext = b""

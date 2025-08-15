@@ -20,12 +20,11 @@ from api.process import show_progress
 from api.exceptions import MaxRetryExceeded
 
 
-def get_timestamp():
+def get_timestamp() -> str:
+    """
+    Unit: milliseconds
+    """
     return str(int(time.time() * 1000))
-
-
-def get_random_seconds():
-    return random.randint(30, 90)
 
 
 def init_session(isVideo: bool = False, isAudio: bool = False):
@@ -101,12 +100,10 @@ class Chaoxing:
             return {"status": False, "msg": str(resp.json()["msg2"])}
 
     def get_fid(self):
-        _session = init_session()
-        return _session.cookies.get("fid")
+        return use_cookies().get("fid")
 
     def get_uid(self):
-        _session = init_session()
-        return _session.cookies.get("_uid")
+        return use_cookies().get("_uid")
 
     def get_course_list(self):
         _session = init_session()
@@ -161,7 +158,7 @@ class Chaoxing:
             "5",
             "6",
         ]:  # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
-            _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
+            _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=2025-0424-1038-3&mooc2=1"
             logger.trace("开始读取章节所有任务点...")
             _resp = _session.get(_url)
             _job_list, _job_info = decode_course_card(_resp.text)
@@ -230,6 +227,7 @@ class Chaoxing:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
             return {"isPassed": False}, 403  # 返回一个字典和当前状态
+    
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
     ) -> StudyResult:
@@ -280,7 +278,7 @@ class Chaoxing:
                 if _isPassed and not _isPassed["isPassed"] and state == 403:
                     return self.StudyResult.FORBIDDEN
 
-                _wait_time = get_random_seconds()
+                _wait_time = random.randint(30, 90)
                 if _playingTime + _wait_time >= _duration:
                     _wait_time = _duration - _playingTime
                     _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)

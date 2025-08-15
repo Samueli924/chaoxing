@@ -59,4 +59,4 @@ def show_progress(task_name: str, start_position: int, duration: int,
         )
         
         print(progress_text, end="", flush=True)
-        time.sleep(gc.THRESHOLD)
+        time.sleep(gc.DELAY)
