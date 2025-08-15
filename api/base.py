@@ -272,6 +272,7 @@ class Chaoxing:
 
                 if _interactive_quiz and _playingTime >= _startTime:
                     self.do_interactive_quiz(_course, _job, _eventid, _memberinfo, _quiz_options)
+                    _interactive_quiz = None
                 
                 if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
@@ -310,7 +311,7 @@ class Chaoxing:
             if _resp.json():
                 return _resp.json()[0]["datas"][0]
             else:
-                logger.error("获取互动测验内容失败")
+                logger.info("未获取到互动测验内容")
     
     def do_interactive_quiz(self, _course, _job, eventid, memberinfo, quiz_options):
         _session = init_session()
@@ -322,8 +323,10 @@ class Chaoxing:
             f"eventid={eventid}&"
             f"memberinfo={memberinfo}"
         )
-        _session.get(_url)
+        _start_response = _session.get(_url)
         # 开始答题
+        if _start_response.status_code != 200:
+            return
 
         for option in quiz_options:
             _url = (
@@ -336,10 +339,10 @@ class Chaoxing:
                 f"memberinfo={memberinfo}&"
                 f"answerContent={option["name"]}"
             )
-            _resp = _session.get(_url)
+            _submit_response = _session.get(_url)
             # 提交答案
 
-            if _resp.json()["isRight"]:
+            if _submit_response.json()["isRight"]:
                 break
         # 猜答案
 
