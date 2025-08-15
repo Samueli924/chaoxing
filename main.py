@@ -7,6 +7,7 @@ import sys
 import os
 import traceback
 from urllib3 import disable_warnings, exceptions
+from questionary import checkbox
 
 from api.logger import logger
 from api.base import Chaoxing, Account
@@ -327,19 +328,22 @@ def process_course(chaoxing, course, notopen_action, speed):
 
 
 def filter_courses(all_course, course_list):
-    """过滤要学习的课程"""
+    """过滤要学习的课程"""  
     if not course_list:
-        # 手动输入要学习的课程ID列表
-        print("*" * 10 + "课程列表" + "*" * 10)
+        # print("*" * 10 + "课程列表" + "*" * 10)
+        choices_list = []
         for course in all_course:
-            print(f"ID: {course['courseId']} 课程名: {course['title']}")
-        print("*" * 28)
-        try:
-            course_list = input(
-                "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
-            ).split(",")
-        except Exception as e:
-            raise InputFormatError("输入格式错误") from e
+            choices_list.append({
+                "name": f"ID: {course['courseId']} 课程名: {course['title']}",
+                "value": course['courseId']
+            })
+
+        course_list = checkbox(
+            "请选择想要学习的课程:",
+            choices=choices_list,
+            instruction="(使用↑↓移动、空格选择、A全选、I反选、Enter确认)"
+        ).ask()
+        # print("*" * 28)
 
     # 筛选需要学习的课程
     course_task = []

@@ -9,3 +9,4 @@ flask
 fonttools
 openai
 ddddocr==1.5.6
+questionary
