@@ -113,24 +113,14 @@ class Chaoxing:
         _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
         _data = {"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0}
         logger.trace("正在读取所有的课程列表...")
-        # 接口突然抽风, 增加headers
-        _headers = {
-            "Host": "mooc2-ans.chaoxing.com",
-            "sec-ch-ua-platform": '"Windows"',
+        '''
+        _session.headers.update({
             "X-Requested-With": "XMLHttpRequest",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-            "Accept": "text/html, */*; q=0.01",
-            "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "sec-ch-ua-mobile": "?0",
             "Origin": "https://mooc2-ans.chaoxing.com",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty",
             "Referer": "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction?moocDomain=https://mooc1-1.chaoxing.com/mooc-ans",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
-        }
-        _resp = _session.post(_url, headers=_headers, data=_data)
+        })
+        '''
+        _resp = _session.post(_url, _data)
         # logger.trace(f"原始课程列表内容:\n{_resp.text}")
         logger.info("课程列表读取完毕...")
         course_list = decode_course_list(_resp.text)
