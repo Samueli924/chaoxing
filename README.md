@@ -1,4 +1,4 @@
-# :computer: 超星学习通自动化完成任务点(命令行版)
+# :computer: 超星学习通自动化完成任务点
 
 <p align="center">
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
@@ -18,13 +18,10 @@
 
 :star: 觉得有帮助的朋友可以给个Star
 
-## :point_up: 更新通知
-20241021更新通知： 感谢[sz134055](https://github.com/sz134055)提交代码[PR #360](https://github.com/Samueli924/chaoxing/pull/360)，**添加了对题库答题的支持**  
-
 ## :books: 使用方法
 
 ### 源码运行
-1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
+1. `git clone --depth=1 https://github.com/AneryCoft/chaoxing` 项目至本地
 2. `cd chaoxing`
 3. `pip install -r requirements.txt` 或者 `pip install .`(通过 pyproject.toml 安装依赖)
 4. (可选直接运行) `python main.py`
@@ -32,7 +29,7 @@
 6. (可选命令行运行)`python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
 
 ### 打包文件运行
-1. 从最新[Releases](https://github.com/Samueli924/chaoxing/releases)中下载exe文件
+1. 从最新[Releases](https://github.com/AneryCoft/chaoxing/releases)中下载exe文件
 2. (可选直接运行) 双击运行即可
 3. (可选配置文件运行) 下载config_template.ini文件保存为config.ini文件，修改文件内的账号密码内容, 执行 `./chaoxing.exe -c config.ini`
 4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
@@ -99,11 +96,11 @@ python main.py -a ask  # 使用询问模式
 
 ![Alt](https://repobeats.axiom.co/api/embed/d3931e84b4b2f17cbe60cafedb38114bdf9931cb.svg "Repobeats analytics image")  
 
-<a style="margin-top: 15px" href="https://github.com/Samueli924/chaoxing/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Samueli924/chaoxing" />
+<a style="margin-top: 15px" href="https://github.com/AneryCoft/chaoxing/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=AneryCoft/chaoxing" />
 </a>
 
 ## :warning: 免责声明
-- 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE) 协议，允许**开源/免费使用和引用/修改/衍生代码的开源/免费使用**，不允许**修改和衍生的代码作为闭源的商业软件发布和销售**，禁止**使用本代码盈利**，以此代码为基础的程序**必须**同样遵守 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE) 协议
+- 本代码遵循 [GPL-3.0 License](https://github.com/AneryCoft/chaoxing/blob/main/LICENSE) 协议，允许**开源/免费使用和引用/修改/衍生代码的开源/免费使用**，不允许**修改和衍生的代码作为闭源的商业软件发布和销售**，禁止**使用本代码盈利**，以此代码为基础的程序**必须**同样遵守 [GPL-3.0 License](https://github.com/AneryCoft/chaoxing/blob/main/LICENSE) 协议
 - 本代码仅用于**学习讨论**，禁止**用于盈利**
 - 他人或组织使用本代码进行的任何**违法行为**与本人无关
