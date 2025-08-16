@@ -67,6 +67,13 @@ class Chaoxing:
         @staticmethod
         def is_failure(result):
             return result != Chaoxing.StudyResult.SUCCESS
+    
+    class VideoState(Enum):
+        PLAY = 0
+        DRAG = 1
+        PAUSE = 2
+        START = 3
+        END = 4
 
     def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
         self.account = account
@@ -184,12 +191,13 @@ class Chaoxing:
         _session,
         _course,
         _job,
-        _job_info,
+        # _job_info,
         _dtoken,
-        _duration,
-        _playingTime,
-        _type: str = "Video",
-    ):
+        _type: str,
+        _duration: int,
+        _playingTime: int,
+        _video_state: VideoState = VideoState.PLAY
+    ) -> tuple[bool, int]:
         if "courseId" in _job["otherinfo"]:
             _mid_text = f"otherInfo={_job['otherinfo']}&"
         else:
@@ -208,7 +216,7 @@ class Chaoxing:
                 f"{_mid_text}"
                 f"jobid={_job['jobid']}&"
                 f"userid={self.get_uid()}&"
-                f"isdrag=3&"
+                f"isdrag={_video_state.value}&"
                 f"view=pc&"
                 f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
                 f"rt={_possible_rt}&"
@@ -222,11 +230,14 @@ class Chaoxing:
             elif resp.status_code == 403:
                 continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
         if _success:
-            return resp.json(), 200
+            if resp.json():
+                return resp.json()["isPassed"], 200
+            else:
+                return True, 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            return {"isPassed": False}, 403  # 返回一个字典和当前状态
+            return False, 403  # 返回一个字典和当前状态
     
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
@@ -235,14 +246,14 @@ class Chaoxing:
             _session = init_session(isVideo=True)
         else:
             _session = init_session(isAudio=True)
-        _session.headers.update()
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         _video_info = _session.get(_info_url).json()
         if _video_info["status"] == "success":
             _dtoken = _video_info["dtoken"]
             _duration:int = _video_info["duration"]
-            _crc = _video_info["crc"]
-            _key = _video_info["key"]
+            # _crc = _video_info["crc"]
+            # _key = _video_info["key"]
+
             _isPassed = False
             _isFinished = False
             _playingTime = 0
@@ -255,39 +266,43 @@ class Chaoxing:
                 _memberinfo = _interactive_quiz["memberinfo"]
                 _quiz_options:list = _interactive_quiz["options"]
                 _startTime = _interactive_quiz["startTime"]
+            
+            params = (_session, _course, _job, _dtoken, _type, _duration)
+            _isPassed, state = self.video_progress_log(*params, _playingTime, self.VideoState.START)
 
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
-                _isPassed, state = self.video_progress_log(
-                    _session,
-                    _course,
-                    _job,
-                    _job_info,
-                    _dtoken,
-                    _duration,
-                    _playingTime,
-                    _type,
-                )
-
+                
+                if _isPassed:
+                    break
+                if not _isPassed and state == 403:
+                    return self.StudyResult.FORBIDDEN
+                
+                _isPassed, state = self.video_progress_log(*params, _playingTime)
+                
                 if _interactive_quiz and _playingTime >= _startTime:
+                    self.video_progress_log(*params, _playingTime, self.VideoState.PAUSE)
                     self.do_interactive_quiz(_course, _job, _eventid, _memberinfo, _quiz_options)
                     _interactive_quiz = None
-                
-                if not _isPassed or (_isPassed and _isPassed["isPassed"]):
-                    break
-                if _isPassed and not _isPassed["isPassed"] and state == 403:
-                    return self.StudyResult.FORBIDDEN
+                    self.video_progress_log(
+                        *params,
+                        _playingTime,
+                        self.VideoState.START
+                    )
 
                 _wait_time = random.randint(30, 90)
                 if _playingTime + _wait_time >= _duration:
                     _wait_time = _duration - _playingTime
-                    _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
-                    if _isPassed['isPassed']:
-                        _isFinished = True
+                    _isPassed, state = self.video_progress_log(*params, _duration, self.VideoState.END)
+                    if not _isPassed:
+                        _isPassed, state = self.video_progress_log(*params, 0, self.VideoState.START)
+                        # 部分视频播放结束后依然未显示通过
+                    _isFinished = True
                 # 播放进度条
                 show_progress(_job["name"], _playingTime, _wait_time, _duration, _speed)
                 _playingTime += _wait_time
+            
             print("\r", end="", flush=True)
             logger.info(f"任务完成: {_job['name']}")
             return self.StudyResult.SUCCESS
