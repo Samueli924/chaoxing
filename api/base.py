@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+import time
 from enum import Enum
 from hashlib import md5
+from functools import wraps
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -9,6 +11,7 @@ from api.answer import *
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
 from api.cookies import save_cookies, use_cookies
+from api.captcha import CxCaptcha, ocr_init
 from api.decode import (
     decode_course_list,
     decode_course_point,
@@ -20,26 +23,170 @@ from api.process import show_progress
 from api.exceptions import MaxRetryExceeded
 
 
+class Error403Monitor:
+    """403错误监控类，用于统计和分析403错误"""
+    
+    def __init__(self):
+        self.error_count = 0
+        self.error_times = []
+        self.error_functions = {}
+        self.last_error_time = None
+        
+    def record_error(self, function_name, error_details=None):
+        """记录403错误"""
+        current_time = time.time()
+        self.error_count += 1
+        self.error_times.append(current_time)
+        self.last_error_time = current_time
+        
+        if function_name not in self.error_functions:
+            self.error_functions[function_name] = 0
+        self.error_functions[function_name] += 1
+        
+        logger.warning(f"记录403错误: 函数={function_name}, 总计={self.error_count}次, 详情={error_details}")
+        
+    def get_error_frequency(self, time_window=300):  # 5分钟窗口
+        """获取指定时间窗口内的错误频率"""
+        current_time = time.time()
+        recent_errors = [t for t in self.error_times if current_time - t <= time_window]
+        return len(recent_errors)
+        
+    def should_pause(self, max_errors_per_window=5, time_window=300):
+        """判断是否应该暂停操作"""
+        frequency = self.get_error_frequency(time_window)
+        if frequency >= max_errors_per_window:
+            logger.error(f"403错误频率过高: {frequency}次/{time_window}秒，建议暂停操作")
+            return True
+        return False
+        
+    def get_statistics(self):
+        """获取错误统计信息"""
+        return {
+            "total_errors": self.error_count,
+            "error_functions": self.error_functions,
+            "recent_frequency": self.get_error_frequency(),
+            "last_error_time": self.last_error_time
+        }
+
+
 def get_timestamp():
-    return str(int(time.time() * 1000))
+    return int(time.time() * 1000)
 
 
 def get_random_seconds():
     return random.randint(30, 90)
 
 
-def init_session(isVideo: bool = False, isAudio: bool = False):
+def handle_403_error(max_retries=2, delay_range=(3, 8)):
+    """
+    403错误处理装饰器
+    当遇到403错误时，自动重试并记录详细日志
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            import random
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    result = func(self, *args, **kwargs)
+                    
+                    # 检查返回结果是否包含403错误信息
+                    if isinstance(result, tuple) and len(result) == 2:
+                        data, status_code = result
+                        if status_code == 403:
+                            if attempt < max_retries:
+                                delay = random.uniform(*delay_range)
+                                logger.warning(f"函数 {func.__name__} 遇到403错误，第{attempt + 1}次重试，延迟{delay:.1f}秒...")
+                                time.sleep(delay)
+                                
+                                # 尝试重新登录
+                                if hasattr(self, 'relogin_on_403'):
+                                    if not self.relogin_on_403():
+                                        logger.error(f"函数 {func.__name__} 重新登录失败")
+                                        break
+                                continue
+                            else:
+                                logger.error(f"函数 {func.__name__} 在{max_retries}次重试后仍然遇到403错误")
+                    
+                    return result
+                    
+                except Exception as e:
+                    if attempt < max_retries:
+                        delay = random.uniform(*delay_range)
+                        logger.warning(f"函数 {func.__name__} 执行异常: {e}，第{attempt + 1}次重试，延迟{delay:.1f}秒...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"函数 {func.__name__} 在{max_retries}次重试后仍然异常: {e}")
+                        raise
+            
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def init_session(isVideo: bool = False, isAudio: bool = False, use_random_ua: bool = False):
     _session = requests.session()
     _session.verify = False
     _session.mount("http://", HTTPAdapter(max_retries=3))
     _session.mount("https://", HTTPAdapter(max_retries=3))
+    
+    # 设置请求头
     if isVideo:
-        _session.headers = gc.VIDEO_HEADERS
+        _session.headers = gc.VIDEO_HEADERS.copy()
     elif isAudio:
-        _session.headers = gc.AUDIO_HEADERS
+        _session.headers = gc.AUDIO_HEADERS.copy()
     else:
-        _session.headers = gc.HEADERS
+        _session.headers = gc.HEADERS.copy()
+    
+    # 如果需要使用随机User-Agent
+    if use_random_ua:
+        random_ua = gc.get_random_user_agent()
+        _session.headers["User-Agent"] = random_ua
+        logger.debug(f"使用随机User-Agent: {random_ua[:50]}...")
+    
     _session.cookies.update(use_cookies())
+    return _session
+
+
+def reset_session_on_403(isVideo: bool = False, isAudio: bool = False):
+    """
+    当遇到403错误时重置会话
+    清除旧的cookies并重新初始化session
+    """
+    import os
+    from api.logger import logger
+    
+    logger.info("检测到403错误，正在重置会话...")
+    
+    # 删除旧的cookies文件
+    if os.path.exists(gc.COOKIES_PATH):
+        try:
+            os.remove(gc.COOKIES_PATH)
+            logger.debug("已删除旧的cookies文件")
+        except Exception as e:
+            logger.warning(f"删除cookies文件失败: {e}")
+    
+    # 创建新的session
+    _session = requests.session()
+    _session.verify = False
+    _session.mount("http://", HTTPAdapter(max_retries=3))
+    _session.mount("https://", HTTPAdapter(max_retries=3))
+    
+    # 设置headers
+    if isVideo:
+        _session.headers = gc.VIDEO_HEADERS.copy()
+    elif isAudio:
+        _session.headers = gc.AUDIO_HEADERS.copy()
+    else:
+        _session.headers = gc.HEADERS.copy()
+    
+    # 使用配置中的随机User-Agent
+    random_ua = gc.get_random_user_agent()
+    _session.headers["User-Agent"] = random_ua
+    
+    logger.info(f"会话重置完成，使用新的User-Agent: {random_ua[:50]}...")
     return _session
 
 
@@ -75,6 +222,9 @@ class Chaoxing:
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
+        self.error_monitor = Error403Monitor()  # 403错误监控
+        self.ocr = None  # 验证码识别器，延迟初始化
+        self.captcha_handler = None  # 验证码处理器
 
     def login(self):
         _session = requests.session()
@@ -99,6 +249,77 @@ class Chaoxing:
             return {"status": True, "msg": "登录成功"}
         else:
             return {"status": False, "msg": str(resp.json()["msg2"])}
+
+    def relogin_on_403(self):
+        """
+        当遇到403错误时重新登录
+        """
+        logger.info("403错误可能由于会话过期，尝试重新登录...")
+        login_result = self.login()
+        if login_result["status"]:
+            logger.info("重新登录成功")
+            return True
+        else:
+            logger.error(f"重新登录失败: {login_result['msg']}")
+            return False
+
+    def get_403_statistics(self):
+        """
+        获取403错误统计信息
+        """
+        stats = self.error_monitor.get_statistics()
+        logger.info(f"403错误统计: {stats}")
+        return stats
+
+    def init_captcha_handler(self):
+        """
+        初始化验证码处理器
+        """
+        try:
+            if self.ocr is None:
+                logger.info("初始化验证码识别器...")
+                self.ocr = ocr_init()
+                
+            # 获取当前会话的User-Agent和Cookies
+            session = init_session()
+            user_agent = session.headers.get('User-Agent', gc.get_random_user_agent())
+            cookies_str = '; '.join([f"{k}={v}" for k, v in session.cookies.items()])
+            
+            self.captcha_handler = CxCaptcha(user_agent, cookies_str, self.ocr)
+            logger.info("验证码处理器初始化成功")
+            return True
+        except Exception as e:
+            logger.error(f"验证码处理器初始化失败: {e}")
+            return False
+
+    def handle_captcha_on_403(self, max_attempts=3):
+        """
+        当遇到403错误时尝试处理验证码
+        """
+        logger.info("检测到403错误，尝试处理可能的验证码...")
+        
+        if not self.captcha_handler:
+            if not self.init_captcha_handler():
+                logger.error("验证码处理器初始化失败，无法处理验证码")
+                return False
+        
+        for attempt in range(max_attempts):
+            try:
+                logger.info(f"第{attempt + 1}次尝试处理验证码...")
+                if self.captcha_handler.try_pass():
+                    logger.info("验证码处理成功")
+                    return True
+                else:
+                    logger.warning(f"第{attempt + 1}次验证码处理失败")
+                    if attempt < max_attempts - 1:
+                        time.sleep(2)  # 短暂延迟后重试
+            except Exception as e:
+                logger.error(f"验证码处理异常: {e}")
+                if attempt < max_attempts - 1:
+                    time.sleep(2)
+        
+        logger.error(f"验证码处理失败，已尝试{max_attempts}次")
+        return False
 
     def get_fid(self):
         _session = init_session()
@@ -203,42 +424,98 @@ class Chaoxing:
         _playingTime,
         _type: str = "Video",
     ):
+        import time
+        import random
+        
         if "courseId" in _job["otherinfo"]:
             _mid_text = f"otherInfo={_job['otherinfo']}&"
         else:
             _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
+        
         _success = False
-        for _possible_rt in ["0.9", "1"]:
-            _url = (
-                f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
-                f"{_course['cpi']}/"
-                f"{_dtoken}?"
-                f"clazzId={_course['clazzId']}&"
-                f"playingTime={_playingTime}&"
-                f"duration={_duration}&"
-                f"clipTime=0_{_duration}&"
-                f"objectId={_job['objectid']}&"
-                f"{_mid_text}"
-                f"jobid={_job['jobid']}&"
-                f"userid={self.get_uid()}&"
-                f"isdrag=3&"
-                f"view=pc&"
-                f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
-                f"rt={_possible_rt}&"
-                f"dtype={_type}&"
-                f"_t={get_timestamp()}"
-            )
-            resp = _session.get(_url)
-            if resp.status_code == 200:
-                _success = True
-                break  # 如果返回为200正常, 则跳出循环
-            elif resp.status_code == 403:
-                continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
+        # 扩展rt参数列表，增加更多可能的值
+        _possible_rt_list = ["0.9", "1", "0.8", "1.1", "0.7", "1.2", "0.6", "1.3"]
+        retry_count = 0
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            for _possible_rt in _possible_rt_list:
+                _url = (
+                    f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
+                    f"{_course['cpi']}/"
+                    f"{_dtoken}?"
+                    f"clazzId={_course['clazzId']}&"
+                    f"playingTime={_playingTime}&"
+                    f"duration={_duration}&"
+                    f"clipTime=0_{_duration}&"
+                    f"objectId={_job['objectid']}&"
+                    f"{_mid_text}"
+                    f"jobid={_job['jobid']}&"
+                    f"userid={self.get_uid()}&"
+                    f"isdrag=3&"
+                    f"view=pc&"
+                    f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
+                    f"rt={_possible_rt}&"
+                    f"dtype={_type}&"
+                    f"_t={get_timestamp()}"
+                )
+                
+                try:
+                    resp = _session.get(_url, timeout=30)
+                    if resp.status_code == 200:
+                        _success = True
+                        logger.debug(f"成功使用rt参数: {_possible_rt}")
+                        break  # 如果返回为200正常, 则跳出循环
+                    elif resp.status_code == 403:
+                        logger.debug(f"rt参数 {_possible_rt} 返回403，尝试下一个参数")
+                        continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
+                    else:
+                        logger.warning(f"意外的状态码: {resp.status_code}")
+                        continue
+                except Exception as e:
+                    logger.warning(f"请求异常: {e}")
+                    continue
+            
+            if _success:
+                break
+                
+            # 如果所有rt参数都失败，尝试重新初始化session
+            if attempt < max_retries - 1:
+                logger.warning(f"第{attempt + 1}次尝试失败，重新初始化session后重试...")
+                time.sleep(random.uniform(2, 5))  # 随机延迟2-5秒
+                
+                # 尝试处理验证码
+                if self.handle_captcha_on_403():
+                    logger.info("验证码处理成功，继续重试")
+                else:
+                    logger.warning("验证码处理失败，尝试重新登录")
+                    
+                # 重新登录
+                if not self.relogin_on_403():
+                    logger.error("重新登录失败，跳过当前任务")
+                    break
+                
+                # 重新初始化session，使用专门的403重置函数
+                if _type == "Video":
+                    _session = reset_session_on_403(isVideo=True)
+                else:
+                    _session = reset_session_on_403(isAudio=True)
+                
+                # 更新时间戳，避免重复请求
+                time.sleep(1)
+        
         if _success:
             return resp.json(), 200
         else:
-            # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+            # 若所有尝试都失败，记录详细错误信息
+            self.error_monitor.record_error("video_progress_log", f"重试{max_retries}次后仍然403")
+            logger.error(f"403错误修复失败，已尝试{max_retries}次，每次尝试{len(_possible_rt_list)}个rt参数")
+            logger.error(f"任务信息: 课程ID={_course['courseId']}, 任务ID={_job['jobid']}, 对象ID={_job['objectid']}")
+            
+            # 检查是否需要暂停操作
+            if self.error_monitor.should_pause():
+                logger.warning("403错误频率过高，建议检查账号状态或稍后重试")
+                
             return {"isPassed": False}, 403  # 返回一个字典和当前状态
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
