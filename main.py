@@ -25,6 +25,8 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
+    parser.add_argument("--use-cookies", action="store_true", help="使用cookies登录")
+
     parser.add_argument(
         "-c", "--config", type=str, default=None, help="使用配置文件运行程序"
     )
@@ -97,6 +99,7 @@ def load_config_from_file(config_path):
 def build_config_from_args(args):
     """从命令行参数构建配置"""
     common_config = {
+        "use_cookies": args.use_cookies,
         "username": args.username,
         "password": args.password,
         "course_list": args.list.split(",") if args.list else None,
@@ -140,9 +143,10 @@ def init_chaoxing(common_config, tiku_config):
     """初始化超星实例"""
     username = common_config.get("username", "")
     password = common_config.get("password", "")
+    use_cookies = common_config.get("use_cookies", False)
     
     # 如果没有提供用户名密码，从命令行获取
-    if not username or not password:
+    if (not username or not password) and not use_cookies:
         username = input("请输入你的手机号, 按回车确认\n手机号:")
         password = input("请输入你的密码, 按回车确认\n密码:")
     
@@ -367,7 +371,7 @@ def main():
         notification.init_notification()
         
         # 检查当前登录状态
-        _login_state = chaoxing.login()
+        _login_state = chaoxing.login(login_with_cookies=common_config.get("use_cookies", False))
         if not _login_state["status"]:
             raise LoginError(_login_state["msg"])
         
