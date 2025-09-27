@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from enum import Enum
 from hashlib import md5
+from typing import Self
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -28,19 +29,39 @@ def get_random_seconds():
     return random.randint(30, 90)
 
 
-def init_session(isVideo: bool = False, isAudio: bool = False):
-    _session = requests.session()
-    _session.verify = False
-    _session.mount("http://", HTTPAdapter(max_retries=3))
-    _session.mount("https://", HTTPAdapter(max_retries=3))
-    if isVideo:
-        _session.headers = gc.VIDEO_HEADERS
-    elif isAudio:
-        _session.headers = gc.AUDIO_HEADERS
-    else:
-        _session.headers = gc.HEADERS
-    _session.cookies.update(use_cookies())
-    return _session
+
+
+class SessionManager:
+    _instance = None
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        self._session = requests.Session()
+        self._session.mount("https://", HTTPAdapter(max_retries=3))
+        self._session.mount("http://", HTTPAdapter(max_retries=3))
+        self._session.cookies.update(use_cookies())
+
+    @classmethod
+    def get_instance(cls) -> Self:
+        return cls()
+
+    @classmethod
+    def get_session(cls, is_video: bool = False, is_audio: bool = False) -> requests.Session:
+        instance = cls.get_instance()
+        instance._session.headers=gc.HEADERS
+        if is_video:
+            instance._session.headers.update(gc.VIDEO_HEADERS)
+        elif is_audio:
+            instance._session.headers.update(gc.AUDIO_HEADERS)
+
+        return instance._session
+
+    @classmethod
+    def update_cookies(cls):
+        cls.get_instance()._session.cookies.update(use_cookies())
 
 
 class Account:
@@ -76,9 +97,15 @@ class Chaoxing:
         self.kwargs = kwargs
         self.rollback_times = 0
 
-    def login(self):
-        _session = requests.session()
-        _session.verify = False
+    def login(self, login_with_cookies = False):
+        if login_with_cookies:
+            logger.info("Logging in with cookies")
+            SessionManager.update_cookies()
+            logger.debug("Logged in with cookies: ", SessionManager.get_session().cookies)
+            logger.info("登录成功...")
+            return {"status": True, "msg": "登录成功"}
+
+        _session = requests.Session()
         _url = "https://passport2.chaoxing.com/fanyalogin"
         _data = {
             "fid": "-1",
@@ -95,21 +122,22 @@ class Chaoxing:
         resp = _session.post(_url, headers=gc.HEADERS, data=_data)
         if resp and resp.json()["status"] == True:
             save_cookies(_session)
+            SessionManager.update_cookies()
             logger.info("登录成功...")
             return {"status": True, "msg": "登录成功"}
         else:
             return {"status": False, "msg": str(resp.json()["msg2"])}
 
     def get_fid(self):
-        _session = init_session()
+        _session = SessionManager.get_session()
         return _session.cookies.get("fid")
 
     def get_uid(self):
-        _session = init_session()
+        _session = SessionManager.get_session()
         return _session.cookies.get("_uid")
 
     def get_course_list(self):
-        _session = init_session()
+        _session = SessionManager.get_session()
         _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
         _data = {"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0}
         logger.trace("正在读取所有的课程列表...")
@@ -150,7 +178,7 @@ class Chaoxing:
         return course_list
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
-        _session = init_session()
+        _session = SessionManager.get_session()
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         logger.trace("开始读取课程所有章节...")
         _resp = _session.get(_url)
@@ -159,7 +187,7 @@ class Chaoxing:
         return decode_course_point(_resp.text)
 
     def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
-        _session = init_session()
+        _session = SessionManager.get_session()
         job_list = []
         job_info = {}
         for _possible_num in [
@@ -244,9 +272,9 @@ class Chaoxing:
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
     ) -> StudyResult:
         if _type == "Video":
-            _session = init_session(isVideo=True)
+            _session = SessionManager.get_session(is_video=True)
         else:
-            _session = init_session(isAudio=True)
+            _session = SessionManager.get_session(is_audio=True)
         _session.headers.update()
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         _video_info = _session.get(_info_url).json()
@@ -315,7 +343,7 @@ class Chaoxing:
             - get_timestamp(): To get current timestamp
             - re module for regular expression matching
         """
-        _session = init_session()
+        _session = SessionManager.get_session()
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
         if _resp.status_code != 200:
@@ -478,31 +506,14 @@ class Chaoxing:
             return decorator
 
         # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
-        _session = init_session()
-        headers = {
-            "Host": "mooc1.chaoxing.com",
-            "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "Upgrade-Insecure-Requests": "1",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Dest": "iframe",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
-        }
-        cookies = _session.cookies.get_dict()
+        _session = SessionManager.get_session()
 
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
 
         @with_retry(max_retries=3, delay=1)
         def fetch_response():
-            return requests.get(
+            return _session.get(
                     _url,
-                    headers=headers,
-                    cookies=cookies,
-                    verify=False,
                     params={
                         "api": "1",
                         "workId": _job["jobid"].replace("work-", ""),
@@ -661,7 +672,7 @@ class Chaoxing:
         """
         阅读任务学习, 仅完成任务点, 并不增长时长
         """
-        _session = init_session()
+        _session = SessionManager.get_session()
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/ananas/job/readv2",
             params={
@@ -681,7 +692,7 @@ class Chaoxing:
             return self.StudyResult.SUCCESS
 
     def study_emptypage(self, _course, _chapterId):
-        _session = init_session()
+        _session = SessionManager.get_session()
         # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
