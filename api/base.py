@@ -42,6 +42,8 @@ class SessionManager:
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=3))
         self._session.mount("http://", HTTPAdapter(max_retries=3))
+        # For ddebug purposes
+        #self._session.verify=False
         self._session.cookies.update(use_cookies())
 
     @classmethod
@@ -133,8 +135,12 @@ class Chaoxing:
         return _session.cookies.get("fid")
 
     def get_uid(self):
-        _session = SessionManager.get_session()
-        return _session.cookies.get("_uid")
+        s = SessionManager.get_session()
+        if "_uid" in s.cookies:
+            return s.cookies["_uid"]
+        if "UID" in s.cookies:
+            return s.cookies["UID"]
+        raise ValueError("Cannot get uid !")
 
     def get_course_list(self):
         _session = SessionManager.get_session()
@@ -232,42 +238,70 @@ class Chaoxing:
         _type: str = "Video",
     ):
         if "courseId" in _job["otherinfo"]:
-            _mid_text = f"otherInfo={_job['otherinfo']}&"
-        else:
-            _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
+            logger.error(_job["otherinfo"])
+            raise RuntimeError("this is not possible")
+
+
         _success = False
-        for _possible_rt in ["0.9", "1"]:
-            _url = (
-                f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
-                f"{_course['cpi']}/"
-                f"{_dtoken}?"
-                f"clazzId={_course['clazzId']}&"
-                f"playingTime={_playingTime}&"
-                f"duration={_duration}&"
-                f"clipTime=0_{_duration}&"
-                f"objectId={_job['objectid']}&"
-                f"{_mid_text}"
-                f"jobid={_job['jobid']}&"
-                f"userid={self.get_uid()}&"
-                f"isdrag=3&"
-                f"view=pc&"
-                f"enc={self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())}&"
-                f"rt={_possible_rt}&"
-                f"dtype={_type}&"
-                f"_t={get_timestamp()}"
-            )
-            resp = _session.get(_url)
+        enc = self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())
+
+        params={
+            "clazzId": _course['clazzId'],
+            "playingTime": _playingTime,
+            "duration": _duration,
+            "clipTime": f"0_{_duration}",
+            "objectId": _job['objectid'],
+            "otherInfo": _job['otherinfo'],
+            "courseId": _course['courseId'],
+            "jobid": _job['jobid'],
+            "userid": self.get_uid(),
+            "isdrag":"3",
+            "view":"pc",
+            "enc": enc,
+            "dtype": _type
+        }
+        """
+        f"rt={_possible_rt}&"
+            f"_t={get_timestamp()}"
+        """
+        _url = (
+            f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
+            f"{_course['cpi']}/"
+            f"{_dtoken}"
+        )
+
+        rt_search = re.search(r"-rt_([1d])", _job['otherinfo'])
+        if rt_search is None:
+            logger.warning("Failed to get rt from otherinfo")
+            for rt in [0.9, 1]:
+                params.update({"rt": rt,
+                               "_t": get_timestamp()})
+                resp = _session.get(_url, params=params)
+                if resp.status_code == 200:
+                    _success = True
+                    break
+                logger.warning("出现403报错, 正常尝试切换rt")
+        else:
+            rt_char = rt_search.group(1)
+            rt = "0.9" if rt_char == "d" else "1"
+            logger.debug(f"Got rt from other info: {rt}")
+            params.update({"rt": rt,
+                           "_t": get_timestamp()})
+            resp = _session.get(_url, params=params)
             if resp.status_code == 200:
                 _success = True
-                break  # 如果返回为200正常, 则跳出循环
-            elif resp.status_code == 403:
-                continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
+
         if _success:
+            print(resp.text)
             return resp.json(), 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+            print(resp.url)
+            print(_session.headers)
             return {"isPassed": False}, 403  # 返回一个字典和当前状态
+
+
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
     ) -> StudyResult:

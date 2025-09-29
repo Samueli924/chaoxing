@@ -239,7 +239,14 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             if read_job:
                 job_list.append(read_job)
             continue
-            
+
+        # 一开始就把超星api的屎山处理掉，不要用一个屎山行为掩盖另一个屎山 (指根据otherInfo中是否有courseId决定url拼接方式😂)
+        if "otherInfo" in card:
+            logger.trace("Fixing other info...")
+            card["otherInfo"] = card["otherInfo"].split("&")[0]
+            logger.trace(f"New info: {card["otherInfo"]}")
+
+
         # 根据任务类型处理
         card_type = card.get("type", "")
         if card_type == "video":
