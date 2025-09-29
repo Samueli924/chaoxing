@@ -42,7 +42,7 @@ class SessionManager:
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=3))
         self._session.mount("http://", HTTPAdapter(max_retries=3))
-        # For ddebug purposes
+        # For debug purposes
         #self._session.verify=False
         self._session.cookies.update(use_cookies())
 
@@ -141,6 +141,7 @@ class Chaoxing:
         if "UID" in s.cookies:
             return s.cookies["UID"]
         raise ValueError("Cannot get uid !")
+
 
     def get_course_list(self):
         _session = SessionManager.get_session()
