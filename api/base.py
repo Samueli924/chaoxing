@@ -261,10 +261,7 @@ class Chaoxing:
             "enc": enc,
             "dtype": _type
         }
-        """
-        f"rt={_possible_rt}&"
-            f"_t={get_timestamp()}"
-        """
+
         _url = (
             f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
             f"{_course['cpi']}/"
