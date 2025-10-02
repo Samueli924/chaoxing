@@ -3,8 +3,10 @@ import json
 import random
 import re
 import time
+from abc import abstractmethod, ABC
 from pathlib import Path
 from re import sub
+from typing import Optional
 
 import httpx
 import requests
@@ -13,9 +15,12 @@ from urllib3 import disable_warnings, exceptions
 
 from api.answer_check import *
 from api.logger import logger
+from api.config import GlobalConst
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
+
+__all__ = ["CacheDAO", "Tiku", "TikuYanxi", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
 
 class CacheDAO:
     """
@@ -43,7 +48,7 @@ class CacheDAO:
         except IOError as e:
             logger.error(f"Failed to write cache: {e}")
 
-    def get_cache(self, question: str):
+    def get_cache(self, question: str) -> Optional[str]:
         data = self._read_cache()
         return data.get(question)
 
@@ -53,8 +58,9 @@ class CacheDAO:
         self._write_cache(data)
 
 
+# TODO: 重构此部分代码，将此类改为抽象类，加载题库方法改为静态方法，禁止直接初始化此类
 class Tiku:
-    CONFIG_PATH = "config.ini"  # 默认配置文件路径
+    CONFIG_PATH = "config.ini"  # TODO: 从运行参数中获取config路径
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
     COVER_RATE = 0.8    # 覆盖率
@@ -122,7 +128,7 @@ class Tiku:
             logger.info("未找到tiku配置, 已忽略题库功能")
             self.DISABLE = True
             return None
-    def query(self,q_info:dict):
+    def query(self,q_info:dict) -> Optional[str]:
         if self.DISABLE:
             return None
 
@@ -152,12 +158,15 @@ class Tiku:
                     
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
-    
-    def _query(self,q_info:dict):
+
+
+
+    def _query(self,q_info:dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
         """
         pass
+
 
     def get_tiku_from_config(self):
         """

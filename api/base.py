@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
+import random
+import re
+import threading
+import time
 from enum import Enum
 from hashlib import md5
 from typing import Self
 
 import requests
+from loguru import logger
 from requests.adapters import HTTPAdapter
 
 from api.answer import *
+from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
 from api.cookies import save_cookies, use_cookies
@@ -17,8 +23,8 @@ from api.decode import (
     decode_course_folder,
     decode_questions_info,
 )
-from api.process import show_progress
 from api.exceptions import MaxRetryExceeded
+from api.process import show_progress
 
 
 def get_timestamp():
@@ -27,8 +33,6 @@ def get_timestamp():
 
 def get_random_seconds():
     return random.randint(30, 90)
-
-
 
 
 class SessionManager:
@@ -76,6 +80,27 @@ class Account:
         self.username = _username
         self.password = _password
 
+class RateLimiter:
+    def __init__(self, call_interval):
+        self.last_call = time.time()
+        self.lock = threading.Lock()
+        self.call_interval = call_interval
+
+    def limit_rate(self, random_time=False, random_min=0, random_max=1):
+        with self.lock:
+            if random_time:
+                wait_time = random.uniform(random_min, random_max)
+                time.sleep(wait_time)
+            now = time.time()
+            time_elapsed = now - self.last_call
+            if time_elapsed <= self.call_interval:
+                time.sleep(self.call_interval - time_elapsed)
+                self.last_call = time.time()
+                return
+
+            self.last_call = now
+            return
+
 
 class Chaoxing:
     class StudyResult(Enum):
@@ -98,6 +123,7 @@ class Chaoxing:
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
+        self.rate_limiter = RateLimiter(2)
 
     def login(self, login_with_cookies = False):
         if login_with_cookies:
@@ -195,6 +221,7 @@ class Chaoxing:
 
     def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
         _session = SessionManager.get_session()
+        self.rate_limiter.limit_rate(random_time=True)
         job_list = []
         job_info = {}
         for _possible_num in [
@@ -238,6 +265,9 @@ class Chaoxing:
         _playingTime,
         _type: str = "Video",
     ):
+
+        self.rate_limiter.limit_rate(random_time=True)
+
         if "courseId" in _job["otherinfo"]:
             logger.error(_job["otherinfo"])
             raise RuntimeError("this is not possible")
@@ -290,13 +320,13 @@ class Chaoxing:
                 _success = True
 
         if _success:
-            print(resp.text)
+            logger.debug(resp.text)
             return resp.json(), 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            print(resp.url)
-            print(_session.headers)
+            logger.error("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+            logger.error("请求url:", resp.url)
+            logger.error("请求头：", _session.headers)
             return {"isPassed": False}, 403  # 返回一个字典和当前状态
 
 
