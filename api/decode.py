@@ -261,7 +261,10 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             work_job = _process_work_task(card)
             if work_job:
                 job_list.append(work_job)
-                
+        else:
+            logger.warning(f"Unknown card type: {card_type}")
+            logger.warning(card)
+
     return job_list
 
 

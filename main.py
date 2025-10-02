@@ -6,6 +6,8 @@ import time
 import sys
 import os
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+
 from urllib3 import disable_warnings, exceptions
 
 from api.logger import logger
@@ -306,7 +308,16 @@ def process_course(chaoxing, course, notopen_action, speed):
     auto_skip_notopen = False
     # 初始化回滚管理器
     RB = RollBackManager()
-    
+
+
+    # TODO: Process results of the tasks
+    pool = ThreadPoolExecutor(max_workers=16)
+    for point in point_list["points"]:
+        pool.submit(process_chapter, chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen)
+
+    pool.shutdown(wait=True)
+
+    """
     while __point_index < len(point_list["points"]):
         point = point_list["points"][__point_index]
         logger.debug(f"当前章节 __point_index: {__point_index}")
@@ -321,6 +332,8 @@ def process_course(chaoxing, course, notopen_action, speed):
             __point_index -= 1  # 默认第一个任务总是开放的
         else:  # 继续下一章节
             __point_index += 1
+    """
+
 
 
 def filter_courses(all_course, course_list):
