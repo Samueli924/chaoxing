@@ -2,18 +2,17 @@
 import argparse
 import configparser
 import random
-import time
 import sys
-import os
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from urllib3 import disable_warnings, exceptions
 
-from api.logger import logger
+from api.answer import Tiku
 from api.base import Chaoxing, Account
 from api.exceptions import LoginError, InputFormatError, MaxRollBackExceeded
-from api.answer import Tiku
+from api.logger import logger
 from api.notification import Notification
 
 # 关闭警告
