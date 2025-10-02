@@ -3,7 +3,6 @@ import json
 import random
 import re
 import time
-from abc import abstractmethod, ABC
 from pathlib import Path
 from re import sub
 from typing import Optional
@@ -15,7 +14,6 @@ from urllib3 import disable_warnings, exceptions
 
 from api.answer_check import *
 from api.logger import logger
-from api.config import GlobalConst
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)

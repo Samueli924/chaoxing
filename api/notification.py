@@ -4,9 +4,11 @@
 """
 
 import configparser
-import requests
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
+
+import requests
+
 from api.logger import logger
 
 

@@ -15,9 +15,9 @@ from typing import Dict, IO, Optional, Union
 
 from fontTools.ttLib.tables._g_l_y_f import Glyph, table__g_l_y_f
 from fontTools.ttLib.ttFont import TTFont
+
 from api.exceptions import FontDecodeError
 from api.logger import logger
-
 
 # 康熙部首替换表
 KX_RADICALS_TAB = str.maketrans(

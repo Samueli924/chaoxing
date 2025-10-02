@@ -15,8 +15,9 @@ __version__ = "1.0.0"
 
 from random import randint
 from typing import Optional
-from requests import session
+
 from ddddocr import DdddOcr
+from requests import session
 
 
 def ocr_init() -> DdddOcr:

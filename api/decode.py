@@ -5,12 +5,14 @@
 该模块负责解析超星学习通平台的课程、章节、任务点等各种数据，
 并转换为程序内部使用的结构化数据格式。
 """
-import re
 import json
+import re
 from typing import List, Dict, Tuple, Any, Optional
+
 from bs4 import BeautifulSoup, NavigableString
-from api.logger import logger
+
 from api.font_decoder import FontDecoder
+from api.logger import logger
 
 
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
