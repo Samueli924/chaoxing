@@ -259,9 +259,7 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
         return 1, auto_skip_notopen  # 继续下一章节
     
     # 随机等待，避免请求过快
-    sleep_duration = random.uniform(1, 3)
-    logger.debug(f"本次随机等待时间: {sleep_duration:.3f}s")
-    time.sleep(sleep_duration)
+    chaoxing.rate_limiter.limit_rate(random_time=True,random_min=0, random_max=0.2)
     
     # 获取当前章节的所有任务点
     jobs = []

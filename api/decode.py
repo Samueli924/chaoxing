@@ -246,7 +246,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
         if "otherInfo" in card:
             logger.trace("Fixing other info...")
             card["otherInfo"] = card["otherInfo"].split("&")[0]
-            logger.trace(f"New info: {card["otherInfo"]}")
+            logger.trace(f"New info: {card['otherInfo']}")
 
 
         # 根据任务类型处理
@@ -305,8 +305,8 @@ def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "attDurationEnc": card.get("attDurationEnc", ""),
             "videoFaceCaptureEnc": card.get("videoFaceCaptureEnc", ""),
         }
-    except KeyError as e:
-        logger.warning("出现转码失败视频，已跳过...", e)
+    except KeyError:
+        logger.warning("出现转码失败视频，已跳过...")
         return None
 
 
