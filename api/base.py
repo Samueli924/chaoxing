@@ -5,11 +5,12 @@ import threading
 import time
 from enum import Enum
 from hashlib import md5
-from typing import Self
+from typing import Self, Optional
 
 import requests
 from loguru import logger
 from requests.adapters import HTTPAdapter
+from tqdm import tqdm
 
 from api.answer import *
 from api.answer_check import cut
@@ -31,12 +32,9 @@ def get_timestamp():
     return str(int(time.time() * 1000))
 
 
-def get_random_seconds():
-    return random.randint(30, 90)
-
-
 class SessionManager:
     _instance = None
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -47,7 +45,7 @@ class SessionManager:
         self._session.mount("https://", HTTPAdapter(max_retries=3))
         self._session.mount("http://", HTTPAdapter(max_retries=3))
         # For debug purposes
-        #self._session.verify=False
+        # self._session.verify=False
         self._session.cookies.update(use_cookies())
 
     @classmethod
@@ -55,13 +53,9 @@ class SessionManager:
         return cls()
 
     @classmethod
-    def get_session(cls, is_video: bool = False, is_audio: bool = False) -> requests.Session:
+    def get_session(cls) -> requests.Session:
         instance = cls.get_instance()
-        instance._session.headers=gc.HEADERS
-        if is_video:
-            instance._session.headers.update(gc.VIDEO_HEADERS)
-        elif is_audio:
-            instance._session.headers.update(gc.AUDIO_HEADERS)
+        instance._session.headers = gc.HEADERS
 
         return instance._session
 
@@ -79,6 +73,7 @@ class Account:
     def __init__(self, _username, _password):
         self.username = _username
         self.password = _password
+
 
 class RateLimiter:
     def __init__(self, call_interval):
@@ -117,15 +112,16 @@ class Chaoxing:
         def is_failure(result):
             return result != Chaoxing.StudyResult.SUCCESS
 
-    def __init__(self, account: Account = None, tiku: Tiku = None,**kwargs):
+    def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(2)
+        self.video_log_limiter = RateLimiter(5) # 上报进度及其容易卡验证码，限制5s一次
 
-    def login(self, login_with_cookies = False):
+    def login(self, login_with_cookies=False):
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
@@ -167,7 +163,6 @@ class Chaoxing:
         if "UID" in s.cookies:
             return s.cookies["UID"]
         raise ValueError("Cannot get uid !")
-
 
     def get_course_list(self):
         _session = SessionManager.get_session()
@@ -219,34 +214,52 @@ class Chaoxing:
         logger.info("课程章节读取成功...")
         return decode_course_point(_resp.text)
 
-    def get_job_list(self, _clazzid, _courseid, _cpi, _knowledgeid):
+    def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
         _session = SessionManager.get_session()
         self.rate_limiter.limit_rate(random_time=True)
         job_list = []
         job_info = {}
-        for _possible_num in [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-        ]:  # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
-            _url = f"https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?clazzid={_clazzid}&courseid={_courseid}&knowledgeid={_knowledgeid}&num={_possible_num}&ut=s&cpi={_cpi}&v=20160407-3&mooc2=1"
+        cards_params = {
+            "clazzid": course["clazzId"],
+            "courseid": course["courseId"],
+            "knowledgeid": point["id"],
+            "ut": "s",
+            "cpi": course["cpi"],
+            "v": "2025-0424-1038-3",
+            "mooc2": 1
+        }
+
+
+        time.sleep(random.uniform(0, 1))
+
+        # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
+        for _possible_num in "0123456":
+
             logger.trace("开始读取章节所有任务点...")
-            _resp = _session.get(_url)
+
+            cards_params.update({"num": _possible_num})
+            _resp = _session.get("https://mooc1.chaoxing.com/mooc-ans/knowledge/cards", params=cards_params)
+            if _resp.status_code != 200:
+                logger.error(f"未知错误: {_resp.status_code} 正在跳过")
+                print(_resp.text)
+                return [], {}
+
             _job_list, _job_info = decode_course_card(_resp.text)
             if _job_info.get("notOpen", False):
                 # 直接返回, 节省一次请求
                 logger.info("该章节未开放")
                 return [], _job_info
+
+            if not _job_list:
+                self.study_emptypage(course, point)
+
             job_list += _job_list
             job_info.update(_job_info)
             # if _job_list and len(_job_list) != 0:
             #     break
         # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
+
         return job_list, job_info
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
@@ -255,39 +268,41 @@ class Chaoxing:
         ).hexdigest()
 
     def video_progress_log(
-        self,
-        _session,
-        _course,
-        _job,
-        _job_info,
-        _dtoken,
-        _duration,
-        _playingTime,
-        _type: str = "Video",
-    ):
+            self,
+            _session,
+            _course,
+            _job,
+            _job_info,
+            _dtoken,
+            _duration,
+            _playingTime,
+            _type: str = "Video",
+            headers: Optional[dict] = None,
+    ) -> tuple[bool, int]:
 
-        self.rate_limiter.limit_rate(random_time=True)
+        if headers is None:
+            logger.warning("null headers")
+            headers = gc.VIDEO_HEADERS
+
+        self.video_log_limiter.limit_rate(random_time=True)
 
         if "courseId" in _job["otherinfo"]:
             logger.error(_job["otherinfo"])
             raise RuntimeError("this is not possible")
 
-
-        _success = False
-        enc = self.get_enc(_course['clazzId'], _job['jobid'], _job['objectid'], _playingTime, _duration, self.get_uid())
-
-        params={
-            "clazzId": _course['clazzId'],
+        enc = self.get_enc(_course["clazzId"], _job["jobid"], _job["objectid"], _playingTime, _duration, self.get_uid())
+        params = {
+            "clazzId": _course["clazzId"],
             "playingTime": _playingTime,
             "duration": _duration,
             "clipTime": f"0_{_duration}",
-            "objectId": _job['objectid'],
-            "otherInfo": _job['otherinfo'],
-            "courseId": _course['courseId'],
-            "jobid": _job['jobid'],
+            "objectId": _job["objectid"],
+            "otherInfo": _job["otherinfo"],
+            "courseId": _course["courseId"],
+            "jobid": _job["jobid"],
             "userid": self.get_uid(),
-            "isdrag":"3",
-            "view":"pc",
+            "isdrag": "3",
+            "view": "pc",
             "enc": enc,
             "dtype": _type
         }
@@ -298,89 +313,125 @@ class Chaoxing:
             f"{_dtoken}"
         )
 
-        rt_search = re.search(r"-rt_([1d])", _job['otherinfo'])
-        if rt_search is None:
-            logger.warning("Failed to get rt from otherinfo")
-            for rt in [0.9, 1]:
-                params.update({"rt": rt,
-                               "_t": get_timestamp()})
-                resp = _session.get(_url, params=params)
-                if resp.status_code == 200:
-                    _success = True
-                    break
-                logger.warning("出现403报错, 正常尝试切换rt")
-        else:
-            rt_char = rt_search.group(1)
-            rt = "0.9" if rt_char == "d" else "1"
-            logger.debug(f"Got rt from other info: {rt}")
+        rt = _job['rt']
+        face_capture_enc = _job["videoFaceCaptureEnc"]
+        att_duration = _job["attDuration"]
+        att_duration_enc = _job["attDurationEnc"]
+
+        if face_capture_enc:
+            params["videoFaceCaptureEnc"] = face_capture_enc
+        if att_duration:
+            params["attDuration"] = att_duration
+        if att_duration_enc:
+            params["attDurationEnc"] = att_duration_enc
+
+        _success = False
+
+        if rt:
+            logger.trace(f"Got rt: {rt}")
             params.update({"rt": rt,
                            "_t": get_timestamp()})
-            resp = _session.get(_url, params=params)
+            resp = _session.get(_url, params=params, headers=headers)
             if resp.status_code == 200:
                 _success = True
 
-        if _success:
-            logger.debug(resp.text)
-            return resp.json(), 200
         else:
+            logger.warning("Failed to get rt")
+            for rt in [0.9, 1]:
+                params.update({"rt": rt,
+                               "_t": get_timestamp()})
+                resp = _session.get(_url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    _success = True
+                    break
+                elif resp.status_code == 403:
+                    logger.warning("出现403报错, 正常尝试切换rt")
+                else:
+                    logger.warning(f"出现未知错误: {resp.status_code}", resp.text)
+                    break
+
+        if _success:
+            logger.trace(resp.text)
+            return True, 200
+
+        elif resp.status_code == 403:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.error("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            logger.error("请求url:", resp.url)
-            logger.error("请求头：", _session.headers)
-            return {"isPassed": False}, 403  # 返回一个字典和当前状态
+            logger.error(f"请求url: {resp.url}")
+            logger.error(f"请求头: {_session.headers | headers}")
+            return False, 403
 
+        logger.error(f"未知错误: {resp.status_code}")
+        logger.error("请求url:", resp.url)
+        logger.error("请求头：", _session.headers | headers)
+        logger.error(resp.text)
+        return False, resp.status_code
 
-    def study_video(
-        self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
-    ) -> StudyResult:
-        if _type == "Video":
-            _session = SessionManager.get_session(is_video=True)
-        else:
-            _session = SessionManager.get_session(is_audio=True)
-        _session.headers.update()
+    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video") -> StudyResult:
+        _session = SessionManager.get_session()
+
+        headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
-        _video_info = _session.get(_info_url).json()
-        if _video_info["status"] == "success":
-            _dtoken = _video_info["dtoken"]
-            _duration = _video_info["duration"]
-            _crc = _video_info["crc"]
-            _key = _video_info["key"]
-            _isPassed = False
-            _isFinished = False
-            _playingTime = 0
-            logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
-            state = 200
-            while not _isFinished:
-                if _isFinished:
-                    _playingTime = _duration
-                _isPassed, state = self.video_progress_log(
-                    _session,
-                    _course,
-                    _job,
-                    _job_info,
-                    _dtoken,
-                    _duration,
-                    _playingTime,
-                    _type,
-                )
-                if not _isPassed or (_isPassed and _isPassed["isPassed"]):
-                    break
-                if _isPassed and not _isPassed["isPassed"] and state == 403:
-                    return self.StudyResult.FORBIDDEN
-                _wait_time = get_random_seconds()
-                if _playingTime + _wait_time >= int(_duration):
-                    _wait_time = int(_duration) - _playingTime
-                    _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
-                    if _isPassed['isPassed']:
-                        _isFinished = True
-                # 播放进度条
-                show_progress(_job["name"], _playingTime, _wait_time, _duration, _speed)
-                _playingTime += _wait_time
-            print("\r", end="", flush=True)
-            logger.info(f"任务完成: {_job['name']}")
-            return self.StudyResult.SUCCESS
-        else:
+        _video_info = _session.get(_info_url, headers=headers).json()
+
+        if _video_info["status"] != "success":
+            logger.error(f"Unknown status: {_video_info['status']}")
             return self.StudyResult.ERROR
+
+        _dtoken = _video_info["dtoken"]
+
+        _crc = _video_info["crc"]
+        _key = _video_info["key"]
+
+        # Time in the real world: last_iter, gc.THRESHOLD
+        # Time in the video (can be scaled with the speed factor): duration, play_time, last_log_time, wait_time
+
+        duration = int(_video_info["duration"])
+        play_time = int(_job["playTime"]) // 1000
+        last_log_time = 0
+        last_iter = time.time()
+        wait_time = int(random.uniform(30, 90))
+
+        logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
+
+        pbar = tqdm(total=duration, initial=play_time, desc=_job["name"],
+                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
+
+        passed = False
+        while not passed:
+            if play_time - last_log_time >= wait_time or duration == play_time:
+
+                passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
+                                                        int(play_time), _type, headers=headers)
+
+                if not passed and state == 403:
+                    return self.StudyResult.FORBIDDEN
+                if not passed and state != 200:
+                    return self.StudyResult.ERROR
+
+                passed=False
+                if duration == play_time:
+                    break
+
+                last_log_time = play_time
+                wait_time = int(random.uniform(30, 90))
+
+            dt = (time.time() - last_iter) * _speed # Since uploading the progress takes time, we assume that the video is still playing in the background, so manually calculate the time elapsed is required
+            last_iter = time.time()
+            play_time = min(duration, play_time+dt)
+
+            pbar.n = int(play_time)
+            pbar.refresh()
+            time.sleep(gc.THRESHOLD)
+
+            # 播放进度条
+            # show_progress(_job["name"], play_time, _wait_time, _duration, _speed)
+
+
+        print("\r", end="", flush=True)
+        logger.info(f"任务完成: {_job['name']}")
+        return self.StudyResult.SUCCESS
+
     def study_document(self, _course, _job) -> StudyResult:
         """
         Study a document in Chaoxing platform.
@@ -436,30 +487,30 @@ class Chaoxing:
 
                 available_options = len(_op_list)
                 select_count = 0
-        
+
                 # 根据可用选项数量调整可能选择的选项数
                 if available_options <= 1:
                     select_count = available_options
                 else:
                     max_possible = min(4, available_options)
                     min_possible = min(2, available_options)
-            
+
                     weights_map = {
                         2: [1.0],
                         3: [0.3, 0.7],
                         4: [0.1, 0.5, 0.4],
                         5: [0.1, 0.4, 0.3, 0.2],
                     }
-            
+
                     weights = weights_map.get(max_possible, [0.3, 0.4, 0.3])
                     possible_counts = list(range(min_possible, max_possible + 1))
-            
+
                     weights = weights[:len(possible_counts)]
-            
+
                     weights_sum = sum(weights)
                     if weights_sum > 0:
-                        weights = [w/weights_sum for w in weights]
-                
+                        weights = [w / weights_sum for w in weights]
+
                     select_count = random.choices(possible_counts, weights=weights, k=1)[0]
 
                 selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
@@ -469,9 +520,7 @@ class Chaoxing:
 
                 answer = "".join(sorted(answer))
             elif q["type"] == "single":
-                answer = random.choice(options.split("\n"))[
-                    :1
-                ]  # 取首字为答案, 例如A或B
+                answer = random.choice(options.split("\n"))[:1]  # 取首字为答案, 例如A或B
             # 判断题处理
             elif q["type"] == "judgement":
                 # answer = self.tiku.jugement_select(_answer)
@@ -547,24 +596,27 @@ class Chaoxing:
                     while retries < max_retries:
                         try:
                             _resp = func(*args, **kwargs)
-                            
+
                             # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
                             if '教师未创建完成该测验' in _resp.text:
                                 raise PermissionError("教师未创建完成该测验")
 
                             questions = decode_questions_info(_resp.text)
-                    
+
                             if _resp.status_code == 200 and questions.get("questions"):
                                 return (_resp, questions)
-                    
-                            logger.warning(f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中... ({retries+1}/{max_retries})")
-                
+
+                            logger.warning(
+                                f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中... ({retries + 1}/{max_retries})")
+
                         except requests.exceptions.RequestException as e:
-                            logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries+1}/{max_retries})")
+                            logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries + 1}/{max_retries})")
                         retries += 1
                         time.sleep(delay * (2 ** retries))
                     raise MaxRetryExceeded(f"超过最大重试次数 ({max_retries})")
+
                 return wrapper
+
             return decorator
 
         # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
@@ -575,24 +627,24 @@ class Chaoxing:
         @with_retry(max_retries=3, delay=1)
         def fetch_response():
             return _session.get(
-                    _url,
-                    params={
-                        "api": "1",
-                        "workId": _job["jobid"].replace("work-", ""),
-                        "jobid": _job["jobid"],
-                        "originJobId": _job["jobid"],
-                        "needRedirect": "true",
-                        "skipHeader": "true",
-                        "knowledgeid": str(_job_info["knowledgeid"]),
-                        "ktoken": _job_info["ktoken"],
-                        "cpi": _job_info["cpi"],
-                        "ut": "s",
-                        "clazzId": _course["clazzId"],
-                        "type": "",
-                        "enc": _job["enc"],
-                        "mooc2": "1",
-                        "courseid": _course["courseId"],
-                    }
+                _url,
+                params={
+                    "api": "1",
+                    "workId": _job["jobid"].replace("work-", ""),
+                    "jobid": _job["jobid"],
+                    "originJobId": _job["jobid"],
+                    "needRedirect": "true",
+                    "skipHeader": "true",
+                    "knowledgeid": str(_job_info["knowledgeid"]),
+                    "ktoken": _job_info["ktoken"],
+                    "cpi": _job_info["cpi"],
+                    "ut": "s",
+                    "clazzId": _course["clazzId"],
+                    "type": "",
+                    "enc": _job["enc"],
+                    "mooc2": "1",
+                    "courseid": _course["courseId"],
+                }
             )
 
         final_resp = {}
@@ -603,7 +655,7 @@ class Chaoxing:
         except Exception as e:
             logger.error(f"请求失败: {e}")
             return self.StudyResult.ERROR
-        
+
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
         # 搜题
@@ -612,7 +664,7 @@ class Chaoxing:
         for q in questions["questions"]:
             logger.debug(f"当前题目信息 -> {q}")
             # 添加搜题延迟 #428 - 默认0s延迟
-            query_delay = self.kwargs.get("query_delay",0)
+            query_delay = self.kwargs.get("query_delay", 0)
             time.sleep(query_delay)
             res = self.tiku.query(q)
             answer = ""
@@ -648,9 +700,9 @@ class Chaoxing:
                 elif q["type"] == "judgement":
                     answer = "true" if self.tiku.judgement_select(res) else "false"
                 elif q["type"] == "completion":
-                    if isinstance(res,list):
+                    if isinstance(res, list):
                         answer = "".join(answer)
-                    elif isinstance(res,str):
+                    elif isinstance(res, str):
                         answer = res
                 else:
                     # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
@@ -672,11 +724,11 @@ class Chaoxing:
         # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
         if self.tiku.get_submit_params() == "1":
             questions["pyFlag"] = "1"
-        elif cover_rate >= self.tiku.COVER_RATE*100 or self.rollback_times >= 1:
+        elif cover_rate >= self.tiku.COVER_RATE * 100 or self.rollback_times >= 1:
             questions["pyFlag"] = ""
         else:
             questions["pyFlag"] = "1"
-            logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE*100:.0f}%，不予提交")
+            logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE * 100:.0f}%，不予提交")
         # 组建提交表单
         if questions["pyFlag"] == "1":
             for q in questions["questions"]:
@@ -730,7 +782,7 @@ class Chaoxing:
             return self.StudyResult.ERROR
         return self.StudyResult.SUCCESS
 
-    def strdy_read(self, _course, _job, _job_info) -> StudyResult:
+    def study_read(self, _course, _job, _job_info) -> StudyResult:
         """
         阅读任务学习, 仅完成任务点, 并不增长时长
         """
@@ -753,7 +805,7 @@ class Chaoxing:
             logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
             return self.StudyResult.SUCCESS
 
-    def study_emptypage(self, _course, _chapterId):
+    def study_emptypage(self, _course, point):
         _session = SessionManager.get_session()
         # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
         _resp = _session.get(
@@ -761,8 +813,8 @@ class Chaoxing:
             params={
                 "courseId": _course["courseId"],
                 "clazzid": _course["clazzId"],
-                "chapterId": _chapterId['id'],
-                "cpi": 0,
+                "chapterId": point["id"],
+                "cpi": _course["cpi"],
                 "verificationcode": "",
                 "mooc2": 1,
                 "microTopicId": 0,
@@ -770,8 +822,8 @@ class Chaoxing:
             },
         )
         if _resp.status_code != 200:
-            logger.error(f"空页面任务失败 -> [{_resp.status_code}]{_chapterId['title']}")
+            logger.error(f"空页面任务失败 -> [{_resp.status_code}]{point['title']}")
             return self.StudyResult.ERROR
         else:
-            logger.info(f"空页面任务完成 -> {_chapterId['title']}")
+            logger.info(f"空页面任务完成 -> {point['title']}")
             return self.StudyResult.SUCCESS
