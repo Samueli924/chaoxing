@@ -3,10 +3,13 @@ import argparse
 import configparser
 import random
 import sys
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
 
+from tqdm import tqdm
 from urllib3 import disable_warnings, exceptions
 
 from api.answer import Tiku
@@ -17,6 +20,18 @@ from api.notification import Notification
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
+
+
+def log_error(func):
+    def wrapper(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except BaseException as e:
+            logger.error(f"Error in thread {threading.current_thread().name}: {e}")
+            traceback.print_exception(type(e), e, e.__traceback__)
+            raise
+
+    return wrapper
 
 
 def parse_args():
@@ -232,9 +247,9 @@ def process_job(chaoxing, course, job, job_info, speed):
     # 阅读任务
     elif job["type"] == "read":
         logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
-        chaoxing.strdy_read(course, job, job_info)
+        chaoxing.study_read(course, job, job_info)
 
-
+@log_error
 def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen=False):
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
@@ -251,9 +266,7 @@ def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_ski
     # 获取当前章节的所有任务点
     jobs = []
     job_info = None
-    jobs, job_info = chaoxing.get_job_list(
-        course["clazzId"], course["courseId"], course["cpi"], point["id"]
-    )
+    jobs, job_info = chaoxing.get_job_list(course, point)
 
     # 发现未开放章节, 根据配置处理
     try:
@@ -308,13 +321,18 @@ def process_course(chaoxing, course, notopen_action, speed):
     # 初始化回滚管理器
     RB = RollBackManager()
 
+    _old_format_sizeof = tqdm.format_sizeof
+    tqdm.format_sizeof = format_time
+    tqdm.set_lock(RLock())
 
     # TODO: Process results of the tasks
-    pool = ThreadPoolExecutor(max_workers=16)
+    pool = ThreadPoolExecutor(max_workers=16, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
     for point in point_list["points"]:
         pool.submit(process_chapter, chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen)
 
     pool.shutdown(wait=True)
+
+    tqdm.format_sizeof = _old_format_sizeof
 
     """
     while __point_index < len(point_list["points"]):
@@ -361,6 +379,18 @@ def filter_courses(all_course, course_list):
         course_task = all_course
     
     return course_task
+
+
+def format_time(num, suffix='', divisor=''):
+    total_time = round(num)
+    sec = total_time % 60
+    mins = (total_time % 3600) // 60
+    hrs = total_time // 3600
+
+    if hrs > 0:
+        return f"{hrs:02d}:{mins:02d}:{sec:02d}"
+
+    return f"{mins:02d}:{sec:02d}"
 
 
 def main():

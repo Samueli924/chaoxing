@@ -165,7 +165,6 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         任务点列表和任务信息的元组
     """
     logger.trace("开始解码任务点列表...")
-    job_list = []
     
     # 检查章节是否未开放
     if "章节未开放" in html_text:
@@ -175,19 +174,20 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     temp = re.findall(r"mArg=\{(.*?)\};", html_text.replace(" ", ""))
     if not temp:
         return [], {}
-        
+
     # 解析JSON数据
     cards_data = json.loads("{" + temp[0] + "}")
+
     if not cards_data:
         return [], {}
 
     # 提取任务信息
     job_info = _extract_job_info(cards_data)
-    
+
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
     job_list = _process_attachment_cards(cards)
-    
+
     return job_list, job_info
 
 
@@ -235,7 +235,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             continue
             
         # 处理不同类型的任务
-        if card.get("job", False) == False:
+        if card.get("job") is None:
             # 处理阅读类型任务
             read_job = _process_read_task(card)
             if read_job:
@@ -298,10 +298,15 @@ def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "otherinfo": card.get("otherInfo", ""),
             "mid": card["mid"],  # 必须字段，如果不存在会抛出异常
             "objectid": card.get("objectId", ""),
-            "aid": card.get("aid", "")
+            "aid": card.get("aid", ""),
+            "playTime": card.get("playTime", 0),
+            "rt": card.get("property", {}).get("rt", ""),
+            "attDuration": card.get("attDuration", ""),
+            "attDurationEnc": card.get("attDurationEnc", ""),
+            "videoFaceCaptureEnc": card.get("videoFaceCaptureEnc", ""),
         }
-    except KeyError:
-        logger.warning("出现转码失败视频，已跳过...")
+    except KeyError as e:
+        logger.warning("出现转码失败视频，已跳过...", e)
         return None
 
 
