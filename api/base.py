@@ -25,7 +25,6 @@ from api.decode import (
     decode_questions_info,
 )
 from api.exceptions import MaxRetryExceeded
-from api.process import show_progress
 
 
 def get_timestamp():
@@ -388,6 +387,7 @@ class Chaoxing:
 
         passed = False
         while not passed:
+            # Sometimes the last request needs to be sent several times to complete the task
             if play_time - last_log_time >= wait_time or duration == play_time:
 
                 passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
@@ -397,10 +397,6 @@ class Chaoxing:
                     return self.StudyResult.FORBIDDEN
                 if not passed and state != 200:
                     return self.StudyResult.ERROR
-
-                passed=False
-                if duration == play_time:
-                    break
 
                 last_log_time = play_time
                 wait_time = int(random.uniform(30, 90))
@@ -413,11 +409,6 @@ class Chaoxing:
             pbar.refresh()
             time.sleep(gc.THRESHOLD)
 
-            # 播放进度条
-            # show_progress(_job["name"], play_time, _wait_time, _duration, _speed)
-
-
-        print("\r", end="", flush=True)
         logger.info(f"任务完成: {_job['name']}")
         return self.StudyResult.SUCCESS
 
