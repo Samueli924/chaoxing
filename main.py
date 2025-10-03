@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 import argparse
 import configparser
-import random
 import sys
 import threading
-import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock
