@@ -119,7 +119,7 @@ class Chaoxing:
         self.kwargs = kwargs
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(2)
-        self.video_log_limiter = RateLimiter(5) # 上报进度及其容易卡验证码，限制5s一次
+        self.video_log_limiter = RateLimiter(5) # 上报进度极其容易卡验证码，限制5s一次
 
     def login(self, login_with_cookies=False):
         if login_with_cookies:
