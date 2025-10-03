@@ -80,7 +80,7 @@ class RateLimiter:
         self.lock = threading.Lock()
         self.call_interval = call_interval
 
-    def limit_rate(self, random_time=False, random_min=0, random_max=1):
+    def limit_rate(self, random_time=False, random_min=0.0, random_max=1.0):
         with self.lock:
             if random_time:
                 wait_time = random.uniform(random_min, random_max)
@@ -117,7 +117,7 @@ class Chaoxing:
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
-        self.rate_limiter = RateLimiter(2)
+        self.rate_limiter = RateLimiter(0.4) # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(5) # 上报进度极其容易卡验证码，限制5s一次
 
     def login(self, login_with_cookies=False):
@@ -204,7 +204,7 @@ class Chaoxing:
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
         _session = SessionManager.get_session()
-        self.rate_limiter.limit_rate(random_time=True)
+        self.rate_limiter.limit_rate(random_time=True, random_max=0.5)
         job_list = []
         job_info = {}
         cards_params = {
@@ -238,13 +238,13 @@ class Chaoxing:
                 logger.info("该章节未开放")
                 return [], _job_info
 
-            if not _job_list:
-                self.study_emptypage(course, point)
-
             job_list += _job_list
             job_info.update(_job_info)
             # if _job_list and len(_job_list) != 0:
             #     break
+
+        if not job_list:
+            self.study_emptypage(course, point)
         # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
 
