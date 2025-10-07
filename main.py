@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import argparse
 import configparser
 import random
@@ -16,6 +16,12 @@ from api.notification import Notification
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
+
+
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def parse_args():
@@ -73,13 +79,19 @@ def load_config_from_file(config_path):
         common_config = dict(config.items("common"))
         # 处理course_list，将字符串转换为列表
         if "course_list" in common_config and common_config["course_list"]:
-            common_config["course_list"] = common_config["course_list"].split(",")
+            common_config["course_list"] = [item.strip() for item in common_config["course_list"].split(",") if item.strip()]
         # 处理speed，将字符串转换为浮点数
         if "speed" in common_config:
             common_config["speed"] = float(common_config["speed"])
         # 处理notopen_action，设置默认值为retry
         if "notopen_action" not in common_config:
             common_config["notopen_action"] = "retry"
+        if "use_cookies" in common_config:
+            common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
+        if "username" in common_config and common_config["username"] is not None:
+            common_config["username"] = common_config["username"].strip()
+        if "password" in common_config and common_config["password"] is not None:
+            common_config["password"] = common_config["password"].strip()
     
     # 检查并读取tiku节
     if config.has_section("tiku"):
@@ -102,7 +114,7 @@ def build_config_from_args(args):
         "use_cookies": args.use_cookies,
         "username": args.username,
         "password": args.password,
-        "course_list": args.list.split(",") if args.list else None,
+        "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
         "speed": args.speed if args.speed else 1.0,
         "notopen_action": args.notopen_action if args.notopen_action else "retry"
     }
@@ -357,7 +369,7 @@ def main():
         # 初始化配置
         common_config, tiku_config, notification_config = init_config()
         
-        # 规范化播放速度
+        # 强制播放按照配置文件调节
         speed = min(2.0, max(1.0, common_config.get("speed", 1.0)))
         notopen_action = common_config.get("notopen_action", "retry")
         
