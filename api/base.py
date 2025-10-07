@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from enum import Enum
 from hashlib import md5
-from typing import Self
+from typing_extensions import Self
 
 import requests
+from requests import RequestException
 from requests.adapters import HTTPAdapter
 
 from api.answer import *
@@ -19,6 +20,8 @@ from api.decode import (
 )
 from api.process import show_progress
 from api.exceptions import MaxRetryExceeded
+import time
+import random
 
 
 def get_timestamp():
@@ -27,8 +30,6 @@ def get_timestamp():
 
 def get_random_seconds():
     return random.randint(30, 90)
-
-
 
 
 class SessionManager:
@@ -42,6 +43,8 @@ class SessionManager:
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=3))
         self._session.mount("http://", HTTPAdapter(max_retries=3))
+        self._session.headers.clear()
+        self._session.headers.update(gc.HEADERS)
         self._session.cookies.update(use_cookies())
 
     @classmethod
@@ -51,7 +54,8 @@ class SessionManager:
     @classmethod
     def get_session(cls, is_video: bool = False, is_audio: bool = False) -> requests.Session:
         instance = cls.get_instance()
-        instance._session.headers=gc.HEADERS
+        instance._session.headers.clear()
+        instance._session.headers.update(gc.HEADERS)
         if is_video:
             instance._session.headers.update(gc.VIDEO_HEADERS)
         elif is_audio:
@@ -101,7 +105,12 @@ class Chaoxing:
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
-            logger.debug("Logged in with cookies: ", SessionManager.get_session().cookies)
+            logger.debug(f"Logged in with cookies: {SessionManager.get_instance()._session.cookies}")
+            if not self._validate_cookie_session():
+                logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
+                if self.account and self.account.username and self.account.password:
+                    return self.login(login_with_cookies=False)
+                return {"status": False, "msg": "cookies 已失效，请更新 cookies 或提供账号密码"}
             logger.info("登录成功...")
             return {"status": True, "msg": "登录成功"}
 
@@ -127,6 +136,33 @@ class Chaoxing:
             return {"status": True, "msg": "登录成功"}
         else:
             return {"status": False, "msg": str(resp.json()["msg2"])}
+
+    def _validate_cookie_session(self) -> bool:
+        session = SessionManager.get_instance()._session
+        if not session.cookies.get("_uid"):
+            return False
+
+        test_session = requests.Session()
+        test_session.headers.update(gc.HEADERS)
+        test_session.cookies.update(session.cookies.get_dict())
+
+        try:
+            resp = test_session.post(
+                "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata",
+                data={"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0},
+                timeout=8,
+            )
+        except RequestException as exc:
+            logger.debug("Cookie validation request failed: %s", exc)
+            return False
+
+        if resp.status_code != 200:
+            return False
+
+        if "passport2.chaoxing.com" in resp.text or "login" in resp.text.lower():
+            return False
+
+        return True
 
     def get_fid(self):
         _session = SessionManager.get_session()
@@ -237,6 +273,8 @@ class Chaoxing:
             _mid_text = f"otherInfo={_job['otherinfo']}&courseId={_course['courseId']}&"
         _success = False
         for _possible_rt in ["0.9", "1"]:
+            # 增加随机延迟 2~5 秒
+            time.sleep(random.uniform(2, 3))
             _url = (
                 f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
                 f"{_course['cpi']}/"
@@ -256,18 +294,69 @@ class Chaoxing:
                 f"dtype={_type}&"
                 f"_t={get_timestamp()}"
             )
-            resp = _session.get(_url)
+            try:
+                resp = _session.get(_url, timeout=10)
+            except RequestException as exc:
+                logger.debug("视频进度上报请求异常: %s", exc)
+                continue
             if resp.status_code == 200:
                 _success = True
-                break  # 如果返回为200正常, 则跳出循环
+                break  # 如果返回 200 正常, 则跳出循环
             elif resp.status_code == 403:
+                logger.debug(
+                    "视频进度上报返回403, jobid=%s, 摘要=%s",
+                    _job.get("jobid"),
+                    resp.text[:200],
+                )
                 continue  # 如果出现403无权限报错, 则继续尝试不同的rt参数
         if _success:
             return resp.json(), 200
         else:
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
+            logger.warning("出现403报错, 尝试修复无效, 正在跳过当前任务...")
             return {"isPassed": False}, 403  # 返回一个字典和当前状态
+
+    def _refresh_video_status(self, session: requests.Session, job: dict):
+        info_url = (
+            f"https://mooc1.chaoxing.com/ananas/status/{job['objectid']}?"
+            f"k={self.get_fid()}&flag=normal"
+        )
+        try:
+            resp = session.get(info_url, timeout=8)
+        except RequestException as exc:
+            logger.debug("刷新视频状态失败: %s", exc)
+            return None
+
+        if resp.status_code != 200:
+            logger.debug("刷新视频状态返回码异常: %s", resp.status_code)
+            return None
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            logger.debug("解析视频状态响应失败: %s", exc)
+            return None
+
+        if data.get("status") == "success":
+            return data
+
+        return None
+
+    def _recover_after_forbidden(self, session: requests.Session, job: dict):
+        SessionManager.update_cookies()
+        refreshed = self._refresh_video_status(session, job)
+        if refreshed:
+            return refreshed
+
+        if self.account and self.account.username and self.account.password:
+            login_result = self.login(login_with_cookies=False)
+            if login_result.get("status"):
+                SessionManager.update_cookies()
+                return self._refresh_video_status(session, job)
+            logger.warning("账号密码登录失败: %s", login_result.get("msg"))
+
+        return None
+
     def study_video(
         self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video"
     ) -> StudyResult:
@@ -286,8 +375,10 @@ class Chaoxing:
             _isPassed = False
             _isFinished = False
             _playingTime = 0
-            logger.info(f"开始任务: {_job['name']}, 总时长: {_duration}秒")
+            logger.info(f"开始任务 {_job['name']}, 总时长 {_duration}秒")
             state = 200
+            forbidden_retry = 0
+            max_forbidden_retry = 2
             while not _isFinished:
                 if _isFinished:
                     _playingTime = _duration
@@ -304,6 +395,19 @@ class Chaoxing:
                 if not _isPassed or (_isPassed and _isPassed["isPassed"]):
                     break
                 if _isPassed and not _isPassed["isPassed"] and state == 403:
+                    if forbidden_retry < max_forbidden_retry:
+                        forbidden_retry += 1
+                        logger.warning(
+                            "出现403报错, 正在尝试刷新会话状态 (第%s次)",
+                            forbidden_retry,
+                        )
+                        time.sleep(random.uniform(2, 4))
+                        refreshed_meta = self._recover_after_forbidden(_session, _job)
+                        if refreshed_meta:
+                            _dtoken = refreshed_meta.get("dtoken", _dtoken)
+                            _duration = refreshed_meta.get("duration", _duration)
+                            continue
+                    logger.warning("403重试失败, 跳过当前任务")
                     return self.StudyResult.FORBIDDEN
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
@@ -311,7 +415,7 @@ class Chaoxing:
                     _isPassed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _duration, _type)
                     if _isPassed['isPassed']:
                         _isFinished = True
-                # 播放进度条
+                # 播放进度显示
                 show_progress(_job["name"], _playingTime, _wait_time, _duration, _speed)
                 _playingTime += _wait_time
             print("\r", end="", flush=True)
@@ -319,6 +423,7 @@ class Chaoxing:
             return self.StudyResult.SUCCESS
         else:
             return self.StudyResult.ERROR
+
     def study_document(self, _course, _job) -> StudyResult:
         """
         Study a document in Chaoxing platform.
@@ -713,3 +818,4 @@ class Chaoxing:
         else:
             logger.info(f"空页面任务完成 -> {_chapterId['title']}")
             return self.StudyResult.SUCCESS
+        
