@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import argparse
 import configparser
 import random
@@ -419,4 +419,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
