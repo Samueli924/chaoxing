@@ -6,6 +6,7 @@ from typing_extensions import Self
 import requests
 from requests import RequestException
 from requests.adapters import HTTPAdapter
+import re
 
 from api.answer import *
 from api.cipher import AESCipher
@@ -575,7 +576,8 @@ class Chaoxing:
             if isinstance(res, str):
                 res = [res]
             for c in res:
-                cleaned_res.append(re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c))
+                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c)
+                cleaned_res.append(cleaned.strip())
 
             return cleaned_res
 
