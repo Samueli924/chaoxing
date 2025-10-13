@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
+import functools
+import logging
 import random
 import re
 import threading
 import time
 from enum import Enum
 from hashlib import md5
-from typing import Self, Optional
+from typing import Self, Optional, Literal
 
 import requests
-from loguru import logger
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
+from loguru import logger
 
 from api.answer import *
 from api.answer_check import cut
@@ -27,7 +29,6 @@ from api.decode import (
 )
 from api.exceptions import MaxRetryExceeded
 
-
 def get_timestamp():
     return str(int(time.time() * 1000))
 
@@ -42,8 +43,9 @@ class SessionManager:
 
     def __init__(self):
         self._session = requests.Session()
-        self._session.mount("https://", HTTPAdapter(max_retries=3))
-        self._session.mount("http://", HTTPAdapter(max_retries=3))
+        self._session.mount("https://", HTTPAdapter(max_retries=10))
+        self._session.mount("http://", HTTPAdapter(max_retries=10))
+        self._session.request = functools.partial(self._session.request, timeout=5)
         # For debug purposes
         # self._session.verify=False
         self._session.headers.clear()
@@ -57,10 +59,6 @@ class SessionManager:
     @classmethod
     def get_session(cls) -> requests.Session:
         instance = cls.get_instance()
-        instance._session.headers.clear()
-        instance._session.headers = gc.HEADERS
-        instance._session.headers.clear()
-        instance._session.headers.update(gc.HEADERS)
         return instance._session
 
     @classmethod
@@ -101,21 +99,18 @@ class RateLimiter:
             return
 
 
+class StudyResult(Enum):
+    SUCCESS = 0
+    FORBIDDEN = 1  # 403
+    ERROR = 2
+    TIMEOUT = 3
+
+    def is_success(self):
+        return self == StudyResult.SUCCESS
+    def is_failure(self):
+        return self != StudyResult.SUCCESS
+
 class Chaoxing:
-    class StudyResult(Enum):
-        SUCCESS = 0
-        FORBIDDEN = 1  # 403
-        ERROR = 2
-        TIMEOUT = 3
-
-        @staticmethod
-        def is_success(result):
-            return result == Chaoxing.StudyResult.SUCCESS
-
-        @staticmethod
-        def is_failure(result):
-            return result != Chaoxing.StudyResult.SUCCESS
-
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
         self.account = account
         self.cipher = AESCipher()
@@ -123,7 +118,7 @@ class Chaoxing:
         self.kwargs = kwargs
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(0.4) # 其他接口速率限制比较松
-        self.video_log_limiter = RateLimiter(5) # 上报进度极其容易卡验证码，限制5s一次
+        self.video_log_limiter = RateLimiter(2) # 上报进度极其容易卡验证码，限制2s一次
 
     def login(self, login_with_cookies=False):
         if login_with_cookies:
@@ -177,7 +172,7 @@ class Chaoxing:
                 timeout=8,
             )
         except RequestException as exc:
-            logger.debug("Cookie validation request failed: %s", exc)
+            logger.debug("Cookie validation request failed: {}", exc)
             return False
 
         if resp.status_code != 200:
@@ -241,7 +236,7 @@ class Chaoxing:
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
         _session = SessionManager.get_session()
-        self.rate_limiter.limit_rate(random_time=True, random_max=0.5)
+        self.rate_limiter.limit_rate()
         job_list = []
         job_info = {}
         cards_params = {
@@ -254,9 +249,6 @@ class Chaoxing:
             "mooc2": 1
         }
 
-
-        time.sleep(random.uniform(0, 1))
-
         # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
         for _possible_num in "0123456":
 
@@ -266,7 +258,7 @@ class Chaoxing:
             _resp = _session.get("https://mooc1.chaoxing.com/mooc-ans/knowledge/cards", params=cards_params)
             if _resp.status_code != 200:
                 logger.error(f"未知错误: {_resp.status_code} 正在跳过")
-                print(_resp.text)
+                logger.error(_resp.text)
                 return [], {}
 
             _job_list, _job_info = decode_course_card(_resp.text)
@@ -277,8 +269,6 @@ class Chaoxing:
 
             job_list += _job_list
             job_info.update(_job_info)
-            # if _job_list and len(_job_list) != 0:
-            #     break
 
         if not job_list:
             self.study_emptypage(course, point)
@@ -309,7 +299,7 @@ class Chaoxing:
             logger.warning("null headers")
             headers = gc.VIDEO_HEADERS
 
-        self.video_log_limiter.limit_rate(random_time=True)
+        self.video_log_limiter.limit_rate(random_time=True, random_max=2)
 
         if "courseId" in _job["otherinfo"]:
             logger.error(_job["otherinfo"])
@@ -338,7 +328,7 @@ class Chaoxing:
             f"{_dtoken}"
         )
 
-        rt = _job['rt']
+
         face_capture_enc = _job["videoFaceCaptureEnc"]
         att_duration = _job["attDuration"]
         att_duration_enc = _job["attDurationEnc"]
@@ -350,16 +340,19 @@ class Chaoxing:
         if att_duration_enc:
             params["attDurationEnc"] = att_duration_enc
 
-        _success = False
+        rt = _job['rt']
+        if not rt:
+            rt_search = re.search(r"-rt_([1d])", _job['otherinfo'])
+            if rt_search:
+                rt_char = rt_search.group(1)
+                rt = "0.9" if rt_char == "d" else "1"
+                logger.trace(f"Got rt from otherinfo: {rt}")
 
         if rt:
             logger.trace(f"Got rt: {rt}")
             params.update({"rt": rt,
                            "_t": get_timestamp()})
             resp = _session.get(_url, params=params, headers=headers)
-            if resp.status_code == 200:
-                _success = True
-
         else:
             logger.warning("Failed to get rt")
             for rt in [0.9, 1]:
@@ -367,64 +360,67 @@ class Chaoxing:
                                "_t": get_timestamp()})
                 resp = _session.get(_url, params=params, headers=headers)
                 if resp.status_code == 200:
-                    _success = True
-                    break
-                elif resp.ok:
-                    # TODO: 处理验证码
-                    break
+                    logger.trace(resp.text)
+                    return resp.json()["isPassed"], 200
+                #elif resp.ok:
+                #    # TODO: 处理验证码
+                #    pass
                 elif resp.status_code == 403:
                     logger.warning("出现403报错, 正常尝试切换rt")
 
                 else:
-                    logger.warning("未知错误 jobid=%s, status_code=%s, 摘要:\n%s",
+                    logger.warning("未知错误 jobid={}, status_code={}, 摘要:\n{}",
                                    _job.get("jobid"),
                                    resp.status_code,
                                    resp.text[:200]
                     )
                     break
 
-        if _success:
+        if resp.status_code == 200:
             logger.trace(resp.text)
-            return True, 200
+            return resp.json()["isPassed"], 200
 
         elif resp.status_code == 403:
             logger.debug(
-                "视频进度上报返回403, jobid=%s, 摘要=%s",
+                "视频进度上报返回403, jobid={}, 摘要={}",
                 _job.get("jobid"),
                 resp.text[:200],
             )
 
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
             logger.error("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            logger.error(f"请求url: {resp.url}")
-            logger.error(f"请求头: {_session.headers | headers}")
+            logger.error("请求url: {}", resp.url)
+            logger.error("请求头: {}", dict(_session.headers) | headers)
             return False, 403
 
         logger.error(f"未知错误: {resp.status_code}")
         logger.error("请求url:", resp.url)
-        logger.error("请求头：", _session.headers | headers)
+        logger.error("请求头：", dict(_session.headers) | headers)
         return False, resp.status_code
 
 
-    def _refresh_video_status(self, session: requests.Session, job: dict):
+    def _refresh_video_status(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]) -> Optional[dict]:
+        self.rate_limiter.limit_rate(random_time=True, random_max=0.2)
+        headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         info_url = (
             f"https://mooc1.chaoxing.com/ananas/status/{job['objectid']}?"
             f"k={self.get_fid()}&flag=normal"
         )
         try:
-            resp = session.get(info_url, timeout=8)
+            resp = session.get(info_url, timeout=8, headers=headers)
         except RequestException as exc:
-            logger.debug("刷新视频状态失败: %s", exc)
+            logger.debug("刷新视频状态失败: {}", exc)
             return None
 
         if resp.status_code != 200:
-            logger.debug("刷新视频状态返回码异常: %s", resp.status_code)
+            logger.debug("刷新视频状态返回码异常: {}"% resp.status_code)
+            logger.debug(resp.text)
             return None
 
         try:
             data = resp.json()
         except ValueError as exc:
-            logger.debug("解析视频状态响应失败: %s", exc)
+            logger.debug("解析视频状态响应失败: {}", exc)
             return None
 
         if data.get("status") == "success":
@@ -432,23 +428,24 @@ class Chaoxing:
 
         return None
 
-    def _recover_after_forbidden(self, session: requests.Session, job: dict):
+    def _recover_after_forbidden(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]):
         SessionManager.update_cookies()
-        refreshed = self._refresh_video_status(session, job)
+        refreshed = self._refresh_video_status(session, job, _type)
         if refreshed:
             return refreshed
 
-        if self.account and self.account.username and self.account.password:
+        # FIXME: Temporarily disabled for multithreading support
+        if False and self.account and self.account.username and self.account.password:
             login_result = self.login(login_with_cookies=False)
             if login_result.get("status"):
                 SessionManager.update_cookies()
-                return self._refresh_video_status(session, job)
-            logger.warning("账号密码登录失败: %s", login_result.get("msg"))
+                return self._refresh_video_status(session, job, _type)
+            logger.warning("账号密码登录失败: {}", login_result.get("msg"))
 
         return None
 
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: str = "Video") -> StudyResult:
+    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -457,7 +454,7 @@ class Chaoxing:
 
         if _video_info["status"] != "success":
             logger.error(f"Unknown status: {_video_info['status']}")
-            return self.StudyResult.ERROR
+            return StudyResult.ERROR
 
         _dtoken = _video_info["dtoken"]
 
@@ -481,38 +478,49 @@ class Chaoxing:
         passed = False
         forbidden_retry = 0
         max_forbidden_retry = 2
+
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, 0, _type,headers=headers)
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)\
+
+        if passed:
+            logger.info("任务瞬间完成: {}", _job['name'])
+            return StudyResult.SUCCESS
+
         while not passed:
             # Sometimes the last request needs to be sent several times to complete the task
-            if play_time - last_log_time >= wait_time or duration == play_time:
+            if play_time - last_log_time >= wait_time or play_time == duration:
 
                 passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
                                                         int(play_time), _type, headers=headers)
 
-                if not passed and state == 403:
+                if state == 403:
                     if forbidden_retry >= max_forbidden_retry:
                         logger.warning("403重试失败, 跳过当前任务")
-                        return self.StudyResult.FORBIDDEN
+                        return StudyResult.FORBIDDEN
                     forbidden_retry += 1
                     logger.warning(
-                        "出现403报错, 正在尝试刷新会话状态 (第%s次)",
+                        "出现403报错, 正在尝试刷新会话状态 (第{}次)",
                         forbidden_retry,
                     )
                     time.sleep(random.uniform(2, 4))
-                    refreshed_meta = self._recover_after_forbidden(_session, _job)
+                    refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
                     if refreshed_meta:
                         # FIXME: Maybe it should be considered an error if those keys aren't present in the refreshed meta, so we perhaps shouldn't use get()
                         _dtoken = refreshed_meta.get("dtoken", _dtoken)
                         _duration = refreshed_meta.get("duration", duration)
                         play_time = refreshed_meta.get("playTime", play_time)
 
-                        logger.debug("Refreshed token: %s, duration: %s, play time: %s", _dtoken, _duration, play_time)
+                        logger.debug("Refreshed token: {}, duration: {}, play time: {}", _dtoken, _duration, play_time)
                         continue
 
-                if not passed and state != 200:
-                    return self.StudyResult.ERROR
+                elif not passed and state != 200:
+                    return StudyResult.ERROR
 
-                last_log_time = play_time
+
+
+
                 wait_time = int(random.uniform(30, 90))
+                last_log_time = play_time
 
             dt = (time.time() - last_iter) * _speed # Since uploading the progress takes time, we assume that the video is still playing in the background, so manually calculate the time elapsed is required
             last_iter = time.time()
@@ -522,8 +530,8 @@ class Chaoxing:
             pbar.refresh()
             time.sleep(gc.THRESHOLD)
 
-        logger.info(f"任务完成: {_job['name']}")
-        return self.StudyResult.SUCCESS
+        logger.info("任务完成: {}", _job['name'])
+        return StudyResult.SUCCESS
 
     def study_document(self, _course, _job) -> StudyResult:
         """
@@ -553,13 +561,13 @@ class Chaoxing:
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
         if _resp.status_code != 200:
-            return self.StudyResult.ERROR
+            return StudyResult.ERROR
         else:
-            return self.StudyResult.SUCCESS
+            return StudyResult.SUCCESS
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
-            return self.StudyResult.SUCCESS
+            return StudyResult.SUCCESS
         _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
         def random_answer(options: str) -> str:
@@ -748,7 +756,7 @@ class Chaoxing:
             final_resp, questions = fetch_response()
         except Exception as e:
             logger.error(f"请求失败: {e}")
-            return self.StudyResult.ERROR
+            return StudyResult.ERROR
 
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
@@ -870,11 +878,11 @@ class Chaoxing:
                 logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
             else:
                 logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json["msg"]}')
-                return self.StudyResult.ERROR
+                return StudyResult.ERROR
         else:
             logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')
-            return self.StudyResult.ERROR
-        return self.StudyResult.SUCCESS
+            return StudyResult.ERROR
+        return StudyResult.SUCCESS
 
     def study_read(self, _course, _job, _job_info) -> StudyResult:
         """
@@ -893,11 +901,11 @@ class Chaoxing:
         )
         if _resp.status_code != 200:
             logger.error(f"阅读任务学习失败 -> [{_resp.status_code}]{_resp.text}")
-            return self.StudyResult.ERROR
+            return StudyResult.ERROR
         else:
             _resp_json = _resp.json()
             logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
-            return self.StudyResult.SUCCESS
+            return StudyResult.SUCCESS
 
     def study_emptypage(self, _course, point):
         _session = SessionManager.get_session()
@@ -917,7 +925,7 @@ class Chaoxing:
         )
         if _resp.status_code != 200:
             logger.error(f"空页面任务失败 -> [{_resp.status_code}]{point['title']}")
-            return self.StudyResult.ERROR
+            return StudyResult.ERROR
         else:
             logger.info(f"空页面任务完成 -> {point['title']}")
-            return self.StudyResult.SUCCESS
+            return StudyResult.SUCCESS
