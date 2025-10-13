@@ -48,10 +48,6 @@ def check_answer(answer, type, tiku):  # 只会写小杯代码，这里用个tik
 
 
 def cut(answer):
-    # cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
-    # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
-    # IndexError: Cannot choose from an empty sequence #391
-    # 同时为了避免没有考虑到的 case, 应该先按照 '\n' 匹配, 匹配不到再按照其他字符匹配
     cut_char = [
         "\n",
         ",",
@@ -72,12 +68,16 @@ def cut(answer):
         "&",
         " ",
         "、",
-    ]  # 多选答案切割符
-    res = []
+    ]
+    if answer is None:
+        return None
+
+    answer = str(answer)
     for char in cut_char:
-        res = [
-            opt for opt in answer.split(char) if opt.strip()
-        ]  # Filter empty strings
-        if len(res) > 0:
+        if char not in answer:
+            continue
+        res = [opt.strip() for opt in answer.split(char) if opt.strip()]
+        if res:
             return res
-    return None
+    stripped = answer.strip()
+    return [stripped] if stripped else None
