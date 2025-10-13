@@ -682,7 +682,8 @@ class Chaoxing:
             if isinstance(res, str):
                 res = [res]
             for c in res:
-                cleaned_res.append(re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c))
+                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c)
+                cleaned_res.append(cleaned.strip())
 
             return cleaned_res
 
