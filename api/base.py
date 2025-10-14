@@ -117,7 +117,7 @@ class Chaoxing:
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
-        self.rate_limiter = RateLimiter(0.4) # 其他接口速率限制比较松
+        self.rate_limiter = RateLimiter(0.5) # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2) # 上报进度极其容易卡验证码，限制2s一次
 
     def login(self, login_with_cookies=False):
@@ -566,6 +566,7 @@ class Chaoxing:
             return StudyResult.SUCCESS
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
+        # FIXME: 这一块可以单独搞一个类出来了，方法里面又套方法，每一次调用都会创建新的方法，十分浪费
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
         _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
@@ -637,10 +638,10 @@ class Chaoxing:
             answer(str): 多选题答案字符串.
 
             返回:
-            list[str]: 切割后的答案列表, 如果无法切割, 则返回默认的选项列表None
+            list[str]: 切割后的答案列表,如果无法切割, 则返回默认的选项列表None
 
             注意:
-            如果无法从网页中提取题目信息, 将记录警告日志并返回None
+            如果无法从网页中提取题目信息,将记录警告日志并返回None
             """
             # cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
             # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
