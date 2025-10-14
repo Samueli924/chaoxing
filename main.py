@@ -1,21 +1,43 @@
 ﻿# -*- coding: utf-8 -*-
 import argparse
 import configparser
-import random
-import time
+import enum
 import sys
-import os
+import threading
+import time
 import traceback
-from urllib3 import disable_warnings, exceptions
+from concurrent.futures.thread import ThreadPoolExecutor
+from dataclasses import dataclass
+from queue import PriorityQueue, ShutDown
+from threading import RLock
+from typing import Any
 
-from api.logger import logger
-from api.base import Chaoxing, Account
-from api.exceptions import LoginError, InputFormatError, MaxRollBackExceeded
+from tqdm import tqdm
+
 from api.answer import Tiku
+from api.base import Chaoxing, Account, StudyResult
+from api.exceptions import LoginError, InputFormatError, MaxRollBackExceeded
+from api.logger import logger
 from api.notification import Notification
 
-# 关闭警告
-disable_warnings(exceptions.InsecureRequestWarning)
+
+class ChapterResult(enum.Enum):
+    SUCCESS=0,
+    ERROR=1,
+    NOT_OPEN=2,
+    PENDING=3
+
+
+def log_error(func):
+    def wrapper(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except BaseException as e:
+            logger.error(f"Error in thread {threading.current_thread().name}: {e}")
+            traceback.print_exception(type(e), e, e.__traceback__)
+            raise
+
+    return wrapper
 
 
 def str_to_bool(value):
@@ -70,9 +92,9 @@ def load_config_from_file(config_path):
     config = configparser.ConfigParser()
     config.read(config_path, encoding="utf8")
     
-    common_config = {}
-    tiku_config = {}
-    notification_config = {}
+    common_config: dict[str, Any] = {}
+    tiku_config: dict[str, Any] = {}
+    notification_config: dict[str, Any] = {}
     
     # 检查并读取common节
     if config.has_section("common"):
@@ -92,7 +114,7 @@ def load_config_from_file(config_path):
             common_config["username"] = common_config["username"].strip()
         if "password" in common_config and common_config["password"] is not None:
             common_config["password"] = common_config["password"].strip()
-    
+
     # 检查并读取tiku节
     if config.has_section("tiku"):
         tiku_config = dict(config.items("tiku"))
@@ -179,7 +201,8 @@ def init_chaoxing(common_config, tiku_config):
     return chaoxing
 
 
-def handle_not_open_chapter(notopen_action, point, tiku, RB, auto_skip_notopen=False):
+def handle_not_open_chapter(notopen_action, point, tiku):
+    auto_skip_notopen = False
     """处理未开放章节"""
     if notopen_action == "retry":
         # 默认处理方式：重试
@@ -191,23 +214,9 @@ def handle_not_open_chapter(notopen_action, point, tiku, RB, auto_skip_notopen=F
                 "请手动检查完成并提交再重试。或者在配置中配置(自动跳过关闭章节/开启题库并启用提交)"
             )
             return -1  # 退出标记
-        RB.add_times(point["id"])
         return 0  # 重试上一章节
-        
-    elif notopen_action == "ask":
-        # 询问模式 - 判断是否需要询问
-        if not auto_skip_notopen:
-            user_choice = input(f"章节 {point['title']} 未开放，是否继续检查后续章节？(y/n): ")
-            if user_choice.lower() != 'y':
-                # 用户选择停止
-                logger.info("根据用户选择停止检查后续章节")
-                return -1  # 退出标记
-            # 用户选择继续，设置自动跳过标志
-            logger.info("用户选择继续检查后续章节，将自动跳过连续的未开放章节")
-            return 1, True  # 继续下一章节, 设置自动跳过
-        else:
-            logger.info(f"章节 {point['title']} 未开放，自动跳过")
-            return 1, auto_skip_notopen  # 继续下一章节, 保持自动跳过状态
+
+
             
     else:  # notopen_action == "continue"
         # 继续模式，直接跳过当前章节
@@ -215,7 +224,7 @@ def handle_not_open_chapter(notopen_action, point, tiku, RB, auto_skip_notopen=F
         return 1  # 继续下一章节
 
 
-def process_job(chaoxing, course, job, job_info, speed):
+def process_job(chaoxing, course, job, job_info, speed) -> StudyResult:
     """处理单个任务点"""
     # 视频任务
     if job["type"] == "video":
@@ -224,83 +233,156 @@ def process_job(chaoxing, course, job, job_info, speed):
         video_result = chaoxing.study_video(
             course, job, job_info, _speed=speed, _type="Video"
         )
-        if chaoxing.StudyResult.is_failure(video_result):
+        if video_result.is_failure():
             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
             video_result = chaoxing.study_video(
                 course, job, job_info, _speed=speed, _type="Audio")
-        if chaoxing.StudyResult.is_failure(video_result):
+        if video_result.is_failure():
             logger.warning(
                 f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
             )
+        return video_result
     # 文档任务
     elif job["type"] == "document":
         logger.trace(f"识别到文档任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        chaoxing.study_document(course, job)
+        return chaoxing.study_document(course, job)
     # 测验任务
     elif job["type"] == "workid":
         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-        chaoxing.study_work(course, job, job_info)
+        return chaoxing.study_work(course, job, job_info)
     # 阅读任务
     elif job["type"] == "read":
         logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
-        chaoxing.strdy_read(course, job, job_info)
+        return chaoxing.study_read(course, job, job_info)
+
+    logger.error("Unknown job type: %s", job["type"])
+    return StudyResult.ERROR
 
 
-def process_chapter(chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen=False):
+@dataclass(order=True)
+class ChapterTask:
+    index: int
+    point: dict[str, Any]
+    result: ChapterResult = ChapterResult.PENDING
+    tries: int = 0
+
+class JobProcessor:
+    def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], speed: float, tasks: list[ChapterTask], worker_num=8):
+        self.chaoxing = chaoxing
+        self.course = course
+        self.speed = speed
+        self.max_tries = 5
+        self.tasks = tasks
+        self.failed_tasks: list[ChapterTask] = []
+        self.task_queue: PriorityQueue[ChapterTask] = PriorityQueue()
+        self.retry_queue: PriorityQueue[ChapterTask] = PriorityQueue()
+        self.wait_queue: PriorityQueue[ChapterTask] = PriorityQueue()
+        self.threads: list[threading.Thread] = []
+        self.workers = worker_num
+
+    def run(self):
+        for task in self.tasks:
+            self.task_queue.put(task)
+
+        for i in range(self.workers):
+            thread = threading.Thread(target=self.worker_thread, daemon=True)
+            self.threads.append(thread)
+            thread.start()
+
+        threading.Thread(target=self.retry_thread, daemon=True).start()
+
+        self.task_queue.join()
+        self.task_queue.shutdown()
+
+    @log_error
+    def worker_thread(self):
+        while True:
+            try:
+                task = self.task_queue.get()
+            except ShutDown:
+                logger.info("Worker task done")
+                return
+
+            task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed)
+            match task.result:
+                case ChapterResult.SUCCESS:
+                    logger.info("Task success: {}", task.point["title"])
+                    self.task_queue.task_done()
+
+                case ChapterResult.NOT_OPEN:
+                    # task.tries += 1
+                    if task.tries >= self.max_tries:
+                        logger.warning("Chapter is not open: {}", task.point["title"])
+                        self.task_queue.task_done()
+                        continue
+                    # self.wait_queue.put(task)
+                    self.retry_queue.put(task)
+
+                case ChapterResult.ERROR:
+                    task.tries += 1
+                    logger.warning("Retrying task %s (%d/%d attempts)", task.point["title"], task.tries,
+                                   self.max_tries)
+                    if task.tries >= self.max_tries:
+                        logger.error("Max retries reached for task: %s", task.point["title"])
+                        self.failed_tasks.append(task)
+                        self.task_queue.task_done()
+                        continue
+                    self.retry_queue.put(task)
+
+                case _:
+                    logger.error("Invalid task state %s for task %s", task.result, task.point["title"])
+                    self.failed_tasks.append(task)
+                    self.task_queue.task_done()
+
+
+
+    @log_error
+    def retry_thread(self):
+        try:
+            while True:
+                task = self.retry_queue.get()
+                self.task_queue.put(task)
+                time.sleep(1)
+        except ShutDown:
+            pass
+
+
+def process_chapter(chaoxing, course, point, speed) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
     
     if point["has_finished"]:
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
-        return 1, auto_skip_notopen  # 继续下一章节
+        return ChapterResult.SUCCESS
     
     # 随机等待，避免请求过快
-    sleep_duration = random.uniform(1, 3)
-    logger.debug(f"本次随机等待时间: {sleep_duration:.3f}s")
-    time.sleep(sleep_duration)
+    chaoxing.rate_limiter.limit_rate(random_time=True,random_min=0, random_max=0.2)
     
     # 获取当前章节的所有任务点
     jobs = []
     job_info = None
-    jobs, job_info = chaoxing.get_job_list(
-        course["clazzId"], course["courseId"], course["cpi"], point["id"]
-    )
+    jobs, job_info = chaoxing.get_job_list(course, point)
 
     # 发现未开放章节, 根据配置处理
-    try:
-        if job_info.get("notOpen", False):
-            result = handle_not_open_chapter(
-                notopen_action, point, chaoxing.tiku, RB, auto_skip_notopen
-            )
-            
-            if isinstance(result, tuple):
-                return result  # 返回继续标志和更新后的auto_skip_notopen
-            else:
-                return result, auto_skip_notopen
-        
-        # 遇到开放的章节，重置自动跳过状态
-        auto_skip_notopen = False
-        RB.new_job(point["id"])
+    if job_info.get("notOpen", False):
+        return ChapterResult.NOT_OPEN
 
-    except MaxRollBackExceeded:
-        logger.error("回滚次数已达3次, 请手动检查学习通任务点完成情况")
-        # 跳过该课程
-        return -1, auto_skip_notopen  # 退出标记
-    
-    chaoxing.rollback_times = RB.rollback_times
-    
-    # 可能存在章节无任何内容的情况
+    # 已经默认处理空任务，此处不需要判断
     if not jobs:
-        if RB.rollback_times > 0:
-            logger.trace(f"回滚中 尝试空页面任务, 任务章节: {course['title']}")
-            chaoxing.study_emptypage(course, point)
-        return 1, auto_skip_notopen  # 继续下一章节
+        pass
+
+    # TODO: 个别章节很恶心，多到5个点，可以并行处理，将来会让不同课程不同章节的所有任务点共享一个队列，从而实现全局并行
+    job_results:list[StudyResult]=[]
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for result in executor.map(lambda job: process_job(chaoxing, course, job, job_info, speed), jobs):
+            job_results.append(result)
     
-    # 遍历所有任务点
-    for job in jobs:
-        process_job(chaoxing, course, job, job_info, speed)
-    
-    return 1, auto_skip_notopen  # 继续下一章节
+    for result in job_results:
+        if result.is_failure():
+            return ChapterResult.ERROR
+
+    return ChapterResult.SUCCESS
+
 
 
 def process_course(chaoxing, course, notopen_action, speed):
@@ -318,7 +400,23 @@ def process_course(chaoxing, course, notopen_action, speed):
     auto_skip_notopen = False
     # 初始化回滚管理器
     RB = RollBackManager()
-    
+
+    _old_format_sizeof = tqdm.format_sizeof
+    tqdm.format_sizeof = format_time
+    tqdm.set_lock(RLock())
+
+    tasks=[]
+
+    for i, point in enumerate(point_list["points"]):
+        task = ChapterTask(point=point, index=i)
+        tasks.append(task)
+    p = JobProcessor(chaoxing, course, speed, tasks, worker_num=8)
+    p.run()
+
+
+    tqdm.format_sizeof = _old_format_sizeof
+
+    """
     while __point_index < len(point_list["points"]):
         point = point_list["points"][__point_index]
         logger.debug(f"当前章节 __point_index: {__point_index}")
@@ -333,6 +431,8 @@ def process_course(chaoxing, course, notopen_action, speed):
             __point_index -= 1  # 默认第一个任务总是开放的
         else:  # 继续下一章节
             __point_index += 1
+    """
+
 
 
 def filter_courses(all_course, course_list):
@@ -361,6 +461,18 @@ def filter_courses(all_course, course_list):
         course_task = all_course
     
     return course_task
+
+
+def format_time(num, suffix='', divisor=''):
+    total_time = round(num)
+    sec = total_time % 60
+    mins = (total_time % 3600) // 60
+    hrs = total_time // 3600
+
+    if hrs > 0:
+        return f"{hrs:02d}:{mins:02d}:{sec:02d}"
+
+    return f"{mins:02d}:{sec:02d}"
 
 
 def main():

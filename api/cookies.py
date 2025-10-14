@@ -21,9 +21,9 @@ def use_cookies() -> dict:
 
     cookies={}
     with open(gc.COOKIES_PATH, "r") as f:
-        buffer=f.read()
+        buffer = f.read().strip()
         for item in buffer.split(";"):
-            k, v = item.split("=")
-            v = v.removesuffix("\n")
+            k, v = item.strip().split("=")
             cookies[k] = v
+
     return cookies

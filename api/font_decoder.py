@@ -1,6 +1,7 @@
-from bs4 import BeautifulSoup
 import re
 from typing import Dict, Optional
+
+from bs4 import BeautifulSoup
 
 import api.cxsecret_font as cxfont
 from api.exceptions import FontDecodeError
