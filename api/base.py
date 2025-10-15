@@ -475,7 +475,6 @@ class Chaoxing:
         pbar = tqdm(total=duration, initial=play_time, desc=_job["name"],
                     unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
 
-        passed = False
         forbidden_retry = 0
         max_forbidden_retry = 2
 
