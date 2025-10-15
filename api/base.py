@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import functools
-import logging
 import random
 import re
 import threading
@@ -10,10 +9,10 @@ from hashlib import md5
 from typing import Self, Optional, Literal
 
 import requests
+from loguru import logger
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
-from loguru import logger
 
 from api.answer import *
 from api.answer_check import cut
@@ -28,6 +27,7 @@ from api.decode import (
     decode_questions_info,
 )
 from api.exceptions import MaxRetryExceeded
+
 
 def get_timestamp():
     return str(int(time.time() * 1000))
