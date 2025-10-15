@@ -479,8 +479,8 @@ class Chaoxing:
         forbidden_retry = 0
         max_forbidden_retry = 2
 
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, 0, _type,headers=headers)
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)\
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time, _type,headers=headers)
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)
 
         if passed:
             logger.info("任务瞬间完成: {}", _job['name'])
