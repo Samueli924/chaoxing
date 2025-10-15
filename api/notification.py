@@ -24,6 +24,7 @@ class NotificationService(ABC):
         """初始化通知服务"""
         self.name = self.__class__.__name__
         self.url = ""
+        self.tg_chat_id = ""
         self._conf = None
         self.disabled = False
         
@@ -274,6 +275,46 @@ class Bark(NotificationService):
         except ValueError as e:
             logger.error(f"Bark返回数据解析失败: {e}")
 
-
+class Telegram(NotificationService):
+    """
+    通过Telegram发送通知
+    """
+    
+    def _init_service(self) -> None:
+        """初始化Telegram服务"""
+        if not self._conf or not self._conf.get('url') or not self._conf.get('tg_chat_id'):
+            self.disabled = True
+            logger.info("未找到Telegram的url或tg_chat_id配置，已忽略该通知服务")
+            return
+        self.tg_chat_id = self._conf['tg_chat_id']
+        self.url = self._conf['url']
+        logger.info(f"已初始化Telegram通知服务，Chat_id: {self.tg_chat_id} URL: {self.url}")
+    
+    def _send(self, message: str) -> None:
+        """
+        通过Telegram发送通知
+        
+        Args:
+            message: 要发送的消息内容
+        """
+        params = {
+            'chat_id': self.tg_chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        
+        try:
+            response = requests.post(self.url, data=params)
+            response.raise_for_status()
+            result = response.json()
+            if result.get('ok'):
+                logger.info(f"Telegram通知发送成功: {result}")
+            else:
+                logger.error(f"Telegram通知发送失败: {result}")
+        except requests.RequestException as e:
+            logger.error(f"Telegram通知发送失败: {e}")
+        except ValueError as e:
+            logger.error(f"Telegram返回数据解析失败: {e}")
+            
 # 为了向后兼容，保留原来的Notification类
 Notification = DefaultNotification
