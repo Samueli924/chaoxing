@@ -242,14 +242,14 @@ class JobProcessor:
         self.retry_queue: PriorityQueue[ChapterTask] = PriorityQueue()
         self.wait_queue: PriorityQueue[ChapterTask] = PriorityQueue()
         self.threads: list[threading.Thread] = []
-        self.workers = config["jobs"]
+        self.worker_num = config["jobs"]
         self.config = config
 
     def run(self):
         for task in self.tasks:
             self.task_queue.put(task)
 
-        for i in range(self.workers):
+        for i in range(self.worker_num):
             thread = threading.Thread(target=self.worker_thread, daemon=True)
             self.threads.append(thread)
             thread.start()
@@ -257,22 +257,27 @@ class JobProcessor:
         threading.Thread(target=self.retry_thread, daemon=True).start()
 
         self.task_queue.join()
+        time.sleep(0.5)
         self.task_queue.shutdown()
+
 
     @log_error
     def worker_thread(self):
+        tqdm.set_lock(tqdm.get_lock())
         while True:
             try:
                 task = self.task_queue.get()
             except ShutDown:
-                logger.info("Worker task done")
+                logger.info("Queue shut down")
                 return
 
             task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed)
+
             match task.result:
                 case ChapterResult.SUCCESS:
-                    logger.info("Task success: {}", task.point["title"])
+                    logger.debug("Task success: {}", task.point["title"])
                     self.task_queue.task_done()
+                    logger.debug(f"unfinished task: {self.task_queue.unfinished_tasks}")
 
                 case ChapterResult.NOT_OPEN:
                     # task.tries += 1
@@ -294,21 +299,19 @@ class JobProcessor:
 
                 case ChapterResult.ERROR:
                     task.tries += 1
-                    logger.warning("Retrying task %s (%d/%d attempts)", task.point["title"], task.tries,
+                    logger.warning("Retrying task {} ({}/{} attempts)", task.point["title"], task.tries,
                                    self.max_tries)
                     if task.tries >= self.max_tries:
-                        logger.error("Max retries reached for task: %s", task.point["title"])
+                        logger.error("Max retries reached for task: {}", task.point["title"])
                         self.failed_tasks.append(task)
                         self.task_queue.task_done()
                         continue
                     self.retry_queue.put(task)
 
                 case _:
-                    logger.error("Invalid task state %s for task %s", task.result, task.point["title"])
+                    logger.error("Invalid task state {} for task {}", task.result, task.point["title"])
                     self.failed_tasks.append(task)
                     self.task_queue.task_done()
-
-
 
     @log_error
     def retry_thread(self):
@@ -316,6 +319,7 @@ class JobProcessor:
             while True:
                 task = self.retry_queue.get()
                 self.task_queue.put(task)
+                self.task_queue.task_done() # task_done is not called when a task failed and needs to be retried, so if is reput into the queue, the task num will increase by one and become more than the real task number
                 time.sleep(1)
         except ShutDown:
             pass
@@ -324,7 +328,6 @@ class JobProcessor:
 def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, Any], speed:float) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
-    
     if point["has_finished"]:
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
         return ChapterResult.SUCCESS
@@ -421,9 +424,11 @@ def filter_courses(all_course, course_list):
 
     # 筛选需要学习的课程
     course_task = []
+    course_ids = []
     for course in all_course:
-        if course["courseId"] in course_list:
+        if course["courseId"] in course_list and course["courseId"] not in course_ids:
             course_task.append(course)
+            course_ids.append(course["courseId"])
     
     # 如果没有指定课程，则学习所有课程
     if not course_task:
