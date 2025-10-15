@@ -336,7 +336,6 @@ def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, A
     chaoxing.rate_limiter.limit_rate(random_time=True,random_min=0, random_max=0.2)
     
     # 获取当前章节的所有任务点
-    jobs = []
     job_info = None
     jobs, job_info = chaoxing.get_job_list(course, point)
 
@@ -454,11 +453,10 @@ def main():
     try:
         # 初始化配置
         common_config, tiku_config, notification_config = init_config()
-        worker_num = common_config["jobs"]
         
         # 强制播放按照配置文件调节
-        speed = min(2.0, max(1.0, common_config.get("speed", 1.0)))
-        notopen_action = common_config.get("notopen_action", "retry")
+        common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
+        common_config["notopen_action"] = common_config.get("notopen_action", "retry")
         
         # 初始化超星实例
         chaoxing = init_chaoxing(common_config, tiku_config)
