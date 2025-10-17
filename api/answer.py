@@ -261,6 +261,7 @@ class Tiku:
             self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
+        # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
         new_cls = globals()[cls_name]()
         new_cls.config_set(self._conf)
         return new_cls

@@ -2,7 +2,7 @@ from loguru import logger
 from tqdm import tqdm
 import sys
 
-tqdm_stream = sys.stdout
+tqdm_stream = sys.stderr
 
 def tqdm_sink(msg):
     tqdm.write(msg.rstrip(), file=tqdm_stream)
