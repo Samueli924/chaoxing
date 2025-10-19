@@ -8,7 +8,7 @@ celery>=5.5.3
 flask>=3.1.2
 fonttools>=4.60.1
 openai>=1.109.1
-ddddocr>=1.5.6
+ddddocr
 tqdm>=4.67.1
 httpx>=0.28.1
 urllib3>=2.5.0
