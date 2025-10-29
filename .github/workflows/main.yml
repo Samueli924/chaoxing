@@ -13,8 +13,8 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            architecture: 'x86'
-            name: 'win32'
+            architecture: 'x64'
+            name: 'win64'
 
     steps:
       - uses: actions/checkout@v3
