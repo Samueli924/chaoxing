@@ -168,7 +168,7 @@ class Tiku:
         return self._token
 
     @token.setter
-    def token(self,value):
+    def token(self, value):
         self._token = value
 
     def init_tiku(self):
@@ -237,7 +237,7 @@ class Tiku:
 
 
 
-    def _query(self,q_info:dict) -> Optional[str]:
+    def _query(self, q_info:dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
         """
@@ -347,60 +347,73 @@ class TikuYanxi(Tiku):
         self.load_token()
 
 class TikuLike(Tiku):
-    # Like知识库实现
+    # Like知识库实现 参考 https://www.datam.site/
     def __init__(self) -> None:
         super().__init__()
         self.name = 'Like知识库'
-        self.ver = '1.0.8' #对应官网API版本
-        self.query_api = 'https://api.datam.site/search'
-        self.balance_api = 'https://api.datam.site/balance'
+        self.ver = '2.0.0' #对应官网API版本
+        self.query_api = 'https://app.datam.site/api/v1/query'
+        self.balance_api = 'https://app.datam.site/api/v1/balance'
         self.homepage = 'https://www.datam.site'
         self._model = None
-        self._token = None
+        self._tokens = []
         self._times = -1
         self._search = False
+        self._vision = True
         self._count = 0
+        self._headers = {"Content-Type": "application/json"}
 
-    def _query(self,q_info:dict):
-        q_info_map = {"single":"【单选题】","multiple":"【多选题】","completion":"【填空题】","judgement":"【判断题】"}
-        api_params_map = {0:"others",1:"choose",2:"fills",3:"judge"}
-        q_info_prefix = q_info_map.get(q_info['type'],"【其他类型题目】")
-        option_map = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7, 'a': 0, "b": 1, "c": 2, "d": 3,
-                      "e": 4, "f": 5, "g": 6, "h": 7}
+    def _query(self, q_info:dict = {}):
+        q_info_map = {"single": "【单选题】", "multiple": "【多选题】", "completion": "【填空题】", "judgement": "【判断题】"}
+        q_info_prefix = q_info_map.get(q_info['type'], "【其他类型题目】")
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
-        question = f"{q_info_prefix}{q_info['title']}\n{options}"
+        question = f"{q_info_prefix}{q_info['title']}\n"
+
+        if q_info['type'] in ['single', 'multiple']:
+            question += f"选项为: {options}\n"
+
         ret = ""
         ans = ""
-        res = requests.post(
-            self.query_api,
-            json={
-                'query': question,
-                'token': self._token,
-                'model': self._model if self._model else '',
-                'search': self._search
-            },
-            verify=False
-        )
+        token = random.choice(self._tokens)
+        self._headers['Authorization'] = f'Bearer {token}'
+        try :
+            res = requests.post(
+                self.query_api,
+                json={
+                    'query': question,
+                    'model': self._model if self._model else '',
+                    'search': self._search,
+                    'vision': self._vision
+                },
+                headers=self._headers,
+                verify=False
+            )
+        except Exception as e:
+            logger.error(f'{self.name}查询异常: \n{e}')
+            return None
 
         if res.status_code == 200:
             res_json = res.json()
-            q_type = res_json['data'].get('type', 0)
-            params = api_params_map.get(q_type, "")
-            tans = res_json['data'].get(params, "")
+            msg = res_json.get('message', '')
+            logger.info(msg)
+            output = res_json['results'].get('output', {})
+            q_type = output.get('questionType', "OTHER")
+            answer = output.get('answer', '')
             ans = ""
-            match q_type:
-                case 1:
-                    for i in tans:
-                        ans = ans + q_info['options'][option_map[i]] + '\n'
-                case 2:
-                    for i in tans:
-                        ans = ans + i + '\n'
-                case 3:
-                    ans = "正确" if tans == 1 else "错误"
-                case 0:
-                    ans = tans
+            if q_type == "CHOICE":
+                selected_options = answer.get('selectedOptions', [])
+                ans = '\n'.join(selected_options)
+            elif q_type == "FILL_IN_BLANK":
+                blanks = answer.get('blanks', [])
+                ans = "\n".join(blanks)
+            elif q_type == "JUDGMENT":
+                is_correct = answer.get('isCorrect', False)
+                ans = "正确" if is_correct else "错误"
+            else:
+                otherText = answer.get('otherText', '')
+                ans = otherText
         else:
-            logger.error(f'{self.name}查询失败:\n{res.text}')
+            logger.error(f'{self.name}查询失败: \n{res.text}')
             return None
 
         ret += str(ans)
@@ -416,35 +429,36 @@ class TikuLike(Tiku):
         return ret
 
     def update_times(self):
+        # 为余额查询使用随机token创建临时头部
+        temp_headers = self._headers.copy()
+        token = random.choice(self._tokens)
+        temp_headers['Authorization'] = f'Bearer {token}'
+        
         res = requests.post(
             self.balance_api,
-            json={
-                'token': self._token,
-            },
+            headers=temp_headers,
             verify=False
         )
         if res.status_code == 200:
             res_json = res.json()
-            self._times = res_json["data"].get("balance",self._times)
-            logger.info(f"当前LIKE知识库Token剩余查询次数为: {self._times}")
+            self._times = res_json["data"].get("balance", self._times)
+            logger.info(f"当前LIKE知识库Token剩余查询次数为: {self._times} (仅供参考, 实际次数以查询结果为准)")
         else:
-            logger.error('TOKEN出现错误，请检查后再试')
+            logger.error('Token余额查询过程中出现错误，请稍后再试')
 
     def load_token(self):
-        token = self._conf['tokens'].split(',')[-1] if ',' in self._conf['tokens'] else self._conf['tokens']
-        self._token = token
+        tokens_str = self._conf['tokens']
+        if ',' in tokens_str:
+            tokens = [token.strip() for token in tokens_str.split(',')]
+        else:
+            tokens = [tokens_str.strip()]  # 确保即使只有一个token也作为列表处理
+        self._tokens = tokens
 
     def load_config(self):
-        self._search = self._conf['likeapi_search']
-        self._model = self._conf['likeapi_model']
-        var_params = {"likeapi_search": self._search, "likeapi_model": self._model}
-        config_params = {"likeapi_search": False, "likeapi_model": None}
-
-        for k,v in config_params.items():
-            if k in self._conf:
-                var_params[k] = self._conf[k]
-            else:
-                var_params[k] = v
+        # 从配置中获取参数，提供默认值
+        self._search = self._conf.get('likeapi_search', False)
+        self._model = self._conf.get('likeapi_model', None)
+        self._vision = self._conf.get('likeapi_vision', True)
 
     def _init_tiku(self):
         self.load_token()
@@ -616,6 +630,7 @@ class AI(Tiku):
         self.model = self._conf['model']
         self.http_proxy = self._conf['http_proxy']
         self.min_interval_seconds = int(self._conf['min_interval_seconds'])
+
 class SiliconFlow(Tiku):
     """硅基流动大模型答题实现"""
     def __init__(self):
