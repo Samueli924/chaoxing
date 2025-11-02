@@ -185,8 +185,7 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     job_info = _extract_job_info(cards_data)
 
     # 处理所有附件任务
-    cards = cards_data.get("attachments", [])
-    job_list = _process_attachment_cards(cards)
+    job_list = _process_attachment_cards(cards_data)
 
     return job_list, job_info
 
@@ -217,7 +216,7 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_attachment_cards(cards_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     处理所有附件任务卡片
     
@@ -228,44 +227,46 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
         处理后的任务列表
     """
     job_list = []
+
+    attachments = cards_data.get("attachments", [])
     
-    for card in cards:
+    for attachment in attachments:
         # 跳过已通过的任务
-        if card.get("isPassed", False):
+        if attachment.get("isPassed", False):
             continue
             
         # 处理不同类型的任务
-        if card.get("job") is None:
+        if attachment.get("job") is None:
             # 处理阅读类型任务
-            read_job = _process_read_task(card)
+            read_job = _process_read_task(attachment)
             if read_job:
                 job_list.append(read_job)
             continue
 
         # 一开始就把超星api的屎山处理掉，不要用一个屎山行为掩盖另一个屎山 (指根据otherInfo中是否有courseId决定url拼接方式😂)
-        if "otherInfo" in card:
+        if "otherInfo" in attachment:
             logger.trace("Fixing other info...")
-            card["otherInfo"] = card["otherInfo"].split("&")[0]
-            logger.trace(f"New info: {card['otherInfo']}")
+            attachment["otherInfo"] = attachment["otherInfo"].split("&")[0]
+            logger.trace(f"New info: {attachment['otherInfo']}")
 
 
         # 根据任务类型处理
-        card_type = card.get("type", "")
+        card_type = attachment.get("type", "")
         if card_type == "video":
-            video_job = _process_video_task(card)
+            video_job = _process_video_task(attachment)
             if video_job:
                 job_list.append(video_job)
         elif card_type == "document":
-            doc_job = _process_document_task(card)
+            doc_job = _process_document_task(attachment)
             if doc_job:
                 job_list.append(doc_job)
         elif card_type == "workid":
-            work_job = _process_work_task(card)
+            work_job = _process_work_task(attachment)
             if work_job:
                 job_list.append(work_job)
         else:
             logger.warning(f"Unknown card type: {card_type}")
-            logger.warning(card)
+            logger.warning(attachment)
 
     return job_list
 
@@ -291,19 +292,21 @@ def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """处理视频类型任务"""
     try:
+        video_property = card.get("property", {})
         return {
             "type": "video",
             "jobid": card.get("jobid", ""),
-            "name": card.get("property", {}).get("name", ""),
+            "name": video_property.get("name", ""),
             "otherinfo": card.get("otherInfo", ""),
             "mid": card["mid"],  # 必须字段，如果不存在会抛出异常
             "objectid": card.get("objectId", ""),
             "aid": card.get("aid", ""),
             "playTime": card.get("playTime", 0),
-            "rt": card.get("property", {}).get("rt", ""),
+            "rt": video_property.get("rt", ""),
             "attDuration": card.get("attDuration", ""),
             "attDurationEnc": card.get("attDurationEnc", ""),
             "videoFaceCaptureEnc": card.get("videoFaceCaptureEnc", ""),
+            "doublespeed": video_property.get("doublespeed", 0)
         }
     except KeyError:
         logger.warning("出现转码失败视频，已跳过...")

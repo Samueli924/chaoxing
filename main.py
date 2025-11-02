@@ -64,9 +64,6 @@ def parse_args():
         "-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔"
     )
     parser.add_argument(
-        "-s", "--speed", type=float, default=1.0, help="视频播放倍速 (默认1, 最大2)"
-    )
-    parser.add_argument(
         "-j", "--jobs", type=int, default=4, help="同时进行的章节数 (默认4, 如果一个章节有多个任务点，不会限制同时处理任务点的数量)"
     )
 
@@ -106,9 +103,6 @@ def load_config_from_file(config_path):
         # 处理course_list，将字符串转换为列表
         if "course_list" in common_config and common_config["course_list"]:
             common_config["course_list"] = [item.strip() for item in common_config["course_list"].split(",") if item.strip()]
-        # 处理speed，将字符串转换为浮点数
-        if "speed" in common_config:
-            common_config["speed"] = float(common_config["speed"])
         if "jobs" in common_config:
             common_config["jobs"] = int(common_config["jobs"])
         # 处理notopen_action，设置默认值为retry
@@ -143,7 +137,6 @@ def build_config_from_args(args):
         "username": args.username,
         "password": args.password,
         "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
-        "speed": args.speed if args.speed else 1.0,
         "jobs": args.jobs,
         "notopen_action": args.notopen_action if args.notopen_action else "retry"
     }
@@ -188,19 +181,19 @@ def init_chaoxing(common_config, tiku_config):
     return chaoxing
 
 
-def process_job(chaoxing: Chaoxing, course:dict, job:dict, job_info:dict, speed:float) -> StudyResult:
+def process_job(chaoxing: Chaoxing, course:dict, job:dict, job_info:dict) -> StudyResult:
     """处理单个任务点"""
     # 视频任务
     if job["type"] == "video":
         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
         # 超星的接口没有返回当前任务是否为Audio音频任务
         video_result = chaoxing.study_video(
-            course, job, job_info, _speed=speed, _type="Video"
+            course, job, job_info, _type="Video"
         )
         if video_result.is_failure():
             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
             video_result = chaoxing.study_video(
-                course, job, job_info, _speed=speed, _type="Audio")
+                course, job, job_info, _type="Audio")
         if video_result.is_failure():
             logger.warning(
                 f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
@@ -234,7 +227,6 @@ class JobProcessor:
     def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], tasks: list[ChapterTask], config: dict[str, Any]):
         self.chaoxing = chaoxing
         self.course = course
-        self.speed = config["speed"]
         self.max_tries = 5
         self.tasks = tasks
         self.failed_tasks: list[ChapterTask] = []
@@ -271,7 +263,7 @@ class JobProcessor:
                 logger.info("Queue shut down")
                 return
 
-            task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed)
+            task.result = process_chapter(self.chaoxing, self.course, task.point)
 
             match task.result:
                 case ChapterResult.SUCCESS:
@@ -325,7 +317,7 @@ class JobProcessor:
             pass
 
 
-def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, Any], speed:float) -> ChapterResult:
+def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, Any]) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
     if point["has_finished"]:
@@ -350,7 +342,7 @@ def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, A
     # TODO: 个别章节很恶心，多到5个点，可以并行处理，将来会让不同课程不同章节的所有任务点共享一个队列，从而实现全局并行
     job_results:list[StudyResult]=[]
     with ThreadPoolExecutor(max_workers=5) as executor:
-        for result in executor.map(lambda job: process_job(chaoxing, course, job, job_info, speed), jobs):
+        for result in executor.map(lambda job: process_job(chaoxing, course, job, job_info), jobs):
             job_results.append(result)
     
     for result in job_results:
@@ -393,7 +385,7 @@ def process_course(chaoxing: Chaoxing, course:dict[str, Any], config: dict):
         logger.debug(f"当前章节 __point_index: {__point_index}")
         
         result, auto_skip_notopen = process_chapter(
-            chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen
+            chaoxing, course, point, RB, notopen_action, auto_skip_notopen
         )
         
         if result == -1:  # 退出当前课程
@@ -455,7 +447,6 @@ def main():
         common_config, tiku_config, notification_config = init_config()
         
         # 强制播放按照配置文件调节
-        common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
         common_config["notopen_action"] = common_config.get("notopen_action", "retry")
         
         # 初始化超星实例

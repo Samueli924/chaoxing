@@ -445,7 +445,8 @@ class Chaoxing:
         return None
 
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+    def study_video(self, _course, _job, _job_info, _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+        _speed = _speed = 2.0 if _job["doublespeed"] else 1.0
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
