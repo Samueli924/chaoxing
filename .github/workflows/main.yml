@@ -13,15 +13,15 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            architecture: 'x86'
-            name: 'win32'
+            architecture: 'x64'
+            name: 'win64'
 
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
-          python-version: '3.10'
+          python-version: '3.13'
           architecture: ${{matrix.architecture}}
 
       - name: Install requirements

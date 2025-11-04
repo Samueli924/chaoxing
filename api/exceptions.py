@@ -1,6 +1,6 @@
 try:
     from requests.exceptions import JSONDecodeError
-except:  # noqa: E722
+except ImportError:
     from json import JSONDecodeError
 
 

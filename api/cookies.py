@@ -1,16 +1,29 @@
 # -*- coding: utf-8 -*-
 import os.path
-import pickle
+
+import requests
+
 from api.config import GlobalConst as gc
 
 
-def save_cookies(_session):
-    with open(gc.COOKIES_PATH, "wb") as f:
-        pickle.dump(_session.cookies, f)
+def save_cookies(session: requests.Session):
+    buffer=""
+    with open(gc.COOKIES_PATH, "w") as f:
+        for k, v in session.cookies.items():
+            buffer += f"{k}={v};"
+        buffer = buffer.removesuffix(";")
+        f.write(buffer)
 
 
-def use_cookies():
-    if os.path.exists(gc.COOKIES_PATH):
-        with open(gc.COOKIES_PATH, "rb") as f:
-            _cookies = pickle.load(f)
-        return _cookies
+def use_cookies() -> dict:
+    if not os.path.exists(gc.COOKIES_PATH):
+        return {}
+
+    cookies={}
+    with open(gc.COOKIES_PATH, "r") as f:
+        buffer = f.read().strip()
+        for item in buffer.split(";"):
+            k, v = item.strip().split("=")
+            cookies[k] = v
+
+    return cookies
