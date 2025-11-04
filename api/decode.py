@@ -13,7 +13,6 @@ from bs4 import BeautifulSoup, NavigableString
 
 from api.font_decoder import FontDecoder
 from api.logger import logger
-import loguru
 
 
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
@@ -233,11 +232,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
     for index, card in enumerate(cards):
         # 跳过已通过的任务
         if card.get("isPassed", False):
-            loguru.logger.trace(f"跳过已完成任务: {card.get('property', {}).get('title')}")
             continue
-
-        # 打印原始卡片信息用于调试（可根据需要开启）
-        # loguru.logger.debug(f"处理任务卡片 {index}：{card.get('type')} - {card.get('property', {}).get('title')}")
 
         # 处理无job字段的特殊任务
         if card.get("job") is None:
@@ -277,27 +272,21 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             live_job = _process_live_task(card)
             if live_job:
                 job_list.append(live_job)
-                loguru.logger.trace(f"识别到直播任务: {live_job.get('name')}")
         elif card_type == "video":
             video_job = _process_video_task(card)
             if video_job:
                 job_list.append(video_job)
-                loguru.logger.trace(f"识别到视频任务: {video_job.get('name')}")
         elif card_type == "document":
             doc_job = _process_document_task(card)
             if doc_job:
                 job_list.append(doc_job)
-                loguru.logger.trace(f"识别到文档任务: {doc_job.get('name')}")
         elif card_type == "workid":
             work_job = _process_work_task(card)
             if work_job:
                 job_list.append(work_job)
-                loguru.logger.trace(f"识别到测验任务: {work_job.get('name')}")
         else:
-            # 对未知类型任务进行特征分析，帮助后续优化识别逻辑
-            loguru.logger.warning(
-                f"未知任务类型: {card_type}，特征: {[k for k in property_data.keys() if 'live' in k.lower() or 'video' in k.lower()]}"
-            )
+            logger.warning(f"Unknown card type: {card_type}")
+            logger.warning(card)
 
     return job_list
 
@@ -320,7 +309,7 @@ def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "streamName": property_data.get("streamName")
         }
     except Exception as e:
-        loguru.logger.error(f"解析直播任务失败: {str(e)}, 任务数据: {str(card)[:200]}")
+        logger.error(f"解析直播任务失败: {str(e)}, 任务数据: {str(card)[:200]}")
         return None
 
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
