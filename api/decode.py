@@ -5,12 +5,14 @@
 该模块负责解析超星学习通平台的课程、章节、任务点等各种数据，
 并转换为程序内部使用的结构化数据格式。
 """
-import re
 import json
+import re
 from typing import List, Dict, Tuple, Any, Optional
+
 from bs4 import BeautifulSoup, NavigableString
-from api.logger import logger
+
 from api.font_decoder import FontDecoder
+from api.logger import logger
 
 
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
@@ -163,7 +165,6 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         任务点列表和任务信息的元组
     """
     logger.trace("开始解码任务点列表...")
-    job_list = []
     
     # 检查章节是否未开放
     if "章节未开放" in html_text:
@@ -173,19 +174,20 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     temp = re.findall(r"mArg=\{(.*?)\};", html_text.replace(" ", ""))
     if not temp:
         return [], {}
-        
+
     # 解析JSON数据
     cards_data = json.loads("{" + temp[0] + "}")
+
     if not cards_data:
         return [], {}
 
     # 提取任务信息
     job_info = _extract_job_info(cards_data)
-    
+
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
     job_list = _process_attachment_cards(cards)
-    
+
     return job_list, job_info
 
 
@@ -233,13 +235,20 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             continue
             
         # 处理不同类型的任务
-        if card.get("job", False) == False:
+        if card.get("job") is None:
             # 处理阅读类型任务
             read_job = _process_read_task(card)
             if read_job:
                 job_list.append(read_job)
             continue
-            
+
+        # 一开始就把超星api的屎山处理掉，不要用一个屎山行为掩盖另一个屎山 (指根据otherInfo中是否有courseId决定url拼接方式😂)
+        if "otherInfo" in card:
+            logger.trace("Fixing other info...")
+            card["otherInfo"] = card["otherInfo"].split("&")[0]
+            logger.trace(f"New info: {card['otherInfo']}")
+
+
         # 根据任务类型处理
         card_type = card.get("type", "")
         if card_type == "video":
@@ -254,7 +263,10 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             work_job = _process_work_task(card)
             if work_job:
                 job_list.append(work_job)
-                
+        else:
+            logger.warning(f"Unknown card type: {card_type}")
+            logger.warning(card)
+
     return job_list
 
 
@@ -286,7 +298,12 @@ def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "otherinfo": card.get("otherInfo", ""),
             "mid": card["mid"],  # 必须字段，如果不存在会抛出异常
             "objectid": card.get("objectId", ""),
-            "aid": card.get("aid", "")
+            "aid": card.get("aid", ""),
+            "playTime": card.get("playTime", 0),
+            "rt": card.get("property", {}).get("rt", ""),
+            "attDuration": card.get("attDuration", ""),
+            "attDurationEnc": card.get("attDurationEnc", ""),
+            "videoFaceCaptureEnc": card.get("videoFaceCaptureEnc", ""),
         }
     except KeyError:
         logger.warning("出现转码失败视频，已跳过...")
@@ -450,12 +467,17 @@ def _extract_choices(element, font_decoder=None) -> str:
         return ""
         
     # 提取aria-label属性值作为选项，解决#474
-    choice = element.get('aria-label')
-    
-    cleaned_content = choice.replace("\r", "").replace("\t", "").replace("\n", "")
-    
-    # 如果有字体解码器，进行解码
+    choice = element.get("aria-label") or element.get_text()
+    if not choice:
+        return ""
+
+    cleaned_content = re.sub(r"[\r\t\n]", "", choice)
+
     if font_decoder:
-        return font_decoder.decode(cleaned_content)
-    
+        cleaned_content = font_decoder.decode(cleaned_content)
+
+    cleaned_content = cleaned_content.strip()
+    if cleaned_content.endswith("选择"):
+        cleaned_content = cleaned_content[:-2].rstrip()
+
     return cleaned_content
