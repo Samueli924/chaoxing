@@ -2,7 +2,7 @@ import time
 
 from api.config import GlobalConst as gc
 from api.live import Live
-from loguru import logger
+from api.logger import logger
 import time
 import threading
 
