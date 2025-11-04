@@ -3,7 +3,7 @@ import json
 import time
 from urllib import parse
 
-from loguru import logger
+from api.logger import logger
 
 from api.base import SessionManager
 from api.config import GlobalConst as gc
