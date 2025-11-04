@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup, NavigableString
 
 from api.font_decoder import FontDecoder
 from api.logger import logger
+import loguru
 
 
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
@@ -219,7 +220,7 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    处理所有附件任务卡片
+    处理所有附件任务卡片，强化直播任务识别逻辑
     
     Args:
         cards: 附件任务卡片列表
@@ -229,64 +230,98 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
     """
     job_list = []
     
-    for card in cards:
+    for index, card in enumerate(cards):
         # 跳过已通过的任务
         if card.get("isPassed", False):
+            loguru.logger.trace(f"跳过已完成任务: {card.get('property', {}).get('title')}")
             continue
-            
-        # 处理不同类型的任务
+
+        # 打印原始卡片信息用于调试（可根据需要开启）
+        # loguru.logger.debug(f"处理任务卡片 {index}：{card.get('type')} - {card.get('property', {}).get('title')}")
+
+        # 处理无job字段的特殊任务
         if card.get("job") is None:
-            # 处理阅读类型任务
+            # 尝试识别阅读任务
             read_job = _process_read_task(card)
             if read_job:
                 job_list.append(read_job)
             continue
 
         # 一开始就把超星api的屎山处理掉，不要用一个屎山行为掩盖另一个屎山 (指根据otherInfo中是否有courseId决定url拼接方式😂)
+        # 清理otherInfo字段中的无效参数，这里优化了一下(保留了作者原来的注释TAT）
         if "otherInfo" in card:
             logger.trace("Fixing other info...")
             card["otherInfo"] = card["otherInfo"].split("&")[0]
             logger.trace(f"New info: {card['otherInfo']}")
 
+        # 多维度判断是否为直播任务
+        card_type = card.get("type", "").lower()
+        property_data = card.get("property", {})
+        prop_type = property_data.get("type", "").lower()
+        resource_type = property_data.get("resourceType", "").lower()
+        
+        # 直播任务特征：包含liveId、streamName等字段，
+        # 或类型标识包含live（因为live和video有点类似，怕超星又搞出什么幺蛾子就加了一些关键字识别）
+        is_live = (
+            "live" in card_type 
+            or "live" in prop_type
+            or "live" in resource_type
+            or "livestream" in card_type
+            or property_data.get("liveId") is not None
+            or property_data.get("streamName") is not None
+            or property_data.get("vdoid") is not None
+        )
 
         # 根据任务类型处理
-        card_type = card.get("type", "")
-        if card_type == "video":
+        if is_live:
+            live_job = _process_live_task(card)
+            if live_job:
+                job_list.append(live_job)
+                loguru.logger.trace(f"识别到直播任务: {live_job.get('name')}")
+        elif card_type == "video":
             video_job = _process_video_task(card)
             if video_job:
                 job_list.append(video_job)
+                loguru.logger.trace(f"识别到视频任务: {video_job.get('name')}")
         elif card_type == "document":
             doc_job = _process_document_task(card)
             if doc_job:
                 job_list.append(doc_job)
+                loguru.logger.trace(f"识别到文档任务: {doc_job.get('name')}")
         elif card_type == "workid":
             work_job = _process_work_task(card)
             if work_job:
                 job_list.append(work_job)
+                loguru.logger.trace(f"识别到测验任务: {work_job.get('name')}")
         else:
-            logger.warning(f"Unknown card type: {card_type}")
-            logger.warning(card)
+            # 对未知类型任务进行特征分析，帮助后续优化识别逻辑
+            loguru.logger.warning(
+                f"未知任务类型: {card_type}，特征: {[k for k in property_data.keys() if 'live' in k.lower() or 'video' in k.lower()]}"
+            )
 
     return job_list
 
 
-def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """处理阅读类型任务"""
-    if not (card.get("type") == "read" and not card.get("property", {}).get("read", False)):
+def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """处理直播类型任务，提取所有必要参数"""
+    try:
+        property_data = card.get("property", {})
+        return {
+            "type": "live",
+            "jobid": card.get("jobid", str(card.get("id", ""))),  # 兼容不同格式的任务ID
+            "name": property_data.get("title", property_data.get("name", "未知直播")),
+            "otherinfo": card.get("otherInfo", ""),
+            "property": property_data,  # 保留完整属性用于后续处理
+            "mid": card.get("mid", ""),
+            "objectid": card.get("objectId", ""),
+            "aid": card.get("aid", ""),
+            # 补充直播特有标识
+            "liveId": property_data.get("liveId"),
+            "streamName": property_data.get("streamName")
+        }
+    except Exception as e:
+        loguru.logger.error(f"解析直播任务失败: {str(e)}, 任务数据: {str(card)[:200]}")
         return None
-        
-    return {
-        "title": card.get("property", {}).get("title", ""),
-        "type": "read",
-        "id": card.get("property", {}).get("id", ""),
-        "jobid": card.get("jobid", ""),
-        "jtoken": card.get("jtoken", ""),
-        "mid": card.get("mid", ""),
-        "otherinfo": card.get("otherInfo", ""),
-        "enc": card.get("enc", ""),
-        "aid": card.get("aid", "")
-    }
-
 
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """处理视频类型任务"""
