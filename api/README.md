@@ -15,3 +15,5 @@
 - `notification.py`: 通知功能
 - `process.py`: 进度显示工具
 - `captcha.py`: 验证码识别模块
+- `live.py`: 直播任务处理
+- `live_process.py`: 直播任务处理逻辑
