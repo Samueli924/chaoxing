@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import argparse
 import configparser
 import enum
@@ -19,7 +19,8 @@ from api.base import Chaoxing, Account, StudyResult
 from api.exceptions import LoginError, InputFormatError
 from api.logger import logger
 from api.notification import Notification
-
+from api.live import Live
+from api.live_process import LiveProcessor
 
 class ChapterResult(enum.Enum):
     SUCCESS=0,
@@ -188,7 +189,7 @@ def init_chaoxing(common_config, tiku_config):
     return chaoxing
 
 
-def process_job(chaoxing: Chaoxing, course:dict, job:dict, job_info:dict, speed:float) -> StudyResult:
+def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float) -> StudyResult:
     """处理单个任务点"""
     # 视频任务
     if job["type"] == "video":
@@ -218,8 +219,38 @@ def process_job(chaoxing: Chaoxing, course:dict, job:dict, job_info:dict, speed:
     elif job["type"] == "read":
         logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
         return chaoxing.study_read(course, job, job_info)
+    # 直播任务
+    elif job["type"] == "live":
+        logger.trace(f"识别到直播任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
+        try:
+            # 准备直播所需参数
+            defaults = {
+                "userid": chaoxing.get_uid(),
+                "clazzId": course.get("clazzId"),
+                "knowledgeid": job_info.get("knowledgeid")
+            }
+            
+            # 创建直播对象
+            live = Live(
+                attachment=job,
+                defaults=defaults,
+                course_id=course.get("courseId")
+            )
+            
+            # 启动直播处理线程
+            thread = threading.Thread(
+                target=LiveProcessor.run_live,
+                args=(live, speed),
+                daemon=True
+            )
+            thread.start()
+            thread.join()  # 等待直播处理完成
+            return StudyResult.SUCCESS
+        except Exception as e:
+            logger.error(f"处理直播任务时出错: {str(e)}")
+            return StudyResult.ERROR
 
-    logger.error("Unknown job type: %s", job["type"])
+    logger.error(f"未知任务类型: {job['type']}")
     return StudyResult.ERROR
 
 
