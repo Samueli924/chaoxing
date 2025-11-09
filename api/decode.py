@@ -311,6 +311,23 @@ def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"解析直播任务失败: {str(e)}, 任务数据: {str(card)[:200]}")
         return None
+def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """处理阅读类型任务"""
+    if not (card.get("type") == "read" and not card.get("property", {}).get("read", False)):
+        return None
+        
+    return {
+        "title": card.get("property", {}).get("title", ""),
+        "type": "read",
+        "id": card.get("property", {}).get("id", ""),
+        "jobid": card.get("jobid", ""),
+        "jtoken": card.get("jtoken", ""),
+        "mid": card.get("mid", ""),
+        "otherinfo": card.get("otherInfo", ""),
+        "enc": card.get("enc", ""),
+        "aid": card.get("aid", "")
+    }
+
 
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """处理视频类型任务"""
