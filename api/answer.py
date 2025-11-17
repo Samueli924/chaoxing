@@ -225,9 +225,9 @@ class Tiku:
             answer = self._query(q_info)
             if answer:
                 answer = answer.strip()
-                cache_dao.add_cache(q_info['title'], answer)
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
                 if check_answer(answer, q_info['type'], self):
+                    cache_dao.add_cache(q_info['title'], answer)
                     return answer
                 else:
                     logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
