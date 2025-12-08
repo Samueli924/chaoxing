@@ -14,6 +14,6 @@
 - `logger.py`: 日志功能
 - `notification.py`: 通知功能
 - `process.py`: 进度显示工具
-- `captcha.py`: 验证码识别模块
+- `captcha.py`: 验证码识别模块（未启用）
 - `live.py`: 直播任务处理
 - `live_process.py`: 直播任务处理逻辑
