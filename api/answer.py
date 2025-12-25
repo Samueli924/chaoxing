@@ -490,13 +490,16 @@ class TikuLike(Tiku):
     
     def _parse_response(self, response):
         """
-        解析API响应
+        Parse the HTTP API response and extract an answer for the knowledge service.
         
-        Args:
-            response: HTTP响应对象
-            
+        Attempts to decode the response as JSON, validates the expected structure (results.output.questionType and results.output.answer),
+        and delegates extraction to _extract_answer_by_type.
+        
+        Parameters:
+            response: HTTP response object with a .json() method.
+        
         Returns:
-            解析后的答案，如果解析失败则返回None
+            Extracted answer string when the response contains a valid result, `None` otherwise.
         """
         try:
             res_json = response.json()
@@ -511,14 +514,7 @@ class TikuLike(Tiku):
         msg = res_json.get('message', '')
         if msg:
             logger.info(f'{self.name}响应消息: {msg}')
-        
-        # 检查API返回的code字段，判断请求是否成功
-        code = res_json.get('code', 1)
-        if code != 1:
-            error_msg = res_json.get('message', '未知错误')
-            logger.error(f'{self.name}API返回错误: {error_msg}')
-            return None
-        
+
         results = res_json.get('results', {})
         if not results or not isinstance(results, dict):
             logger.error(f'{self.name}查询结果格式错误: API返回结果中results字段格式不正确')
@@ -601,6 +597,15 @@ class TikuLike(Tiku):
         return None
     
     def get_api_balance(self, token:str = ""):
+        """
+        Fetches the available balance from the configured balance API for the provided bearer token.
+        
+        Parameters:
+            token (str): Bearer token used for authorization when querying the balance API. If empty or invalid, the method returns 0.
+        
+        Returns:
+            int: The balance reported by the API as an integer, or 0 if the token is missing, the request fails, the response is malformed, or any error occurs.
+        """
         if not token:
             logger.error(f'{self.name}获取余额失败: 未提供有效的token')
             return 0
@@ -608,7 +613,7 @@ class TikuLike(Tiku):
         temp_headers = self._headers.copy()
         temp_headers['Authorization'] = f'Bearer {token}'
         try:
-            res = requests.post(
+            res = requests.get(
                 self.balance_api,
                 headers=temp_headers,
                 verify=False,
@@ -616,13 +621,7 @@ class TikuLike(Tiku):
             )
             if res.status_code == 200:
                 res_json = res.json()
-                code = res_json.get('code', 0)
-                if code == 1:
-                    return int(res_json.get("balance", 0))
-                else:
-                    error_msg = res_json.get('message', '未知错误')
-                    logger.error(f'{self.name}获取余额失败: {error_msg}')
-                    return 0
+                return int(res_json.get("balance", 0))
             else:
                 logger.error(f'{self.name}请求余额接口失败，状态码: {res.status_code}')
                 return 0
@@ -664,13 +663,28 @@ class TikuLike(Tiku):
 
     def load_config(self) -> None:
         # 从配置中获取参数，提供默认值
+        """
+        Load LIKE provider configuration into instance attributes.
+        
+        Reads LIKE-specific settings from self._conf and assigns defaults when keys are missing:
+        - Sets self._search from 'likeapi_search' (default: False).
+        - Sets self._model from 'likeapi_model' (default: None).
+        - Sets self._vision from 'likeapi_vision' (default: True).
+        - Sets self._retry from 'likeapi_retry' (default: True).
+        - Sets self._retry_times from 'likeapi_retry_times', cast to int (default: 3).
+        """
         self._search = self._conf.get('likeapi_search', False)
         self._model = self._conf.get('likeapi_model', None)
         self._vision = self._conf.get('likeapi_vision', True)
         self._retry = self._conf.get("likeapi_retry", True)
-        self._retry_times = self._conf.get("likeapi_retry_times", 3)
+        self._retry_times = int(self._conf.get("likeapi_retry_times", 3))
 
     def _init_tiku(self) -> None:
+        """
+        Initialize the LIKE tiku by loading configuration and tokens, refreshing token balances, and disabling the provider if no tokens are available.
+        
+        This loads provider-specific configuration, reads tokens from the configuration, calls update_times() to fetch token balances when tokens exist, and sets DISABLE to True and logs an error if no valid tokens were loaded.
+        """
         self.load_config()
         self.load_tokens()
         if self._tokens:
