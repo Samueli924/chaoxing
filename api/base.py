@@ -566,6 +566,25 @@ class Chaoxing:
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         # FIXME: 这一块可以单独搞一个类出来了，方法里面又套方法，每一次调用都会创建新的方法，十分浪费
+        """
+        Attempt to answer and submit a work (homework/quiz) task using the configured question bank (tiku), falling back to randomized answers when necessary.
+        
+        Parameters:
+            _course (dict): Course context containing keys like "courseId" and "clazzId".
+            _job (dict): Job/task metadata including "jobid", "enc" and identifiers required by the work API.
+            _job_info (dict): Task-specific information such as "knowledgeid", "ktoken" and "cpi" used to fetch questions.
+        
+        Behavior:
+            - Fetches question data for the given work and tries to resolve answers via self.tiku.
+            - For each question, uses tiku-provided answers when they can be matched to options; otherwise generates a plausible random answer.
+            - Computes a coverage ratio from matched answers and decides whether to submit or only save answers based on tiku settings and coverage thresholds.
+            - Posts the final answers to the remote submission endpoint.
+            - Preserves original HTML content for diagnostic logging when option parsing fails.
+        
+        Returns:
+            StudyResult.SUCCESS if answers were saved or submitted successfully;
+            StudyResult.ERROR on network, parsing, or submission failures.
+        """
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
         _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
@@ -678,6 +697,19 @@ class Chaoxing:
                 return res
 
         def clean_res(res):
+            """
+            Normalize and clean an answer string or a list of answer strings.
+            
+            This function accepts a single string or a list of strings, ensures the input is treated as a list,
+            and for each element removes a leading ASCII letter only when the string length is greater than one,
+            removes common punctuation characters (.,!?;: and their Chinese equivalents), and trims surrounding whitespace.
+            
+            Parameters:
+                res (str | list[str]): A single answer string or a list of answer strings to normalize.
+            
+            Returns:
+                list[str]: A list of cleaned and trimmed answer strings.
+            """
             cleaned_res = []
             if isinstance(res, str):
                 res = [res]
