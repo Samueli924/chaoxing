@@ -511,14 +511,7 @@ class TikuLike(Tiku):
         msg = res_json.get('message', '')
         if msg:
             logger.info(f'{self.name}响应消息: {msg}')
-        
-        # 检查API返回的code字段，判断请求是否成功
-        code = res_json.get('code', 1)
-        if code != 1:
-            error_msg = res_json.get('message', '未知错误')
-            logger.error(f'{self.name}API返回错误: {error_msg}')
-            return None
-        
+
         results = res_json.get('results', {})
         if not results or not isinstance(results, dict):
             logger.error(f'{self.name}查询结果格式错误: API返回结果中results字段格式不正确')
@@ -608,7 +601,7 @@ class TikuLike(Tiku):
         temp_headers = self._headers.copy()
         temp_headers['Authorization'] = f'Bearer {token}'
         try:
-            res = requests.post(
+            res = requests.get(
                 self.balance_api,
                 headers=temp_headers,
                 verify=False,
@@ -616,13 +609,7 @@ class TikuLike(Tiku):
             )
             if res.status_code == 200:
                 res_json = res.json()
-                code = res_json.get('code', 0)
-                if code == 1:
-                    return int(res_json.get("balance", 0))
-                else:
-                    error_msg = res_json.get('message', '未知错误')
-                    logger.error(f'{self.name}获取余额失败: {error_msg}')
-                    return 0
+                return int(res_json.get("balance", 0))
             else:
                 logger.error(f'{self.name}请求余额接口失败，状态码: {res.status_code}')
                 return 0
@@ -668,7 +655,7 @@ class TikuLike(Tiku):
         self._model = self._conf.get('likeapi_model', None)
         self._vision = self._conf.get('likeapi_vision', True)
         self._retry = self._conf.get("likeapi_retry", True)
-        self._retry_times = self._conf.get("likeapi_retry_times", 3)
+        self._retry_times = int(self._conf.get("likeapi_retry_times", 3))
 
     def _init_tiku(self) -> None:
         self.load_config()
