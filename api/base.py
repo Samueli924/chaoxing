@@ -682,7 +682,8 @@ class Chaoxing:
             if isinstance(res, str):
                 res = [res]
             for c in res:
-                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c)
+                # 仅在字符串长度大于1时才尝试去除开头的字母编号，防止误删单个字母答案
+                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
                 cleaned_res.append(cleaned.strip())
 
             return cleaned_res
@@ -788,6 +789,7 @@ class Chaoxing:
                                         is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
                                 ):
                                     answer += o[:1]
+                                    break # 找到匹配项后立即停止，防止重复添加
                         # 对答案进行排序, 否则会提交失败
                         answer = "".join(sorted(answer))
                     # else 如果分割失败那么就直接到下面去随机选
@@ -804,7 +806,7 @@ class Chaoxing:
                     answer = "true" if self.tiku.judgement_select(res) else "false"
                 elif q["type"] == "completion":
                     if isinstance(res, list):
-                        answer = "".join(answer)
+                        answer = "".join(res)
                     elif isinstance(res, str):
                         answer = res
                 else:
