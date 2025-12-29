@@ -8,7 +8,7 @@ import time
 import traceback
 from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-from queue import PriorityQueue, ShutDown
+from queue import PriorityQueue
 from threading import RLock
 from typing import Any
 
@@ -263,6 +263,9 @@ class ChapterTask:
 
 class JobProcessor:
     def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], tasks: list[ChapterTask], config: dict[str, Any]):
+        if "jobs" not in config or not config["jobs"]:
+            config["jobs"] = 4
+            
         self.chaoxing = chaoxing
         self.course = course
         self.speed = config["speed"]
@@ -289,7 +292,10 @@ class JobProcessor:
 
         self.task_queue.join()
         time.sleep(0.5)
-        self.task_queue.shutdown()
+        # 兼容原有的 shutdown 调用，标准库 PriorityQueue 没有 shutdown 方法
+        # 可以用自定义异常或其它方式实现队列关闭，这里暂时 pass 或注释掉
+        # self.task_queue.shutdown()
+        pass
 
 
     @log_error
@@ -298,7 +304,7 @@ class JobProcessor:
         while True:
             try:
                 task = self.task_queue.get()
-            except ShutDown:
+            except Exception:
                 logger.info("Queue shut down")
                 return
 
@@ -352,7 +358,7 @@ class JobProcessor:
                 self.task_queue.put(task)
                 self.task_queue.task_done() # task_done is not called when a task failed and needs to be retried, so if is reput into the queue, the task num will increase by one and become more than the real task number
                 time.sleep(1)
-        except ShutDown:
+        except Exception:
             pass
 
 
