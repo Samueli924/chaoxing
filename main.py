@@ -263,6 +263,9 @@ class ChapterTask:
 
 class JobProcessor:
     def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], tasks: list[ChapterTask], config: dict[str, Any]):
+        if "jobs" not in config or not config["jobs"]:
+            config["jobs"] = 4
+        
         self.chaoxing = chaoxing
         self.course = course
         self.speed = config["speed"]
