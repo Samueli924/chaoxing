@@ -225,11 +225,33 @@ class Chaoxing:
             course_list += decode_course_list(_resp.text)
         return course_list
 
+    def get_activity_list(self, course_id, class_id) -> list[dict]:
+        s = SessionManager.get_session()
+        url = "https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist"
+        params = {
+            "fid": self.get_fid(),
+            "courseId": course_id,
+            "classId": class_id,
+            "showNotStartedActive": 0,
+            "_": get_timestamp()
+        }
+        resp = s.get(url, params=params)
+        if resp.status_code != 200:
+            logger.error("Failed to get activity list !")
+            return []
+
+        data = resp.json()
+        if data["result"] != 1:
+            logger.error("Unknown status: {} {}", data["result"], data["errorMsg"])
+
+        return data["data"]["activeList"]
+
     def get_course_point(self, _courseid, _clazzid, _cpi):
         _session = SessionManager.get_session()
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         logger.trace("开始读取课程所有章节...")
         _resp = _session.get(_url)
+        print(_url)
         # logger.trace(f"原始章节列表内容:\n{_resp.text}")
         logger.info("课程章节读取成功...")
         return decode_course_point(_resp.text)
@@ -316,7 +338,7 @@ class Chaoxing:
             "courseId": _course["courseId"],
             "jobid": _job["jobid"],
             "userid": self.get_uid(),
-            "isdrag": "3",
+            "isdrag": "4",
             "view": "pc",
             "enc": enc,
             "dtype": _type
@@ -478,12 +500,13 @@ class Chaoxing:
         forbidden_retry = 0
         max_forbidden_retry = 2
 
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time, _type,headers=headers)
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)
-
-        if passed:
-            logger.info("任务瞬间完成: {}", _job['name'])
-            return StudyResult.SUCCESS
+        print("test")
+        for _ in range(5):
+            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time, _type,headers=headers)
+            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)
+            if passed:
+                logger.info("任务瞬间完成: {}", _job['name'])
+                return StudyResult.SUCCESS
 
         while not passed:
             # Sometimes the last request needs to be sent several times to complete the task
