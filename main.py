@@ -181,6 +181,22 @@ def init_chaoxing(common_config, tiku_config):
     tiku.init_tiku()  # 初始化题库
     
     # 获取查询延迟设置
+    
+    # 检查大模型连接（如果使用的是大模型题库）
+    # 根据配置文件中的 provider 判断是否为大模型题库
+    provider = tiku_config.get('provider', '')
+    if provider in ['AI', 'SiliconFlow']:
+        check_connection = tiku_config.get('check_llm_connection', 'true').lower() == 'true'
+        if check_connection:
+            logger.info(f'正在验证大模型配置 (provider={provider})...')
+            if not tiku.check_llm_connection():
+                logger.error('大模型连接检查失败')
+                choice = input('大模型连接检查失败，无法准确答题，是否继续运行？(Y/n): ').strip().lower()
+                # 直接回车默认继续运行
+                if choice not in ('', 'y', 'yes'):
+                    raise RuntimeError('用户取消运行')
+                logger.info('用户选择继续运行...')
+
     query_delay = tiku_config.get("delay", 0)
     
     # 实例化超星API
