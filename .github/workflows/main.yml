@@ -30,7 +30,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build win bin
-        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource"
+        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
 
       - name: Create release package
         run: |
