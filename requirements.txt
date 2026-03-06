@@ -11,3 +11,4 @@ openai>=1.109.1
 tqdm>=4.67.1
 httpx>=0.28.1
 urllib3>=2.5.0
+chardet>=3.0.2,<6.0.0
