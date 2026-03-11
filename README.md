@@ -23,13 +23,53 @@
 
 ## :books: 使用方法
 
-### 源码运行
-1. `git clone --depth=1 https://github.com/Samueli924/chaoxing` 项目至本地
-2. `cd chaoxing`
-3. `pip install -r requirements.txt` 或者 `pip install .`(通过 pyproject.toml 安装依赖)
-4. (可选直接运行) `python main.py`
-5. (可选配置文件运行) 复制config_template.ini文件为config.ini文件，修改文件内的账号密码内容, 执行 `python main.py -c config.ini`
-6. (可选命令行运行)`python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
+### 源码运行（Python 3.13+）
+
+1. clone 项目至本地
+
+```bash
+git clone --depth=1 https://github.com/Samueli924/chaoxing 
+cd chaoxing
+```
+
+2. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+或使用 `pip install .`（通过 pyproject.toml 安装依赖）
+
+3. (可选直接运行)
+
+```bash
+python main.py
+```
+
+4. (可选配置文件运行)
+
+> 复制config_template.ini文件为config.ini文件，修改文件内的账号密码内容
+
+```bash
+python main.py -c config.ini
+```
+
+5. (可选命令行运行)
+
+```bash
+python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)
+```
+
+> Tips:  
+> 如果已安装低版本 Python 推荐使用 `uv` 运行：
+
+```bash
+uv run --python 3.13 main.py
+```
+
+使用配置文件运行 ：
+```bash
+uv run --python 3.13 main.py -c config.ini
+```
 
 ### 打包文件运行
 1. 从最新[Releases](https://github.com/Samueli924/chaoxing/releases)中下载exe文件

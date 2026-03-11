@@ -295,6 +295,14 @@ class Tiku:
         else:
             return "1"
 
+    def check_llm_connection(self) -> bool:
+        """
+        检查大模型连接是否可用
+        默认返回 True（非大模型题库不需要检查）
+        """
+        return True
+
+
 # 按照以下模板实现更多题库
 
 class TikuYanxi(Tiku):
@@ -832,6 +840,43 @@ class AI(Tiku):
         self.http_proxy = self._conf['http_proxy']
         self.min_interval_seconds = int(self._conf['min_interval_seconds'])
 
+    def check_llm_connection(self) -> bool:
+        """
+        检查大模型连接是否可用
+        发送一个简单的测试请求来验证 API 配置
+        """
+        logger.info(f'正在检查 {self.name} 连接...')
+        try:
+            if self.http_proxy:
+                httpx_client = httpx.Client(proxy=self.http_proxy)
+                client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
+            else:
+                client = OpenAI(base_url=self.endpoint, api_key=self.key)
+            
+            # 发送一个简单的测试请求
+            completion = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': '你好，请回答：1+1 等于几？只回答数字。'
+                    }
+                ],
+                max_tokens=10
+            )
+            
+            if completion.choices and completion.choices[0].message.content:
+                logger.info(f'{self.name} 连接检查成功')
+                return True
+            else:
+                logger.error(f'{self.name} 连接检查失败：未收到响应')
+                return False
+                
+        except Exception as e:
+            logger.error(f'{self.name} 连接检查失败：{e}')
+            return False
+
+
 class SiliconFlow(Tiku):
     """硅基流动大模型答题实现"""
     def __init__(self):
@@ -922,3 +967,53 @@ class SiliconFlow(Tiku):
 
 
         self.min_interval = int(self._conf.get('min_interval_seconds', 3))
+
+    def check_llm_connection(self) -> bool:
+        """
+        检查硅基流动大模型连接是否可用
+        发送一个简单的测试请求来验证 API 配置
+        """
+        logger.info(f'正在检查 {self.name} 连接...')
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'model': self.model_name,
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': '你好，请回答：1+1 等于几？只回答数字。'
+                    }
+                ],
+                'stream': False,
+                'max_tokens': 10,
+                'temperature': 0.7,
+                'top_p': 0.7,
+                'response_format': {'type': 'text'}
+            }
+            
+            response = requests.post(
+                self.api_endpoint,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('choices') and result['choices'][0]['message']['content']:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
+                else:
+                    logger.error(f'{self.name} 连接检查失败：未收到有效响应')
+                    return False
+            else:
+                logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
+                return False
+                
+        except Exception as e:
+            logger.error(f'{self.name} 连接检查失败：{e}')
+            return False
