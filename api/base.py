@@ -89,7 +89,7 @@ class RateLimiter:
             base_wait = max(self.last_call + self.call_interval - now, 0)
             extra_wait = random.uniform(random_min, random_max) if random_time else 0
             call_wait = base_wait + extra_wait
-            self.last_call = now + call_wait + extra_wait
+            self.last_call = now + call_wait
 
         time.sleep(call_wait)
 
