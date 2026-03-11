@@ -84,6 +84,8 @@ def parse_args():
         help="遇到关闭任务点时的行为: retry-重试, ask-询问, continue-继续"
     )
 
+    parser.add_argument("--auto-sign", action="store_true", help="自动签到")
+
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
         parser.print_help()
@@ -154,11 +156,12 @@ def build_config_from_args(args):
 def init_config():
     """初始化配置"""
     args = parse_args()
-    
+
     if args.config:
         return load_config_from_file(args.config)
     else:
         return build_config_from_args(args)
+
 
 
 def init_chaoxing(common_config, tiku_config):
@@ -187,7 +190,6 @@ def init_chaoxing(common_config, tiku_config):
     chaoxing = Chaoxing(account=account, tiku=tiku, query_delay=query_delay)
     
     return chaoxing
-
 
 def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float) -> StudyResult:
     """处理单个任务点"""
@@ -353,8 +355,10 @@ class JobProcessor:
             while True:
                 task = self.retry_queue.get()
                 self.task_queue.put(task)
-                self.task_queue.task_done() # task_done is not called when a task failed and needs to be retried, so if is reput into the queue, the task num will increase by one and become more than the real task number
-                time.sleep(1)
+                # task_done is not called when a task failed and needs to be retried so if is reinserted into the queue,
+                # the task num will increase by one and become more than the real task number
+                self.task_queue.task_done()
+                time.sleep(1) # TODO: Replace with a configurable wait time
         except ShutDown:
             pass
 
@@ -420,25 +424,6 @@ def process_course(chaoxing: Chaoxing, course:dict[str, Any], config: dict):
 
 
     tqdm.format_sizeof = _old_format_sizeof
-
-    """
-    while __point_index < len(point_list["points"]):
-        point = point_list["points"][__point_index]
-        logger.debug(f"当前章节 __point_index: {__point_index}")
-        
-        result, auto_skip_notopen = process_chapter(
-            chaoxing, course, point, RB, notopen_action, speed, auto_skip_notopen
-        )
-        
-        if result == -1:  # 退出当前课程
-            break
-        elif result == 0:  # 重试前一章节
-            __point_index -= 1  # 默认第一个任务总是开放的
-        else:  # 继续下一章节
-            __point_index += 1
-    """
-
-
 
 def filter_courses(all_course, course_list):
     """过滤要学习的课程"""

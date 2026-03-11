@@ -4,7 +4,7 @@ import random
 import re
 import threading
 import time
-from enum import Enum
+from enum import Enum, IntEnum
 from hashlib import md5
 from typing import Self, Optional, Literal
 
@@ -85,18 +85,13 @@ class RateLimiter:
 
     def limit_rate(self, random_time=False, random_min=0.0, random_max=1.0):
         with self.lock:
-            if random_time:
-                wait_time = random.uniform(random_min, random_max)
-                time.sleep(wait_time)
             now = time.time()
-            time_elapsed = now - self.last_call
-            if time_elapsed <= self.call_interval:
-                time.sleep(self.call_interval - time_elapsed)
-                self.last_call = time.time()
-                return
+            base_wait = max(self.last_call + self.call_interval - now, 0)
+            extra_wait = random.uniform(random_min, random_max) if random_time else 0
+            call_wait = base_wait + extra_wait
+            self.last_call = now + call_wait + extra_wait
 
-            self.last_call = now
-            return
+        time.sleep(call_wait)
 
 
 class StudyResult(Enum):
@@ -107,8 +102,25 @@ class StudyResult(Enum):
 
     def is_success(self):
         return self == StudyResult.SUCCESS
+
     def is_failure(self):
         return self != StudyResult.SUCCESS
+
+
+class SignType(IntEnum):
+    NORMAL = 0
+    GESTURE = 3
+    LOCATION = 4
+
+
+class ActivityStatus(IntEnum):
+    ACTIVE = 1
+    INACTIVE = 2
+
+
+class ActivityType(IntEnum):
+    SIGNIN = 2
+
 
 class Chaoxing:
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
@@ -117,8 +129,8 @@ class Chaoxing:
         self.tiku = tiku
         self.kwargs = kwargs
         self.rollback_times = 0
-        self.rate_limiter = RateLimiter(0.5) # 其他接口速率限制比较松
-        self.video_log_limiter = RateLimiter(2) # 上报进度极其容易卡验证码，限制2s一次
+        self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
+        self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
 
     def login(self, login_with_cookies=False):
         if login_with_cookies:
@@ -185,7 +197,7 @@ class Chaoxing:
 
     def get_fid(self):
         _session = SessionManager.get_session()
-        return _session.cookies.get("fid")
+        return _session.cookies.get("fid", 1024)
 
     def get_uid(self):
         s = SessionManager.get_session()
@@ -225,34 +237,95 @@ class Chaoxing:
             course_list += decode_course_list(_resp.text)
         return course_list
 
-    def get_activity_list(self, course_id, class_id) -> list[dict]:
+    def get_activity_list(self, course: dict) -> list[dict]:
         s = SessionManager.get_session()
         url = "https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist"
         params = {
             "fid": self.get_fid(),
-            "courseId": course_id,
-            "classId": class_id,
+            "courseId": course["courseId"],
+            "classId": course["clazzId"],
             "showNotStartedActive": 0,
             "_": get_timestamp()
         }
-        resp = s.get(url, params=params)
+        resp = s.get(url, params=params, allow_redirects=False)
         if resp.status_code != 200:
-            logger.error("Failed to get activity list !")
+            logger.error("Failed to get activity list, return code: " + str(resp.status_code))
+            logger.debug("Request url: " + resp.url)
             return []
 
         data = resp.json()
         if data["result"] != 1:
             logger.error("Unknown status: {} {}", data["result"], data["errorMsg"])
+            logger.debug("Request url: " + resp.url)
+            return []
 
         return data["data"]["activeList"]
+
+
+    def pre_sign(self, course: dict, activity_id):
+        s = SessionManager.get_session()
+        params = {
+            "general": 1,
+            "sys": 1,
+            "ls": 1,
+            "appType": 15,
+            "tid": '',
+            "ut": 's',
+            "uid": self.get_uid(),
+            "activePrimaryId": activity_id,
+            "courseId": course["courseId"],
+            "classId": course["clazzId"],
+        }
+        resp = s.get('https://mobilelearn.chaoxing.com/newsign/preSign', params=params)
+        resp_txt = resp.text
+        logger.debug("Request url" + resp.url)
+        if resp.status_code != 200:
+            logger.error("Failed to get sign in, return code: " + str(resp.status_code) + "message: " + resp_txt)
+
+        return resp_txt
+
+
+    def sign_in_normal(self, course: dict, activity_id, name="", obj_id="aaa", lat=-1, lon=-1, type_=SignType.NORMAL):
+        s = SessionManager.get_session()
+        params = {
+            "activeId": activity_id,
+            "uid": self.get_uid(),
+            "fid": self.get_fid(),
+            "courseId": course["courseId"],
+            "classId": course["clazzId"],
+            "clientip": "",
+            "objectId": obj_id,
+            "name": name,
+            "useragent": "",
+            "latitude": lat,
+            "longitude": lon,
+            "appType": "15",
+        }
+
+        resp = s.get("https://mobilelearn.chaoxing.com/pptSign/stuSignajax", params=params)
+
+        resp_txt = resp.text
+        if resp.status_code != 200:
+            logger.error("Failed to get sign in, return code: " + str(resp.status_code) + "message: " + resp_txt)
+
+        if type_ != SignType.LOCATION:
+            return resp_txt
+
+        pattern = r"[^0-9\.]*(.+)米[^0-9\.]*"
+        msg = re.match(pattern, resp_txt)
+        logger.warning(f"距离签到位置 {msg}m")
+        # TOD0: Implement triangulation for location signs
+        return resp_txt
+
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
         _session = SessionManager.get_session()
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
+        logger.trace("URL: " + _url)
         logger.trace("开始读取课程所有章节...")
         _resp = _session.get(_url)
-        print(_url)
-        # logger.trace(f"原始章节列表内容:\n{_resp.text}")
+
+        logger.trace(f"原始章节列表内容:\n{_resp.text}")
         logger.info("课程章节读取成功...")
         return decode_course_point(_resp.text)
 
@@ -294,15 +367,16 @@ class Chaoxing:
 
         if not job_list:
             self.study_emptypage(course, point)
-        # logger.trace(f"原始任务点列表内容:\n{_resp.text}")
+
+        logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
 
         return job_list, job_info
 
     def get_enc(self, clazzId, jobid, objectId, playingTime, duration, userid):
         return md5(
-            f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]".encode()
-        ).hexdigest()
+            f"[{clazzId}][{userid}][{jobid}][{objectId}][{playingTime * 1000}][d_yHJ!$pdA~5][{duration * 1000}][0_{duration}]"
+            .encode()).hexdigest()
 
     def video_progress_log(
             self,
@@ -314,6 +388,7 @@ class Chaoxing:
             _duration,
             _playingTime,
             _type: str = "Video",
+            _isdrag: int = 3,
             headers: Optional[dict] = None,
     ) -> tuple[bool, int]:
 
@@ -338,7 +413,7 @@ class Chaoxing:
             "courseId": _course["courseId"],
             "jobid": _job["jobid"],
             "userid": self.get_uid(),
-            "isdrag": "4",
+            "isdrag": _isdrag,
             "view": "pc",
             "enc": enc,
             "dtype": _type
@@ -349,7 +424,6 @@ class Chaoxing:
             f"{_course['cpi']}/"
             f"{_dtoken}"
         )
-
 
         face_capture_enc = _job["videoFaceCaptureEnc"]
         att_duration = _job["attDuration"]
@@ -372,6 +446,7 @@ class Chaoxing:
 
         if rt:
             logger.trace(f"Got rt: {rt}")
+            _job['rt'] = rt
             params.update({"rt": rt,
                            "_t": get_timestamp()})
             resp = _session.get(_url, params=params, headers=headers)
@@ -384,7 +459,7 @@ class Chaoxing:
                 if resp.status_code == 200:
                     logger.trace(resp.text)
                     return resp.json()["isPassed"], 200
-                #elif resp.ok:
+                # elif resp.ok:
                 #    # TODO: 处理验证码
                 #    pass
                 elif resp.status_code == 403:
@@ -394,8 +469,7 @@ class Chaoxing:
                     logger.warning("未知错误 jobid={}, status_code={}, 摘要:\n{}",
                                    _job.get("jobid"),
                                    resp.status_code,
-                                   resp.text[:200]
-                    )
+                                   resp.text[:200])
                     break
 
         if resp.status_code == 200:
@@ -420,8 +494,8 @@ class Chaoxing:
         logger.error("请求头：", dict(_session.headers) | headers)
         return False, resp.status_code
 
-
-    def _refresh_video_status(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]) -> Optional[dict]:
+    def _refresh_video_status(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]) \
+            -> Optional[dict]:
         self.rate_limiter.limit_rate(random_time=True, random_max=0.2)
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         info_url = (
@@ -435,7 +509,7 @@ class Chaoxing:
             return None
 
         if resp.status_code != 200:
-            logger.debug("刷新视频状态返回码异常: {}"% resp.status_code)
+            logger.debug("刷新视频状态返回码异常: {}" % resp.status_code)
             logger.debug(resp.text)
             return None
 
@@ -466,8 +540,8 @@ class Chaoxing:
 
         return None
 
-
-    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+    def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
+                    _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -500,13 +574,11 @@ class Chaoxing:
         forbidden_retry = 0
         max_forbidden_retry = 2
 
-        print("test")
-        for _ in range(5):
-            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time, _type,headers=headers)
-            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration, _type, headers=headers)
-            if passed:
-                logger.info("任务瞬间完成: {}", _job['name'])
-                return StudyResult.SUCCESS
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
+                                                _type, headers=headers, _isdrag=4)
+        if passed:
+            logger.info("任务瞬间完成: {}", _job['name'])
+            return StudyResult.SUCCESS
 
         while not passed:
             # Sometimes the last request needs to be sent several times to complete the task
@@ -527,7 +599,7 @@ class Chaoxing:
                     time.sleep(random.uniform(2, 4))
                     refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
                     if refreshed_meta:
-                        # FIXME: Maybe it should be considered an error if those keys aren't present in the refreshed meta, so we perhaps shouldn't use get()
+                        # FIXME: if those keys aren't present, it should be considered an error rather than falling back
                         _dtoken = refreshed_meta.get("dtoken", _dtoken)
                         _duration = refreshed_meta.get("duration", duration)
                         play_time = refreshed_meta.get("playTime", play_time)
@@ -538,15 +610,15 @@ class Chaoxing:
                 elif not passed and state != 200:
                     return StudyResult.ERROR
 
-
-
-
                 wait_time = int(random.uniform(30, 90))
                 last_log_time = play_time
 
-            dt = (time.time() - last_iter) * _speed # Since uploading the progress takes time, we assume that the video is still playing in the background, so manually calculate the time elapsed is required
+                logger.trace("Progress logged")
+
+            # Uploading the progress takes time, we assume that the video is still playing in the background, this manually calculates the time elapsed
+            dt = (time.time() - last_iter) * _speed
             last_iter = time.time()
-            play_time = min(duration, play_time+dt)
+            play_time = min(duration, play_time + dt)
 
             pbar.n = int(play_time)
             pbar.refresh()
@@ -812,7 +884,7 @@ class Chaoxing:
                                         is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
                                 ):
                                     answer += o[:1]
-                                    break # 找到匹配项后立即停止，防止重复添加
+                                    break  # 找到匹配项后立即停止，防止重复添加
                         # 对答案进行排序, 否则会提交失败
                         answer = "".join(sorted(answer))
                     # else 如果分割失败那么就直接到下面去随机选
