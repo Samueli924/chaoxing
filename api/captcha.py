@@ -17,7 +17,8 @@ from random import randint
 from typing import Optional
 
 from ddddocr import DdddOcr
-from requests import session
+
+from api.http import create_browser_session
 
 
 def ocr_init() -> DdddOcr:
@@ -33,7 +34,7 @@ class CxCaptcha:
     """
     CxCaptcha 类用于处理学习任务中出现的验证码
 
-    该类提供了获取、识别和提交验证码的方法，使用 requests 库进行 HTTP 请求，
+    该类提供了获取、识别和提交验证码的方法，使用 curl_cffi 模拟浏览器发起 HTTP 请求，
     并利用 DdddOcr 进行验证码识别。
 
     Attributes:
@@ -41,7 +42,7 @@ class CxCaptcha:
         api (dict): 包含获取和提交验证码的 API 路径。
         user_agent (str): 用户代理字符串。
         cookies (str): 会话 cookies。
-        s (requests.Session): 用于管理会话的请求对象。
+        s: 用于管理会话的请求对象。
     """
 
     host = 'https://mooc1.chaoxing.com'
@@ -62,13 +63,14 @@ class CxCaptcha:
 
         self.user_agent = user_agent
         self.cookies = cookies
-        self.s = session()
-        self.s.headers.update({
-            'User-Agent': self.user_agent,
-            'Cookie': self.cookies,
-            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-        })
-        self.s.verify = False
+        self.s = create_browser_session(
+            headers={
+                'User-Agent': self.user_agent,
+                'Cookie': self.cookies,
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            },
+            verify=False,
+        )
 
         self.ocr = ocr if ocr else ocr_init()
 

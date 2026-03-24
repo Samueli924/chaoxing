@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
 import os.path
-
-import requests
+from typing import Protocol
 
 from api.config import GlobalConst as gc
 
 
-def save_cookies(session: requests.Session):
+class CookieContainer(Protocol):
+    def items(self): ...
+
+
+class CookieSession(Protocol):
+    cookies: CookieContainer
+
+
+def save_cookies(session: CookieSession):
     buffer=""
     with open(gc.COOKIES_PATH, "w") as f:
         for k, v in session.cookies.items():

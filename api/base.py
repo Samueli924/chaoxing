@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import functools
 import random
 import re
 import threading
@@ -8,10 +7,7 @@ from enum import Enum
 from hashlib import md5
 from typing import Self, Optional, Literal
 
-import requests
 from loguru import logger
-from requests import RequestException
-from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 
 from api.answer import *
@@ -27,6 +23,7 @@ from api.decode import (
     decode_questions_info,
 )
 from api.exceptions import MaxRetryExceeded
+from api.http import BrowserRequestException, BrowserSession, create_browser_session
 
 
 def get_timestamp():
@@ -42,22 +39,16 @@ class SessionManager:
         return cls._instance
 
     def __init__(self):
-        self._session = requests.Session()
-        self._session.mount("https://", HTTPAdapter(max_retries=10))
-        self._session.mount("http://", HTTPAdapter(max_retries=10))
-        self._session.request = functools.partial(self._session.request, timeout=5)
-        # For debug purposes
-        # self._session.verify=False
-        self._session.headers.clear()
-        self._session.headers.update(gc.HEADERS)
-        self._session.cookies.update(use_cookies())
+        if hasattr(self, "_session"):
+            return
+        self._session = create_browser_session(cookies=use_cookies())
 
     @classmethod
     def get_instance(cls) -> Self:
         return cls()
 
     @classmethod
-    def get_session(cls) -> requests.Session:
+    def get_session(cls) -> BrowserSession:
         instance = cls.get_instance()
         return instance._session
 
@@ -133,7 +124,7 @@ class Chaoxing:
             logger.info("登录成功...")
             return {"status": True, "msg": "登录成功"}
 
-        _session = requests.Session()
+        _session = create_browser_session()
         _url = "https://passport2.chaoxing.com/fanyalogin"
         _data = {
             "fid": "-1",
@@ -147,7 +138,7 @@ class Chaoxing:
             "independentId": 0,
         }
         logger.trace("正在尝试登录...")
-        resp = _session.post(_url, headers=gc.HEADERS, data=_data)
+        resp = _session.post(_url, data=_data, retryable=False)
         if resp and resp.json()["status"] == True:
             save_cookies(_session)
             SessionManager.update_cookies()
@@ -161,17 +152,16 @@ class Chaoxing:
         if not session.cookies.get("_uid"):
             return False
 
-        test_session = requests.Session()
-        test_session.headers.update(gc.HEADERS)
-        test_session.cookies.update(session.cookies.get_dict())
+        test_session = create_browser_session(cookies=session.cookies.get_dict())
 
         try:
             resp = test_session.post(
                 "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata",
                 data={"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0},
                 timeout=8,
+                retryable=False,
             )
-        except RequestException as exc:
+        except BrowserRequestException as exc:
             logger.debug("Cookie validation request failed: {}", exc)
             return False
 
@@ -399,7 +389,7 @@ class Chaoxing:
         return False, resp.status_code
 
 
-    def _refresh_video_status(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]) -> Optional[dict]:
+    def _refresh_video_status(self, session: BrowserSession, job: dict, _type: Literal["Video", "Audio"]) -> Optional[dict]:
         self.rate_limiter.limit_rate(random_time=True, random_max=0.2)
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         info_url = (
@@ -408,12 +398,12 @@ class Chaoxing:
         )
         try:
             resp = session.get(info_url, timeout=8, headers=headers)
-        except RequestException as exc:
+        except BrowserRequestException as exc:
             logger.debug("刷新视频状态失败: {}", exc)
             return None
 
         if resp.status_code != 200:
-            logger.debug("刷新视频状态返回码异常: {}"% resp.status_code)
+            logger.debug("刷新视频状态返回码异常: {}", resp.status_code)
             logger.debug(resp.text)
             return None
 
@@ -428,7 +418,7 @@ class Chaoxing:
 
         return None
 
-    def _recover_after_forbidden(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]):
+    def _recover_after_forbidden(self, session: BrowserSession, job: dict, _type: Literal["Video", "Audio"]):
         SessionManager.update_cookies()
         refreshed = self._refresh_video_status(session, job, _type)
         if refreshed:
@@ -548,7 +538,7 @@ class Chaoxing:
                 - jtoken: Authentication token for the job
 
         Returns:
-            requests.Response: Response object from the GET request
+            curl_cffi.requests.Response: Response object from the GET request
 
         Note:
             This method requires the following helper functions:
@@ -713,7 +703,7 @@ class Chaoxing:
                             logger.warning(
                                 f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中... ({retries + 1}/{max_retries})")
 
-                        except requests.exceptions.RequestException as e:
+                        except BrowserRequestException as e:
                             logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries + 1}/{max_retries})")
                         retries += 1
                         time.sleep(delay * (2 ** retries))
@@ -858,22 +848,8 @@ class Chaoxing:
         res = _session.post(
             "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew",
             data=questions,
-            headers={
-                "Host": "mooc1.chaoxing.com",
-                "sec-ch-ua-platform": '"Windows"',
-                "X-Requested-With": "XMLHttpRequest",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "sec-ch-ua-mobile": "?0",
-                "Origin": "https://mooc1.chaoxing.com",
-                "Sec-Fetch-Site": "same-origin",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Dest": "empty",
-                # "Referer": "https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?courseId=246831735&workAnswerId=52680423&workId=37778125&api=1&knowledgeid=913820156&classId=107515845&oldWorkId=07647c38d8de4c648a9277c5bed7075a&jobid=work-07647c38d8de4c648a9277c5bed7075a&type=&isphone=false&submit=false&enc=1d826aab06d44a1198fc983ed3d243b1&cpi=338350298&mooc2=1&skipHeader=true&originJobId=work-07647c38d8de4c648a9277c5bed7075a",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
-            },
+            headers=gc.WORK_HEADERS,
+            retryable=False,
         )
         if res.status_code == 200:
             res_json = res.json()
