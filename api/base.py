@@ -403,7 +403,7 @@ class Chaoxing:
             return None
 
         if resp.status_code != 200:
-            logger.debug("刷新视频状态返回码异常: {}"% resp.status_code)
+            logger.debug("刷新视频状态返回码异常: {}", resp.status_code)
             logger.debug(resp.text)
             return None
 

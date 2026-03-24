@@ -31,19 +31,15 @@ class BrowserSession(CurlSession):
 
     def request(self, method, url, *args, **kwargs):
         retryable = kwargs.pop("retryable", method.upper() in SAFE_RETRY_METHODS)
-        last_exc = None
 
         for attempt in range(self._retries + 1):
             try:
                 return super().request(method, url, *args, **kwargs)
-            except BrowserRequestException as exc:
-                last_exc = exc
+            except BrowserRequestException:
                 if not retryable or attempt >= self._retries:
                     raise
                 sleep_time = self._retry_backoff * (2 ** attempt) + random.uniform(0, self._retry_backoff)
                 time.sleep(sleep_time)
-
-        raise last_exc
 
 
 def create_browser_session(
