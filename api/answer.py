@@ -269,21 +269,30 @@ class Tiku:
             logger.error("题库provider配置为空, 已忽略题库功能")
             return self
 
-        invalid_providers = [name for name in providers if name not in globals()]
+        invalid_providers = [name for name in providers if name not in PROVIDER_REGISTRY]
         if invalid_providers:
             self.DISABLE = True
             logger.error(f"题库provider配置无效: {', '.join(invalid_providers)}")
             return self
 
         if len(providers) == 1:
-            # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
-            new_cls = globals()[providers[0]]()
+            provider_cls = PROVIDER_REGISTRY[providers[0]]
+            if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
+                self.DISABLE = True
+                logger.error(f"题库provider配置无效: {providers[0]}")
+                return self
+            new_cls = provider_cls()
             new_cls.config_set(self._conf)
             return new_cls
 
         chain_providers = []
         for provider_name in providers:
-            provider = globals()[provider_name]()
+            provider_cls = PROVIDER_REGISTRY[provider_name]
+            if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
+                self.DISABLE = True
+                logger.error(f"题库provider配置无效: {provider_name}")
+                return self
+            provider = provider_cls()
             provider.config_set(self._conf)
             chain_providers.append(provider)
         fallback = TikuFallback(chain_providers)
@@ -351,7 +360,12 @@ class TikuFallback(Tiku):
 
     def _query(self, q_info:dict) -> Optional[str]:
         for provider in self.providers:
-            answer = provider._query(q_info)
+            try:
+                answer = provider._query(q_info)
+            except Exception as e:
+                provider_id = f'{provider.name}({provider.__class__.__name__})'
+                logger.exception(f'{self.name} 查询时 {provider_id} 异常: {e}')
+                continue
             if not answer:
                 logger.info(f'{provider.name} 未命中，回退到下一个题库')
                 continue
@@ -429,7 +443,7 @@ class TikuGo(Tiku):
     def __init__(self) -> None:
         super().__init__()
         self.name = 'GO题（网课小工具题库）'
-        self.api = 'http://q.icodef.com/wyn-nb?v=4'
+        self.api = 'https://q.icodef.com/wyn-nb?v=4'
         self._headers = {
             'Authorization': '',
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -1190,3 +1204,13 @@ class SiliconFlow(Tiku):
         except Exception as e:
             logger.error(f'{self.name} 连接检查失败：{e}')
             return False
+
+
+PROVIDER_REGISTRY = {
+    'TikuYanxi': TikuYanxi,
+    'TikuGo': TikuGo,
+    'TikuLike': TikuLike,
+    'TikuAdapter': TikuAdapter,
+    'AI': AI,
+    'SiliconFlow': SiliconFlow,
+}
