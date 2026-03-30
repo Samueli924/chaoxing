@@ -478,22 +478,24 @@ class TikuGo(Tiku):
         for attempt in range(1, self._retry_times + 1):
             try:
                 with self._request_lock:
-                    # 主动限速，降低触发 GO 题库并发/流控限制的概率。
                     now = time.time()
-                    wait_time = self._min_interval - (now - self._last_request_time)
-                    if wait_time > 0:
-                        time.sleep(wait_time)
-                    res = requests.post(
-                        self.api,
-                        data={'question': question},
-                        headers=self._headers,
-                        verify=True,
-                        timeout=15
-                    )
+                    wait_time = max(0.0, self._last_request_time + self._min_interval - now)
+                    self._last_request_time = now + wait_time
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                res = requests.post(
+                    self.api,
+                    data={'question': question},
+                    headers=self._headers,
+                    verify=True,
+                    timeout=15
+                )
+                with self._request_lock:
                     self._last_request_time = time.time()
             except requests.exceptions.RequestException as e:
                 logger.error(f'{self.name}查询异常 ({attempt}/{self._retry_times}): {e}')
-                self._last_request_time = time.time()
+                with self._request_lock:
+                    self._last_request_time = time.time()
                 if attempt < self._retry_times:
                     sleep_seconds = max(self._min_interval, self._retry_backoff * attempt)
                     time.sleep(sleep_seconds)
@@ -510,7 +512,10 @@ class TikuGo(Tiku):
                 logger.error(f'{self.name}查询失败: 返回内容不是有效JSON, 响应: {res.text}')
                 return None
 
-            code = int(res_json.get('code', 0))
+            try:
+                code = int(str(res_json.get('code', '')).strip())
+            except ValueError:
+                code = 0
             answer = str(res_json.get('data', '')).strip()
             msg = str(res_json.get('msg', '')).strip()
             raw_text = f'{answer} {msg}'
