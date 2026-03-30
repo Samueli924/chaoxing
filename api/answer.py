@@ -16,7 +16,7 @@ import requests
 from openai import OpenAI
 from urllib3 import disable_warnings, exceptions
 
-from api.answer_check import *
+from api.answer_check import check_answer
 from api.logger import logger
 
 # 关闭警告
@@ -473,7 +473,7 @@ class TikuGo(Tiku):
                         self.api,
                         data={'question': question},
                         headers=self._headers,
-                        verify=False,
+                        verify=True,
                         timeout=15
                     )
                     self._last_request_time = time.time()

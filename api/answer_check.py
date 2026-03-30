@@ -8,7 +8,7 @@ def check_single(answer):
 
     # 单选答案文本中常见逗号（中英文）是句内标点，不应据此判定为多选。
     # 仅在出现明显“多段答案”分隔符时，才判定为非单选。
-    strong_delimiters = ["\n", "|", "#", "&", "/", "\\", "\t", "\r"]
+    strong_delimiters = ["\n", "|", "#", "&", "\t", "\r"]
     for sep in strong_delimiters:
         parts = [p.strip() for p in text.split(sep) if p.strip()]
         if len(parts) > 1:
