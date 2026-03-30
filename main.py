@@ -185,7 +185,8 @@ def init_chaoxing(common_config, tiku_config):
     # 检查大模型连接（如果使用的是大模型题库）
     # 根据配置文件中的 provider 判断是否为大模型题库
     provider = tiku_config.get('provider', '')
-    if provider in ['AI', 'SiliconFlow']:
+    provider_list = [name.strip() for name in provider.split(',') if name.strip()]
+    if any(name in ['AI', 'SiliconFlow'] for name in provider_list):
         check_connection = tiku_config.get('check_llm_connection', 'true').lower() == 'true'
         if check_connection:
             logger.info(f'正在验证大模型配置 (provider={provider})...')

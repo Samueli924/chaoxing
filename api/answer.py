@@ -22,7 +22,7 @@ from api.logger import logger
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
-__all__ = ["CacheDAO", "Tiku", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
+__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
 
 class CacheDAO:
     """
@@ -262,10 +262,33 @@ class Tiku:
             self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
-        # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
-        new_cls = globals()[cls_name]()
-        new_cls.config_set(self._conf)
-        return new_cls
+
+        providers = [name.strip() for name in cls_name.split(',') if name.strip()]
+        if not providers:
+            self.DISABLE = True
+            logger.error("题库provider配置为空, 已忽略题库功能")
+            return self
+
+        invalid_providers = [name for name in providers if name not in globals()]
+        if invalid_providers:
+            self.DISABLE = True
+            logger.error(f"题库provider配置无效: {', '.join(invalid_providers)}")
+            return self
+
+        if len(providers) == 1:
+            # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
+            new_cls = globals()[providers[0]]()
+            new_cls.config_set(self._conf)
+            return new_cls
+
+        chain_providers = []
+        for provider_name in providers:
+            provider = globals()[provider_name]()
+            provider.config_set(self._conf)
+            chain_providers.append(provider)
+        fallback = TikuFallback(chain_providers)
+        fallback.config_set(self._conf)
+        return fallback
 
     def judgement_select(self, answer: str) -> bool:
         """
@@ -300,6 +323,52 @@ class Tiku:
         检查大模型连接是否可用
         默认返回 True（非大模型题库不需要检查）
         """
+        return True
+
+
+class TikuFallback(Tiku):
+    # 多题库回退实现，按 provider 中配置顺序依次查询。
+    def __init__(self, providers=None):
+        super().__init__()
+        self.name = '多题库回退'
+        self.providers = providers or []
+
+    def _init_tiku(self):
+        active = []
+        for provider in self.providers:
+            try:
+                provider.init_tiku()
+                if not provider.DISABLE:
+                    active.append(provider)
+            except Exception as e:
+                logger.error(f'初始化题库 {provider.name} 失败: {e}')
+        self.providers = active
+        if not self.providers:
+            logger.error('多题库回退初始化失败: 没有可用题库')
+            self.DISABLE = True
+        else:
+            logger.info(f"多题库回退已启用，查询顺序: {', '.join([p.__class__.__name__ for p in self.providers])}")
+
+    def _query(self, q_info:dict) -> Optional[str]:
+        for provider in self.providers:
+            answer = provider._query(q_info)
+            if not answer:
+                logger.info(f'{provider.name} 未命中，回退到下一个题库')
+                continue
+
+            # 若当前题库返回答案但类型不符，则继续回退。
+            if check_answer(answer, q_info['type'], provider):
+                logger.info(f'{provider.name} 命中答案')
+                return answer
+
+            logger.info(f'{provider.name} 返回答案类型不符，回退到下一个题库')
+        return None
+
+    def check_llm_connection(self) -> bool:
+        for provider in self.providers:
+            if not provider.check_llm_connection():
+                logger.error(f'{provider.name} 连接检查失败')
+                return False
         return True
 
 
