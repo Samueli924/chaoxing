@@ -454,6 +454,74 @@ class TikuGo(Tiku):
         self._retry_times = 3
         self._retry_backoff = 1.2
 
+    def _sleep_for_next_request(self) -> None:
+        with self._request_lock:
+            now = time.time()
+            wait_time = max(0.0, self._last_request_time + self._min_interval - now)
+            self._last_request_time = now + wait_time
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+    def _mark_request_finished(self) -> None:
+        with self._request_lock:
+            self._last_request_time = time.time()
+
+    def _request_question(self, question: str, attempt: int) -> Optional[requests.Response]:
+        try:
+            self._sleep_for_next_request()
+            res = requests.post(
+                self.api,
+                data={'question': question},
+                headers=self._headers,
+                verify=True,
+                timeout=15
+            )
+            self._mark_request_finished()
+            return res
+        except requests.exceptions.RequestException as e:
+            logger.error(f'{self.name}查询异常 ({attempt}/{self._retry_times}): {e}')
+            self._mark_request_finished()
+            return None
+
+    def _parse_response(self, res: requests.Response) -> Optional[dict]:
+        if res.status_code != 200:
+            logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
+            return None
+
+        try:
+            res_json = res.json()
+        except ValueError:
+            logger.error(f'{self.name}查询失败: 返回内容不是有效JSON, 响应: {res.text}')
+            return None
+
+        try:
+            code = int(str(res_json.get('code', '')).strip())
+        except ValueError:
+            code = 0
+
+        answer = str(res_json.get('data', '')).strip()
+        msg = str(res_json.get('msg', '')).strip()
+        raw_text = f'{answer} {msg}'
+        is_throttled = any(key in raw_text for key in ['流控限制', '速度太快', '并发限制', '忙不过来'])
+        return {
+            'code': code,
+            'answer': answer,
+            'msg': msg,
+            'is_throttled': is_throttled,
+        }
+
+    def _sleep_retry(self, attempt: int, reason: str, include_min_interval: bool = False) -> None:
+        if include_min_interval:
+            sleep_seconds = max(self._min_interval, self._retry_backoff * attempt)
+        else:
+            sleep_seconds = self._retry_backoff * attempt
+        logger.warning(f'{self.name}{reason}，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
+        time.sleep(sleep_seconds)
+
+    @staticmethod
+    def _is_placeholder_answer(answer: str, msg: str) -> bool:
+        return '李恒雅' in answer or '李恒雅' in msg
+
     def _query(self, q_info: dict):
         title = q_info.get('title', '')
         candidates = [
@@ -476,56 +544,25 @@ class TikuGo(Tiku):
 
     def _query_once(self, question: str) -> Optional[str]:
         for attempt in range(1, self._retry_times + 1):
-            try:
-                with self._request_lock:
-                    now = time.time()
-                    wait_time = max(0.0, self._last_request_time + self._min_interval - now)
-                    self._last_request_time = now + wait_time
-                if wait_time > 0:
-                    time.sleep(wait_time)
-                res = requests.post(
-                    self.api,
-                    data={'question': question},
-                    headers=self._headers,
-                    verify=True,
-                    timeout=15
-                )
-                with self._request_lock:
-                    self._last_request_time = time.time()
-            except requests.exceptions.RequestException as e:
-                logger.error(f'{self.name}查询异常 ({attempt}/{self._retry_times}): {e}')
-                with self._request_lock:
-                    self._last_request_time = time.time()
+            res = self._request_question(question, attempt)
+            if res is None:
                 if attempt < self._retry_times:
-                    sleep_seconds = max(self._min_interval, self._retry_backoff * attempt)
-                    time.sleep(sleep_seconds)
+                    self._sleep_retry(attempt, '查询异常', include_min_interval=True)
                     continue
                 break
 
-            if res.status_code != 200:
-                logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
+            parsed = self._parse_response(res)
+            if not parsed:
                 return None
 
-            try:
-                res_json = res.json()
-            except ValueError:
-                logger.error(f'{self.name}查询失败: 返回内容不是有效JSON, 响应: {res.text}')
-                return None
-
-            try:
-                code = int(str(res_json.get('code', '')).strip())
-            except ValueError:
-                code = 0
-            answer = str(res_json.get('data', '')).strip()
-            msg = str(res_json.get('msg', '')).strip()
-            raw_text = f'{answer} {msg}'
-            is_throttled = any(key in raw_text for key in ['流控限制', '速度太快', '并发限制', '忙不过来'])
+            code = parsed['code']
+            answer = parsed['answer']
+            msg = parsed['msg']
+            is_throttled = parsed['is_throttled']
 
             if code != 1:
                 if is_throttled and attempt < self._retry_times:
-                    sleep_seconds = self._retry_backoff * attempt
-                    logger.warning(f'{self.name}触发流控，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
-                    time.sleep(sleep_seconds)
+                    self._sleep_retry(attempt, '触发流控')
                     continue
                 logger.info(f"{self.name}未命中或失败: {msg or '未知错误'}")
                 return None
@@ -534,11 +571,9 @@ class TikuGo(Tiku):
                 return None
 
             # GO题库在未搜到时可能在 data/msg 中返回“李恒雅正在努力撰写中...”。
-            if '李恒雅' in answer or '李恒雅' in msg:
+            if self._is_placeholder_answer(answer, msg):
                 if is_throttled and attempt < self._retry_times:
-                    sleep_seconds = self._retry_backoff * attempt
-                    logger.warning(f'{self.name}命中流控提示，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
-                    time.sleep(sleep_seconds)
+                    self._sleep_retry(attempt, '命中流控提示')
                     continue
                 return None
 
