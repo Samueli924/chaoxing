@@ -4,6 +4,7 @@ import random
 import re
 import threading
 import time
+from difflib import SequenceMatcher
 from enum import Enum
 from hashlib import md5
 from typing import Self, Optional, Literal
@@ -683,10 +684,53 @@ class Chaoxing:
                 res = [res]
             for c in res:
                 # 仅在字符串长度大于1时才尝试去除开头的字母编号，防止误删单个字母答案
-                cleaned = re.sub(r'^[A-Za-z]|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
+                cleaned = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
                 cleaned_res.append(cleaned.strip())
 
             return cleaned_res
+
+        def normalize_text(text: str) -> str:
+            if not isinstance(text, str):
+                text = str(text)
+            # 统一常见异体字符，降低“风/⻛”类差异导致的匹配失败。
+            char_map = str.maketrans({
+                '⻛': '风',
+                '⻔': '门',
+                '⻋': '车',
+                '⻢': '马',
+            })
+            normalized = text.translate(char_map)
+            normalized = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', normalized)
+            normalized = re.sub(r'\s+', '', normalized)
+            normalized = re.sub(r'[，。！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', normalized)
+            return normalized.lower()
+
+        def get_option_text(option: str) -> str:
+            return re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', option).strip()
+
+        def best_option_by_similarity(target: str, options: list, threshold: float = 0.8) -> str:
+            if not target or not options:
+                return ""
+            target_norm = normalize_text(target)
+            if not target_norm:
+                return ""
+
+            best_letter = ""
+            best_score = 0.0
+            for option in options:
+                option_text = get_option_text(option)
+                option_norm = normalize_text(option_text)
+                if not option_norm:
+                    continue
+                score = SequenceMatcher(None, target_norm, option_norm).ratio()
+                if score > best_score:
+                    best_score = score
+                    best_letter = option[:1]
+
+            if best_score >= threshold:
+                logger.info(f"相似度兜底匹配成功: {best_letter} (score={best_score:.2f}, threshold={threshold:.2f})")
+                return best_letter
+            return ""
 
         def is_subsequence(a, o):
             iter_o = iter(o)
@@ -784,14 +828,20 @@ class Chaoxing:
                     res_list = multi_cut(res)
                     if res_list is not None and options_list is not None:
                         for _a in clean_res(res_list):
+                            matched = False
                             for o in options_list:
                                 if (
                                         is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
                                 ):
                                     answer += o[:1]
+                                    matched = True
                                     break # 找到匹配项后立即停止，防止重复添加
+                            if not matched:
+                                best_letter = best_option_by_similarity(_a, options_list, threshold=0.8)
+                                if best_letter:
+                                    answer += best_letter
                         # 对答案进行排序, 否则会提交失败
-                        answer = "".join(sorted(answer))
+                        answer = "".join(sorted(set(answer)))
                     # else 如果分割失败那么就直接到下面去随机选
                 elif q["type"] == "single":
                     # 单选也进行切割，主要是防止返回的答案有异常字符
@@ -802,6 +852,8 @@ class Chaoxing:
                             if is_subsequence(t_res[0], o):
                                 answer = o[:1]
                                 break
+                        if not answer and t_res:
+                            answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
                 elif q["type"] == "judgement":
                     answer = "true" if self.tiku.judgement_select(res) else "false"
                 elif q["type"] == "completion":
