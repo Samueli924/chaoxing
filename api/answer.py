@@ -22,7 +22,7 @@ from api.logger import logger
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
-__all__ = ["CacheDAO", "Tiku", "TikuYanxi", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
+__all__ = ["CacheDAO", "Tiku", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
 
 class CacheDAO:
     """
@@ -354,6 +354,110 @@ class TikuYanxi(Tiku):
 
     def _init_tiku(self):
         self.load_token()
+
+class TikuGo(Tiku):
+    # GO题（网课小工具题库）实现
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = 'GO题（网课小工具题库）'
+        self.api = 'http://q.icodef.com/wyn-nb?v=4'
+        self._headers = {
+            'Authorization': '',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        self._request_lock = threading.Lock()
+        self._last_request_time = 0.0
+        self._min_interval = 1.0
+        self._retry_times = 3
+        self._retry_backoff = 1.2
+
+    def _query(self, q_info: dict):
+        title = q_info.get('title', '')
+        candidates = [
+            title,
+            re.sub(r'^【[^】]+】\s*', '', title).strip(),
+            re.sub(r'^\[[^\]]+\]\s*', '', title).strip(),
+        ]
+        seen = set()
+        normalized_titles = []
+        for item in candidates:
+            if item and item not in seen:
+                seen.add(item)
+                normalized_titles.append(item)
+
+        for query_title in normalized_titles:
+            answer = self._query_once(query_title)
+            if answer:
+                return answer
+        return None
+
+    def _query_once(self, question: str) -> Optional[str]:
+        for attempt in range(1, self._retry_times + 1):
+            try:
+                with self._request_lock:
+                    # 主动限速，降低触发 GO 题库并发/流控限制的概率。
+                    now = time.time()
+                    wait_time = self._min_interval - (now - self._last_request_time)
+                    if wait_time > 0:
+                        time.sleep(wait_time)
+                    res = requests.post(
+                        self.api,
+                        data={'question': question},
+                        headers=self._headers,
+                        verify=False,
+                        timeout=15
+                    )
+                    self._last_request_time = time.time()
+            except requests.exceptions.RequestException as e:
+                logger.error(f'{self.name}查询异常: {e}')
+                return None
+
+            if res.status_code != 200:
+                logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
+                return None
+
+            try:
+                res_json = res.json()
+            except ValueError:
+                logger.error(f'{self.name}查询失败: 返回内容不是有效JSON, 响应: {res.text}')
+                return None
+
+            code = int(res_json.get('code', 0))
+            answer = str(res_json.get('data', '')).strip()
+            msg = str(res_json.get('msg', '')).strip()
+            raw_text = f'{answer} {msg}'
+            is_throttled = any(key in raw_text for key in ['流控限制', '速度太快', '并发限制', '忙不过来'])
+
+            if code != 1:
+                if is_throttled and attempt < self._retry_times:
+                    sleep_seconds = self._retry_backoff * attempt
+                    logger.warning(f'{self.name}触发流控，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
+                    time.sleep(sleep_seconds)
+                    continue
+                logger.info(f"{self.name}未命中或失败: {msg or '未知错误'}")
+                return None
+
+            if not answer:
+                return None
+
+            # GO题库在未搜到时可能在 data/msg 中返回“李恒雅正在努力撰写中...”。
+            if '李恒雅' in answer or '李恒雅' in msg:
+                if is_throttled and attempt < self._retry_times:
+                    sleep_seconds = self._retry_backoff * attempt
+                    logger.warning(f'{self.name}命中流控提示，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
+                    time.sleep(sleep_seconds)
+                    continue
+                return None
+
+            return answer
+
+        return None
+
+    def _init_tiku(self):
+        self._headers['Authorization'] = self._conf.get('go_authorization', self._headers['Authorization'])
+        self._min_interval = float(self._conf.get('go_min_interval', self._min_interval))
+        self._retry_times = int(self._conf.get('go_retry_times', self._retry_times))
+        self._retry_backoff = float(self._conf.get('go_retry_backoff', self._retry_backoff))
 
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
