@@ -492,8 +492,13 @@ class TikuGo(Tiku):
                     )
                     self._last_request_time = time.time()
             except requests.exceptions.RequestException as e:
-                logger.error(f'{self.name}查询异常: {e}')
-                return None
+                logger.error(f'{self.name}查询异常 ({attempt}/{self._retry_times}): {e}')
+                self._last_request_time = time.time()
+                if attempt < self._retry_times:
+                    sleep_seconds = max(self._min_interval, self._retry_backoff * attempt)
+                    time.sleep(sleep_seconds)
+                    continue
+                break
 
             if res.status_code != 200:
                 logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
@@ -538,9 +543,29 @@ class TikuGo(Tiku):
 
     def _init_tiku(self):
         self._headers['Authorization'] = self._conf.get('go_authorization', self._headers['Authorization'])
-        self._min_interval = float(self._conf.get('go_min_interval', self._min_interval))
-        self._retry_times = int(self._conf.get('go_retry_times', self._retry_times))
-        self._retry_backoff = float(self._conf.get('go_retry_backoff', self._retry_backoff))
+        try:
+            min_interval = float(self._conf.get('go_min_interval', self._min_interval))
+            if min_interval < 0:
+                raise ValueError('go_min_interval must be non-negative')
+            self._min_interval = min_interval
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_min_interval 无效，使用默认值 {self._min_interval}')
+
+        try:
+            retry_times = int(self._conf.get('go_retry_times', self._retry_times))
+            if retry_times < 1:
+                raise ValueError('go_retry_times must be >= 1')
+            self._retry_times = retry_times
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_retry_times 无效，使用默认值 {self._retry_times}')
+
+        try:
+            retry_backoff = float(self._conf.get('go_retry_backoff', self._retry_backoff))
+            if retry_backoff < 0:
+                raise ValueError('go_retry_backoff must be non-negative')
+            self._retry_backoff = retry_backoff
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_retry_backoff 无效，使用默认值 {self._retry_backoff}')
 
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
