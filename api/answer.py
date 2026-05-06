@@ -768,6 +768,7 @@ class AI(Tiku):
         options = "\n".join(cleaned_options)
         # 判断题目类型
         self._wait_for_interval()
+        self.last_request_time = time.time()
         if q_info['type'] == "single":
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
@@ -840,7 +841,6 @@ class AI(Tiku):
             ))
 
         try:
-            self.last_request_time = time.time()
             response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
             sep = "\n"
             return sep.join(response['Answer']).strip()
@@ -867,8 +867,10 @@ class AI(Tiku):
                 client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
             else:
                 client = OpenAI(base_url=self.endpoint, api_key=self.key)
-            
+
             # 发送一个简单的测试请求
+            self._wait_for_interval()
+            self.last_request_time = time.time()
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
                 messages=[
