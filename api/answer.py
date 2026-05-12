@@ -16,13 +16,13 @@ import requests
 from openai import OpenAI
 from urllib3 import disable_warnings, exceptions
 
-from api.answer_check import *
+from api.answer_check import check_answer
 from api.logger import logger
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
-__all__ = ["CacheDAO", "Tiku", "TikuYanxi", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
+__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
 
 class CacheDAO:
     """
@@ -262,10 +262,42 @@ class Tiku:
             self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
-        # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
-        new_cls = globals()[cls_name]()
-        new_cls.config_set(self._conf)
-        return new_cls
+
+        providers = [name.strip() for name in cls_name.split(',') if name.strip()]
+        if not providers:
+            self.DISABLE = True
+            logger.error("题库provider配置为空, 已忽略题库功能")
+            return self
+
+        invalid_providers = [name for name in providers if name not in PROVIDER_REGISTRY]
+        if invalid_providers:
+            self.DISABLE = True
+            logger.error(f"题库provider配置无效: {', '.join(invalid_providers)}")
+            return self
+
+        if len(providers) == 1:
+            provider_cls = PROVIDER_REGISTRY[providers[0]]
+            if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
+                self.DISABLE = True
+                logger.error(f"题库provider配置无效: {providers[0]}")
+                return self
+            new_cls = provider_cls()
+            new_cls.config_set(self._conf)
+            return new_cls
+
+        chain_providers = []
+        for provider_name in providers:
+            provider_cls = PROVIDER_REGISTRY[provider_name]
+            if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
+                self.DISABLE = True
+                logger.error(f"题库provider配置无效: {provider_name}")
+                return self
+            provider = provider_cls()
+            provider.config_set(self._conf)
+            chain_providers.append(provider)
+        fallback = TikuFallback(chain_providers)
+        fallback.config_set(self._conf)
+        return fallback
 
     def judgement_select(self, answer: str) -> bool:
         """
@@ -300,6 +332,57 @@ class Tiku:
         检查大模型连接是否可用
         默认返回 True（非大模型题库不需要检查）
         """
+        return True
+
+
+class TikuFallback(Tiku):
+    # 多题库回退实现，按 provider 中配置顺序依次查询。
+    def __init__(self, providers=None):
+        super().__init__()
+        self.name = '多题库回退'
+        self.providers = providers or []
+
+    def _init_tiku(self):
+        active = []
+        for provider in self.providers:
+            try:
+                provider.init_tiku()
+                if not provider.DISABLE:
+                    active.append(provider)
+            except Exception as e:
+                logger.error(f'初始化题库 {provider.name} 失败: {e}')
+        self.providers = active
+        if not self.providers:
+            logger.error('多题库回退初始化失败: 没有可用题库')
+            self.DISABLE = True
+        else:
+            logger.info(f"多题库回退已启用，查询顺序: {', '.join([p.__class__.__name__ for p in self.providers])}")
+
+    def _query(self, q_info:dict) -> Optional[str]:
+        for provider in self.providers:
+            try:
+                answer = provider._query(q_info)
+            except Exception as e:
+                provider_id = f'{provider.name}({provider.__class__.__name__})'
+                logger.exception(f'{self.name} 查询时 {provider_id} 异常: {e}')
+                continue
+            if not answer:
+                logger.info(f'{provider.name} 未命中，回退到下一个题库')
+                continue
+
+            # 若当前题库返回答案但类型不符，则继续回退。
+            if check_answer(answer, q_info['type'], provider):
+                logger.info(f'{provider.name} 命中答案')
+                return answer
+
+            logger.info(f'{provider.name} 返回答案类型不符，回退到下一个题库')
+        return None
+
+    def check_llm_connection(self) -> bool:
+        for provider in self.providers:
+            if not provider.check_llm_connection():
+                logger.error(f'{provider.name} 连接检查失败')
+                return False
         return True
 
 
@@ -354,6 +437,175 @@ class TikuYanxi(Tiku):
 
     def _init_tiku(self):
         self.load_token()
+
+class TikuGo(Tiku):
+    # GO题（网课小工具题库）实现
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = 'GO题（网课小工具题库）'
+        self.api = 'https://q.icodef.com/wyn-nb?v=4'
+        self._headers = {
+            'Authorization': '',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        self._request_lock = threading.Lock()
+        self._last_request_time = 0.0
+        self._min_interval = 1.0
+        self._retry_times = 3
+        self._retry_backoff = 1.2
+
+    def _sleep_for_next_request(self) -> None:
+        with self._request_lock:
+            now = time.time()
+            wait_time = max(0.0, self._last_request_time + self._min_interval - now)
+            self._last_request_time = now + wait_time
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+    def _mark_request_finished(self) -> None:
+        with self._request_lock:
+            self._last_request_time = time.time()
+
+    def _request_question(self, question: str, attempt: int) -> Optional[requests.Response]:
+        try:
+            self._sleep_for_next_request()
+            res = requests.post(
+                self.api,
+                data={'question': question},
+                headers=self._headers,
+                verify=True,
+                timeout=15
+            )
+            self._mark_request_finished()
+            return res
+        except requests.exceptions.RequestException as e:
+            logger.error(f'{self.name}查询异常 ({attempt}/{self._retry_times}): {e}')
+            self._mark_request_finished()
+            return None
+
+    def _parse_response(self, res: requests.Response) -> Optional[dict]:
+        if res.status_code != 200:
+            logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
+            return None
+
+        try:
+            res_json = res.json()
+        except ValueError:
+            logger.error(f'{self.name}查询失败: 返回内容不是有效JSON, 响应: {res.text}')
+            return None
+
+        try:
+            code = int(str(res_json.get('code', '')).strip())
+        except ValueError:
+            code = 0
+
+        answer = str(res_json.get('data', '')).strip()
+        msg = str(res_json.get('msg', '')).strip()
+        raw_text = f'{answer} {msg}'
+        is_throttled = any(key in raw_text for key in ['流控限制', '速度太快', '并发限制', '忙不过来'])
+        return {
+            'code': code,
+            'answer': answer,
+            'msg': msg,
+            'is_throttled': is_throttled,
+        }
+
+    def _sleep_retry(self, attempt: int, reason: str, include_min_interval: bool = False) -> None:
+        if include_min_interval:
+            sleep_seconds = max(self._min_interval, self._retry_backoff * attempt)
+        else:
+            sleep_seconds = self._retry_backoff * attempt
+        logger.warning(f'{self.name}{reason}，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._retry_times})')
+        time.sleep(sleep_seconds)
+
+    @staticmethod
+    def _is_placeholder_answer(answer: str, msg: str) -> bool:
+        return '李恒雅' in answer or '李恒雅' in msg
+
+    def _query(self, q_info: dict):
+        title = q_info.get('title', '')
+        candidates = [
+            title,
+            re.sub(r'^【[^】]+】\s*', '', title).strip(),
+            re.sub(r'^\[[^\]]+\]\s*', '', title).strip(),
+        ]
+        seen = set()
+        normalized_titles = []
+        for item in candidates:
+            if item and item not in seen:
+                seen.add(item)
+                normalized_titles.append(item)
+
+        for query_title in normalized_titles:
+            answer = self._query_once(query_title)
+            if answer:
+                return answer
+        return None
+
+    def _query_once(self, question: str) -> Optional[str]:
+        for attempt in range(1, self._retry_times + 1):
+            res = self._request_question(question, attempt)
+            if res is None:
+                if attempt < self._retry_times:
+                    self._sleep_retry(attempt, '查询异常', include_min_interval=True)
+                    continue
+                break
+
+            parsed = self._parse_response(res)
+            if not parsed:
+                return None
+
+            code = parsed['code']
+            answer = parsed['answer']
+            msg = parsed['msg']
+            is_throttled = parsed['is_throttled']
+
+            if code != 1:
+                if is_throttled and attempt < self._retry_times:
+                    self._sleep_retry(attempt, '触发流控')
+                    continue
+                logger.info(f"{self.name}未命中或失败: {msg or '未知错误'}")
+                return None
+
+            if not answer:
+                return None
+
+            # GO题库在未搜到时可能在 data/msg 中返回“李恒雅正在努力撰写中...”。
+            if self._is_placeholder_answer(answer, msg):
+                if is_throttled and attempt < self._retry_times:
+                    self._sleep_retry(attempt, '命中流控提示')
+                    continue
+                return None
+
+            return answer
+
+        return None
+
+    def _init_tiku(self):
+        self._headers['Authorization'] = self._conf.get('go_authorization', self._headers['Authorization'])
+        try:
+            min_interval = float(self._conf.get('go_min_interval', self._min_interval))
+            if min_interval < 0:
+                raise ValueError('go_min_interval must be non-negative')
+            self._min_interval = min_interval
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_min_interval 无效，使用默认值 {self._min_interval}')
+
+        try:
+            retry_times = int(self._conf.get('go_retry_times', self._retry_times))
+            if retry_times < 1:
+                raise ValueError('go_retry_times must be >= 1')
+            self._retry_times = retry_times
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_retry_times 无效，使用默认值 {self._retry_times}')
+
+        try:
+            retry_backoff = float(self._conf.get('go_retry_backoff', self._retry_backoff))
+            if retry_backoff < 0:
+                raise ValueError('go_retry_backoff must be non-negative')
+            self._retry_backoff = retry_backoff
+        except (TypeError, ValueError):
+            logger.warning(f'{self.name}配置 go_retry_backoff 无效，使用默认值 {self._retry_backoff}')
 
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
@@ -1017,3 +1269,13 @@ class SiliconFlow(Tiku):
         except Exception as e:
             logger.error(f'{self.name} 连接检查失败：{e}')
             return False
+
+
+PROVIDER_REGISTRY = {
+    'TikuYanxi': TikuYanxi,
+    'TikuGo': TikuGo,
+    'TikuLike': TikuLike,
+    'TikuAdapter': TikuAdapter,
+    'AI': AI,
+    'SiliconFlow': SiliconFlow,
+}
