@@ -981,6 +981,26 @@ class AI(Tiku):
         self.name = 'AI大模型答题'
         self.last_request_time = None
 
+    def _is_deepseek_v4(self) -> bool:
+        return (
+            'api.deepseek.com' in (self.endpoint or '').lower()
+            and (self.model or '').lower().startswith('deepseek-v4')
+        )
+
+    def _completion_kwargs(self, **kwargs):
+        if self._is_deepseek_v4():
+            # DeepSeek V4 defaults to thinking mode, which can leave message.content empty.
+            kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
+        return kwargs
+
+    def _wait_for_interval(self):
+        if self.last_request_time:
+            interval_time = time.time() - self.last_request_time
+            if interval_time < self.min_interval_seconds:
+                sleep_time = self.min_interval_seconds - interval_time
+                logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
+                time.sleep(sleep_time)
+
     def _query(self, q_info: dict):
         def remove_md_json_wrapper(md_str):
             # 使用正则表达式匹配Markdown代码块并提取内容
@@ -999,8 +1019,10 @@ class AI(Tiku):
         cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
         options = "\n".join(cleaned_options)
         # 判断题目类型
+        self._wait_for_interval()
+        self.last_request_time = time.time()
         if q_info['type'] == "single":
-            completion = client.chat.completions.create(
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
                 messages=[
                     {
@@ -1012,9 +1034,9 @@ class AI(Tiku):
                         "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
-            )
+            ))
         elif q_info['type'] == 'multiple':
-            completion = client.chat.completions.create(
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
                 messages=[
                     {
@@ -1026,9 +1048,9 @@ class AI(Tiku):
                         "content": f"题目：{q_info['title']}\n选项：{options}"
                     }
                 ]
-            )
+            ))
         elif q_info['type'] == 'completion':
-            completion = client.chat.completions.create(
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
                 messages=[
                     {
@@ -1040,9 +1062,9 @@ class AI(Tiku):
                         "content": f"题目：{q_info['title']}"
                     }
                 ]
-            )
+            ))
         elif q_info['type'] == 'judgement':
-            completion = client.chat.completions.create(
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
                 messages=[
                     {
@@ -1054,9 +1076,9 @@ class AI(Tiku):
                         "content": f"题目：{q_info['title']}"
                     }
                 ]
-            )
+            ))
         else:
-            completion = client.chat.completions.create(
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model = self.model,
                 messages=[
                     {
@@ -1068,16 +1090,9 @@ class AI(Tiku):
                         "content": f"题目：{q_info['title']}"
                     }
                 ]
-            )
+            ))
 
         try:
-            if self.last_request_time:
-                interval_time = time.time() - self.last_request_time
-                if interval_time < self.min_interval_seconds:
-                    sleep_time = self.min_interval_seconds - interval_time
-                    logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
-                    time.sleep(sleep_time)
-            self.last_request_time = time.time()
             response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
             sep = "\n"
             return sep.join(response['Answer']).strip()
@@ -1104,9 +1119,11 @@ class AI(Tiku):
                 client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
             else:
                 client = OpenAI(base_url=self.endpoint, api_key=self.key)
-            
+
             # 发送一个简单的测试请求
-            completion = client.chat.completions.create(
+            self._wait_for_interval()
+            self.last_request_time = time.time()
+            completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
                 messages=[
                     {
@@ -1114,8 +1131,8 @@ class AI(Tiku):
                         'content': '你好，请回答：1+1 等于几？只回答数字。'
                     }
                 ],
-                max_tokens=10
-            )
+                max_tokens=64
+            ))
             
             if completion.choices and completion.choices[0].message.content:
                 logger.info(f'{self.name} 连接检查成功')
