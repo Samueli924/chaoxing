@@ -43,6 +43,8 @@ class SessionManager:
         return cls._instance
 
     def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=10))
         self._session.mount("http://", HTTPAdapter(max_retries=10))
@@ -52,6 +54,7 @@ class SessionManager:
         self._session.headers.clear()
         self._session.headers.update(gc.HEADERS)
         self._session.cookies.update(use_cookies())
+        self._initialized = True
 
     @classmethod
     def get_instance(cls) -> Self:

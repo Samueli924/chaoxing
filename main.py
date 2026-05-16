@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 from concurrent.futures.thread import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from queue import PriorityQueue, ShutDown
 from threading import RLock
 from typing import Any
@@ -17,7 +17,7 @@ from tqdm import tqdm
 from api.answer import Tiku
 from api.base import Chaoxing, Account, StudyResult
 from api.exceptions import LoginError, InputFormatError
-from api.logger import logger
+from api.logger import logger, set_console_log_level
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
@@ -158,9 +158,12 @@ def init_config():
     args = parse_args()
 
     if args.config:
-        return load_config_from_file(args.config)
+        common_config, tiku_config, notification_config = load_config_from_file(args.config)
     else:
-        return build_config_from_args(args)
+        common_config, tiku_config, notification_config = build_config_from_args(args)
+
+    common_config["verbose"] = args.verbose
+    return common_config, tiku_config, notification_config
 
 
 
@@ -276,9 +279,9 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
 @dataclass(order=True)
 class ChapterTask:
     index: int
-    point: dict[str, Any]
-    result: ChapterResult = ChapterResult.PENDING
-    tries: int = 0
+    point: dict[str, Any] = field(compare=False)
+    result: ChapterResult = field(default=ChapterResult.PENDING, compare=False)
+    tries: int = field(default=0, compare=False)
 
 class JobProcessor:
     def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], tasks: list[ChapterTask], config: dict[str, Any]):
@@ -333,7 +336,7 @@ class JobProcessor:
                     logger.debug(f"unfinished task: {self.task_queue.unfinished_tasks}")
 
                 case ChapterResult.NOT_OPEN:
-                    # task.tries += 1
+                    task.tries += 1
                     if self.config["notopen_action"] == "continue":
                         logger.warning("章节未开启: {}, 正在跳过", task.point["title"])
                         self.task_queue.task_done()
@@ -457,6 +460,12 @@ def filter_courses(all_course, course_list):
         except Exception as e:
             raise InputFormatError("输入格式错误") from e
 
+    if isinstance(course_list, str):
+        course_list = course_list.split(",")
+    course_list = [item.strip() for item in course_list if item and item.strip()]
+    if not course_list:
+        return all_course
+
     # 筛选需要学习的课程
     course_task = []
     course_ids = []
@@ -465,9 +474,12 @@ def filter_courses(all_course, course_list):
             course_task.append(course)
             course_ids.append(course["courseId"])
     
-    # 如果没有指定课程，则学习所有课程
     if not course_task:
-        course_task = all_course
+        available_ids = ", ".join(course["courseId"] for course in all_course)
+        requested_ids = ", ".join(course_list)
+        raise InputFormatError(
+            f"未找到指定课程ID: {requested_ids}。可选课程ID: {available_ids}"
+        )
     
     return course_task
 
@@ -489,6 +501,8 @@ def main():
     try:
         # 初始化配置
         common_config, tiku_config, notification_config = init_config()
+        if common_config.get("verbose"):
+            set_console_log_level("DEBUG")
         
         # 强制播放按照配置文件调节
         common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))

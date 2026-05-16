@@ -8,7 +8,7 @@ from api.config import GlobalConst as gc
 
 def save_cookies(session: requests.Session):
     buffer=""
-    with open(gc.COOKIES_PATH, "w") as f:
+    with open(gc.COOKIES_PATH, "w", encoding="utf8") as f:
         for k, v in session.cookies.items():
             buffer += f"{k}={v};"
         buffer = buffer.removesuffix(";")
@@ -20,10 +20,13 @@ def use_cookies() -> dict:
         return {}
 
     cookies={}
-    with open(gc.COOKIES_PATH, "r") as f:
+    with open(gc.COOKIES_PATH, "r", encoding="utf8") as f:
         buffer = f.read().strip()
         for item in buffer.split(";"):
-            k, v = item.strip().split("=")
+            item = item.strip()
+            if not item or "=" not in item:
+                continue
+            k, v = item.split("=", 1)
             cookies[k] = v
 
     return cookies
