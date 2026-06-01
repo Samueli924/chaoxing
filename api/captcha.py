@@ -15,12 +15,11 @@ __version__ = "1.0.0"
 
 from random import randint
 from typing import Optional
-
 from ddddocr import DdddOcr
 from requests import session
 
 
-def ocr_init() -> DdddOcr:
+def ocr_init() -> Optional[DdddOcr]:
     """
     初始化OCR对象
 

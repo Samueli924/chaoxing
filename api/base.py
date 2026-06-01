@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
 from typing import Self, Optional, Literal
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 
 import requests
 from loguru import logger
@@ -36,6 +37,7 @@ def get_timestamp():
 
 class SessionManager:
     _instance = None
+    _login_lock = threading.Lock()
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -65,6 +67,25 @@ class SessionManager:
     @classmethod
     def update_cookies(cls):
         cls.get_instance()._session.cookies.update(use_cookies())
+
+    @classmethod
+    def relogin_if_needed(cls, chaoxing_instance) -> bool:
+        with cls._login_lock:
+            # Check if cookie session is still invalid
+            if chaoxing_instance._validate_cookie_session():
+                return True
+            
+            # Try to relogin
+            logger.info("Cookie session invalid, attempting thread-safe relogin...")
+            if chaoxing_instance.account and chaoxing_instance.account.username and chaoxing_instance.account.password:
+                login_result = chaoxing_instance.login(login_with_cookies=False)
+                if login_result.get("status"):
+                    cls.update_cookies()
+                    logger.info("Thread-safe relogin succeeded")
+                    return True
+                else:
+                    logger.warning(f"Thread-safe relogin failed: {login_result.get('msg')}")
+            return False
 
 
 class Account:
@@ -121,6 +142,136 @@ class ActivityStatus(IntEnum):
 
 class ActivityType(IntEnum):
     SIGNIN = 2
+
+
+def multi_cut(answer: str, origin_html_content="", logger=logger):
+    """
+    将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表
+    """
+    res = cut(answer)
+    if res is None:
+        logger.warning(
+            f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{origin_html_content}\n"
+        )
+        logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
+        return None
+    else:
+        return res
+
+def clean_res(res):
+    cleaned_res = []
+    if isinstance(res, str):
+        res = [res]
+    for c in res:
+        # 仅在字符串长度大于1时才尝试去除开头的字母编号，防止误删单个字母答案
+        cleaned = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
+        cleaned_res.append(cleaned.strip())
+    return cleaned_res
+
+def normalize_text(text: str) -> str:
+    if not isinstance(text, str):
+        text = str(text)
+    # 统一常见异体字符，降低“风/⻛”类差异导致的匹配失败。
+    char_map = str.maketrans({
+        '⻛': '风',
+        '⻔': '门',
+        '⻋': '车',
+        '⻢': '马',
+    })
+    normalized = text.translate(char_map)
+    normalized = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', normalized)
+    normalized = re.sub(r'\s+', '', normalized)
+    normalized = re.sub(r'[，。！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', normalized)
+    return normalized.lower()
+
+def get_option_text(option: str) -> str:
+    return re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', option).strip()
+
+def best_option_by_similarity(target: str, options: list, threshold: float = 0.8) -> str:
+    if not target or not options:
+        return ""
+    target_norm = normalize_text(target)
+    if not target_norm:
+        return ""
+
+    best_letter = ""
+    best_score = 0.0
+    for option in options:
+        option_text = get_option_text(option)
+        option_norm = normalize_text(option_text)
+        if not option_norm:
+            continue
+        score = SequenceMatcher(None, target_norm, option_norm).ratio()
+        if score > best_score:
+            best_score = score
+            best_letter = option[:1]
+
+    if best_score >= threshold:
+        logger.info(f"相似度兜底匹配成功: {best_letter} (score={best_score:.2f}, threshold={threshold:.2f})")
+        return best_letter
+    return ""
+
+def is_subsequence(a, o):
+    iter_o = iter(o)
+    return all(c in iter_o for c in a)
+
+def random_answer(options: str, q_type: str) -> str:
+    answer = ""
+    if not options:
+        return answer
+
+    if q_type == "multiple":
+        logger.debug(f"当前选项列表[cut前] -> {options}")
+        _op_list = multi_cut(options)
+        logger.debug(f"当前选项列表[cut后] -> {_op_list}")
+
+        if not _op_list:
+            logger.error(
+                "选项为空, 未能正确提取题目选项信息! 请反馈并提供以上信息"
+            )
+            return answer
+
+        available_options = len(_op_list)
+        select_count = 0
+
+        # 根据可用选项数量调整可能选择的选项数
+        if available_options <= 1:
+            select_count = available_options
+        else:
+            max_possible = min(4, available_options)
+            min_possible = min(2, available_options)
+
+            weights_map = {
+                2: [1.0],
+                3: [0.3, 0.7],
+                4: [0.1, 0.5, 0.4],
+                5: [0.1, 0.4, 0.3, 0.2],
+            }
+
+            weights = weights_map.get(max_possible, [0.3, 0.4, 0.3])
+            possible_counts = list(range(min_possible, max_possible + 1))
+
+            weights = weights[:len(possible_counts)]
+
+            weights_sum = sum(weights)
+            if weights_sum > 0:
+                weights = [w / weights_sum for w in weights]
+
+            select_count = random.choices(possible_counts, weights=weights, k=1)[0]
+
+        selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
+
+        for option in selected_options:
+            answer += option[:1]  # 取首字为答案，例如A或B
+
+        answer = "".join(sorted(answer))
+    elif q_type == "single":
+        answer = random.choice(options.split("\n"))[:1]  # 取首字为答案, 例如A或B
+    # 判断题处理
+    elif q_type == "judgement":
+        answer = "true" if random.choice([True, False]) else "false"
+    logger.info(f"随机选择 -> {answer}")
+    return answer
 
 
 class Chaoxing:
@@ -437,6 +588,41 @@ class Chaoxing:
         if att_duration_enc:
             params["attDurationEnc"] = att_duration_enc
 
+        def perform_request(rt_val):
+            params.update({"rt": rt_val, "_t": get_timestamp()})
+            res = _session.get(_url, params=params, headers=headers)
+            if res.status_code == 403 or '验证码' in res.text or 'validate' in res.text:
+                logger.warning("检测到验证码拦截，正在尝试自动通过验证码...")
+                try:
+                    from api.captcha import CxCaptcha
+                    cookies_str = "; ".join([f"{k}={v}" for k, v in _session.cookies.items()])
+                    ua = headers.get("User-Agent", gc.HEADERS.get("User-Agent"))
+                    ocr_inst = getattr(self, '_ocr', None)
+                    if ocr_inst is None:
+                        from api.captcha import ocr_init
+                        ocr_inst = ocr_init()
+                        if ocr_inst:
+                            self._ocr = ocr_inst
+                    captcha_solver = CxCaptcha(user_agent=ua, cookies=cookies_str, ocr=ocr_inst)
+                    solved = False
+                    for attempt in range(3):
+                        logger.info(f"第 {attempt + 1} 次尝试通关验证码...")
+                        if captcha_solver.try_pass():
+                            logger.success("验证码通关成功！")
+                            solved = True
+                            break
+                        else:
+                            logger.warning("验证码验证失败，正在重试...")
+                            time.sleep(2)
+                    if solved:
+                        _session.cookies.update(captcha_solver.s.cookies)
+                        res = _session.get(_url, params=params, headers=headers)
+                    else:
+                        logger.error("多次验证码通关失败，可能需要手动干预。")
+                except Exception as e:
+                    logger.error(f"验证码通关逻辑异常: {e}")
+            return res
+
         rt = _job['rt']
         if not rt:
             rt_search = re.search(r"-rt_([1d])", _job['otherinfo'])
@@ -448,24 +634,16 @@ class Chaoxing:
         if rt:
             logger.trace(f"Got rt: {rt}")
             _job['rt'] = rt
-            params.update({"rt": rt,
-                           "_t": get_timestamp()})
-            resp = _session.get(_url, params=params, headers=headers)
+            resp = perform_request(rt)
         else:
             logger.warning("Failed to get rt")
             for rt in [0.9, 1]:
-                params.update({"rt": rt,
-                               "_t": get_timestamp()})
-                resp = _session.get(_url, params=params, headers=headers)
+                resp = perform_request(rt)
                 if resp.status_code == 200:
                     logger.trace(resp.text)
                     return resp.json()["isPassed"], 200
-                # elif resp.ok:
-                #    # TODO: 处理验证码
-                #    pass
                 elif resp.status_code == 403:
                     logger.warning("出现403报错, 正常尝试切换rt")
-
                 else:
                     logger.warning("未知错误 jobid={}, status_code={}, 摘要:\n{}",
                                    _job.get("jobid"),
@@ -531,13 +709,8 @@ class Chaoxing:
         if refreshed:
             return refreshed
 
-        # FIXME: Temporarily disabled for multithreading support
-        if False and self.account and self.account.username and self.account.password:
-            login_result = self.login(login_with_cookies=False)
-            if login_result.get("status"):
-                SessionManager.update_cookies()
-                return self._refresh_video_status(session, job, _type)
-            logger.warning("账号密码登录失败: {}", login_result.get("msg"))
+        if SessionManager.relogin_if_needed(self):
+            return self._refresh_video_status(session, job, _type)
 
         return None
 
@@ -569,61 +742,59 @@ class Chaoxing:
 
         logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
 
-        pbar = tqdm(total=duration, initial=play_time, desc=_job["name"],
-                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
-
-        forbidden_retry = 0
-        max_forbidden_retry = 2
-
         passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
                                                 _type, headers=headers, _isdrag=4)
         if passed:
             logger.info("任务瞬间完成: {}", _job['name'])
             return StudyResult.SUCCESS
 
-        while not passed:
-            # Sometimes the last request needs to be sent several times to complete the task
-            if play_time - last_log_time >= wait_time or play_time == duration:
+        with tqdm(total=duration, initial=play_time, desc=_job["name"],
+                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+            while not passed:
+                # Sometimes the last request needs to be sent several times to complete the task
+                if play_time - last_log_time >= wait_time or play_time == duration:
 
-                passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
-                                                        int(play_time), _type, headers=headers)
+                    passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
+                                                            int(play_time), _type, headers=headers)
 
-                if state == 403:
-                    if forbidden_retry >= max_forbidden_retry:
-                        logger.warning("403重试失败, 跳过当前任务")
-                        return StudyResult.FORBIDDEN
-                    forbidden_retry += 1
-                    logger.warning(
-                        "出现403报错, 正在尝试刷新会话状态 (第{}次)",
-                        forbidden_retry,
-                    )
-                    time.sleep(random.uniform(2, 4))
-                    refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
-                    if refreshed_meta:
-                        # FIXME: if those keys aren't present, it should be considered an error rather than falling back
-                        _dtoken = refreshed_meta.get("dtoken", _dtoken)
-                        _duration = refreshed_meta.get("duration", duration)
-                        play_time = refreshed_meta.get("playTime", play_time)
+                    if state == 403:
+                        if forbidden_retry >= max_forbidden_retry:
+                            logger.warning("403重试失败, 跳过当前任务")
+                            return StudyResult.FORBIDDEN
+                        forbidden_retry += 1
+                        logger.warning(
+                            "出现403报错, 正在尝试刷新会话状态 (第{}次)",
+                            forbidden_retry,
+                        )
+                        time.sleep(random.uniform(2, 4))
+                        refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
+                        if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get("duration") is not None:
+                            _dtoken = refreshed_meta["dtoken"]
+                            _duration = refreshed_meta["duration"]
+                            play_time = refreshed_meta.get("playTime", play_time)
 
-                        logger.debug("Refreshed token: {}, duration: {}, play time: {}", _dtoken, _duration, play_time)
-                        continue
+                            logger.debug("Refreshed token: {}, duration: {}, play time: {}", _dtoken, _duration, play_time)
+                            continue
+                        else:
+                            logger.error("会话恢复失败，刷新后的元数据缺少必要字段 (dtoken, duration)")
+                            return StudyResult.ERROR
 
-                elif not passed and state != 200:
-                    return StudyResult.ERROR
+                    elif not passed and state != 200:
+                        return StudyResult.ERROR
 
-                wait_time = int(random.uniform(30, 90))
-                last_log_time = play_time
+                    wait_time = int(random.uniform(30, 90))
+                    last_log_time = play_time
 
-                logger.trace("Progress logged")
+                    logger.trace("Progress logged")
 
-            # Uploading the progress takes time, we assume that the video is still playing in the background, this manually calculates the time elapsed
-            dt = (time.time() - last_iter) * _speed
-            last_iter = time.time()
-            play_time = min(duration, play_time + dt)
+                # Uploading the progress takes time, we assume that the video is still playing in the background, this manually calculates the time elapsed
+                dt = (time.time() - last_iter) * _speed
+                last_iter = time.time()
+                play_time = min(duration, play_time + dt)
 
-            pbar.n = int(play_time)
-            pbar.refresh()
-            time.sleep(gc.THRESHOLD)
+                pbar.n = int(play_time)
+                pbar.refresh()
+                time.sleep(gc.THRESHOLD)
 
         logger.info("任务完成: {}", _job['name'])
         return StudyResult.SUCCESS
@@ -661,215 +832,23 @@ class Chaoxing:
             return StudyResult.SUCCESS
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
-        # FIXME: 这一块可以单独搞一个类出来了，方法里面又套方法，每一次调用都会创建新的方法，十分浪费
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
-        _ORIGIN_HTML_CONTENT = ""  # 用于配合输出网页源码, 帮助修复#391错误
 
-        def random_answer(options: str) -> str:
-            answer = ""
-            if not options:
-                return answer
-
-            if q["type"] == "multiple":
-                logger.debug(f"当前选项列表[cut前] -> {options}")
-                _op_list = multi_cut(options)
-                logger.debug(f"当前选项列表[cut后] -> {_op_list}")
-
-                if not _op_list:
-                    logger.error(
-                        "选项为空, 未能正确提取题目选项信息! 请反馈并提供以上信息"
-                    )
-                    return answer
-
-                available_options = len(_op_list)
-                select_count = 0
-
-                # 根据可用选项数量调整可能选择的选项数
-                if available_options <= 1:
-                    select_count = available_options
-                else:
-                    max_possible = min(4, available_options)
-                    min_possible = min(2, available_options)
-
-                    weights_map = {
-                        2: [1.0],
-                        3: [0.3, 0.7],
-                        4: [0.1, 0.5, 0.4],
-                        5: [0.1, 0.4, 0.3, 0.2],
-                    }
-
-                    weights = weights_map.get(max_possible, [0.3, 0.4, 0.3])
-                    possible_counts = list(range(min_possible, max_possible + 1))
-
-                    weights = weights[:len(possible_counts)]
-
-                    weights_sum = sum(weights)
-                    if weights_sum > 0:
-                        weights = [w / weights_sum for w in weights]
-
-                    select_count = random.choices(possible_counts, weights=weights, k=1)[0]
-
-                selected_options = random.sample(_op_list, select_count) if select_count > 0 else []
-
-                for option in selected_options:
-                    answer += option[:1]  # 取首字为答案，例如A或B
-
-                answer = "".join(sorted(answer))
-            elif q["type"] == "single":
-                answer = random.choice(options.split("\n"))[:1]  # 取首字为答案, 例如A或B
-            # 判断题处理
-            elif q["type"] == "judgement":
-                # answer = self.tiku.jugement_select(_answer)
-                answer = "true" if random.choice([True, False]) else "false"
-            logger.info(f"随机选择 -> {answer}")
-            return answer
-
-        def multi_cut(answer: str):
-            """
-            将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表
-
-            参数:
-            answer(str): 多选题答案字符串.
-
-            返回:
-            list[str]: 切割后的答案列表,如果无法切割, 则返回默认的选项列表None
-
-            注意:
-            如果无法从网页中提取题目信息,将记录警告日志并返回None
-            """
-            # cut_char = [',','，','|','\n','\r','\t','#','*','-','_','+','@','~','/','\\','.','&',' ']    # 多选答案切割符
-            # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
-            # IndexError: Cannot choose from an empty sequence #391
-            # 同时为了避免没有考虑到的 case, 应该先按照 '\n' 匹配, 匹配不到再按照其他字符匹配
-            cut_char = [
-                "\n",
-                ",",
-                "，",
-                "|",
-                "\r",
-                "\t",
-                "#",
-                "*",
-                "-",
-                "_",
-                "+",
-                "@",
-                "~",
-                "/",
-                "\\",
-                ".",
-                "&",
-                " ",
-                "、",
-            ]  # 多选答案切割符
-            res = cut(answer)
-            if res is None:
-                logger.warning(
-                    f"未能从网页中提取题目信息, 以下为相关信息：\n\t{answer}\n\n{_ORIGIN_HTML_CONTENT}\n"
-                )  # 尝试输出网页内容和选项信息
-                logger.warning("未能正确提取题目选项信息! 请反馈并提供以上信息")
-                return None
-            else:
-                return res
-
-        def clean_res(res):
-            cleaned_res = []
-            if isinstance(res, str):
-                res = [res]
-            for c in res:
-                # 仅在字符串长度大于1时才尝试去除开头的字母编号，防止误删单个字母答案
-                cleaned = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
-                cleaned_res.append(cleaned.strip())
-
-            return cleaned_res
-
-        def normalize_text(text: str) -> str:
-            if not isinstance(text, str):
-                text = str(text)
-            # 统一常见异体字符，降低“风/⻛”类差异导致的匹配失败。
-            char_map = str.maketrans({
-                '⻛': '风',
-                '⻔': '门',
-                '⻋': '车',
-                '⻢': '马',
-            })
-            normalized = text.translate(char_map)
-            normalized = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', normalized)
-            normalized = re.sub(r'\s+', '', normalized)
-            normalized = re.sub(r'[，。！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', normalized)
-            return normalized.lower()
-
-        def get_option_text(option: str) -> str:
-            return re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', option).strip()
-
-        def best_option_by_similarity(target: str, options: list, threshold: float = 0.8) -> str:
-            if not target or not options:
-                return ""
-            target_norm = normalize_text(target)
-            if not target_norm:
-                return ""
-
-            best_letter = ""
-            best_score = 0.0
-            for option in options:
-                option_text = get_option_text(option)
-                option_norm = normalize_text(option_text)
-                if not option_norm:
-                    continue
-                score = SequenceMatcher(None, target_norm, option_norm).ratio()
-                if score > best_score:
-                    best_score = score
-                    best_letter = option[:1]
-
-            if best_score >= threshold:
-                logger.info(f"相似度兜底匹配成功: {best_letter} (score={best_score:.2f}, threshold={threshold:.2f})")
-                return best_letter
-            return ""
-
-        def is_subsequence(a, o):
-            iter_o = iter(o)
-            return all(c in iter_o for c in a)
-
-        # FIXME: Use tenacity for retrying
-        def with_retry(max_retries=3, delay=1):
-            def decorator(func):
-                def wrapper(*args, **kwargs):
-                    retries = 0
-                    while retries < max_retries:
-                        try:
-                            _resp = func(*args, **kwargs)
-
-                            # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
-                            if '教师未创建完成该测验' in _resp.text:
-                                raise PermissionError("教师未创建完成该测验")
-
-                            questions = decode_questions_info(_resp.text)
-
-                            if _resp.status_code == 200 and questions.get("questions"):
-                                return (_resp, questions)
-
-                            logger.warning(
-                                f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中... ({retries + 1}/{max_retries})")
-
-                        except requests.exceptions.RequestException as e:
-                            logger.warning(f"请求失败: {str(e)[:50]}, 重试中... ({retries + 1}/{max_retries})")
-                        retries += 1
-                        time.sleep(delay * (2 ** retries))
-                    raise MaxRetryExceeded(f"超过最大重试次数 ({max_retries})")
-
-                return wrapper
-
-            return decorator
-
-        # 学习通这里根据参数差异能重定向至两个不同接口, 需要定向至https://mooc1.chaoxing.com/mooc-ans/workHandle/handle
         _session = SessionManager.get_session()
-
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
 
-        @with_retry(max_retries=3, delay=1)
-        def fetch_response():
-            return _session.get(
+        def is_not_permission_error(exception):
+            return not isinstance(exception, PermissionError)
+
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_fixed(1),
+            retry=retry_if_exception(is_not_permission_error),
+            reraise=True
+        )
+        def fetch_response_with_retry():
+            _resp = _session.get(
                 _url,
                 params={
                     "api": "1",
@@ -890,13 +869,29 @@ class Chaoxing:
                 }
             )
 
+            # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
+            if '教师未创建完成该测验' in _resp.text:
+                raise PermissionError("教师未创建完成该测验")
+
+            questions = decode_questions_info(_resp.text)
+
+            if _resp.status_code == 200 and questions.get("questions"):
+                return (_resp, questions)
+
+            logger.warning(
+                f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中...")
+            raise RuntimeError(f"请求返回无效数据 (Code: {_resp.status_code})")
+
         final_resp = {}
         questions = {}
 
         try:
-            final_resp, questions = fetch_response()
+            final_resp, questions = fetch_response_with_retry()
+        except PermissionError as e:
+            logger.warning(f"跳过章节检测: {e}")
+            return StudyResult.SUCCESS
         except Exception as e:
-            logger.error(f"请求失败: {e}")
+            logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
             return StudyResult.ERROR
 
         _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
@@ -913,14 +908,14 @@ class Chaoxing:
             answer = ""
             if not res:
                 # 随机答题
-                answer = random_answer(q["options"])
+                answer = random_answer(q["options"], q["type"])
                 q[f'answerSource{q["id"]}'] = "random"
             else:
                 # 根据响应结果选择答案
                 if q["type"] == "multiple":
                     # 多选处理
-                    options_list = multi_cut(q["options"])
-                    res_list = multi_cut(res)
+                    options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
+                    res_list = multi_cut(res, _ORIGIN_HTML_CONTENT)
                     if res_list is not None and options_list is not None:
                         for _a in clean_res(res_list):
                             matched = False
@@ -940,7 +935,7 @@ class Chaoxing:
                     # else 如果分割失败那么就直接到下面去随机选
                 elif q["type"] == "single":
                     # 单选也进行切割，主要是防止返回的答案有异常字符
-                    options_list = multi_cut(q["options"])
+                    options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
                     if options_list is not None:
                         t_res = clean_res(res)
                         for o in options_list:
@@ -962,7 +957,7 @@ class Chaoxing:
 
                 if not answer:  # 检查 answer 是否为空
                     logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
-                    answer = random_answer(q["options"])  # 如果为空，则随机选择答案
+                    answer = random_answer(q["options"], q["type"])  # 如果为空，则随机选择答案
                     q[f'answerSource{q["id"]}'] = "random"
                 else:
                     logger.info(f"成功获取到答案：{answer}")

@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import threading
 import time
+from abc import ABC, abstractmethod
 from pathlib import Path
 from re import sub
 from typing import Optional
@@ -134,18 +135,18 @@ class CacheDAO:
             self._write_cache(data)
 
 
-# TODO: 重构此部分代码，将此类改为抽象类，加载题库方法改为静态方法，禁止直接初始化此类
-class Tiku:
-    CONFIG_PATH = os.path.join(os.getcwd(), "config.ini")  # TODO: 从运行参数中获取config路径
+class Tiku(ABC):
+    CONFIG_PATH = os.path.join(os.getcwd(), "config.ini")
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
     COVER_RATE = 0.8    # 覆盖率
     true_list = []
     false_list = []
-    def __init__(self) -> None:
+    def __init__(self, config_path: Optional[str] = None) -> None:
         self._name = None
         self._api = None
         self._conf = None
+        self._config_path = config_path or self.CONFIG_PATH
 
     @property
     def name(self):
@@ -198,7 +199,7 @@ class Tiku:
         """
         try:
             config = configparser.ConfigParser()
-            config.read(self.CONFIG_PATH, encoding="utf8")
+            config.read(self._config_path, encoding="utf8")
             return config['tiku']
         except (KeyError, FileNotFoundError):
             logger.info("未找到tiku配置, 已忽略题库功能")
@@ -238,6 +239,7 @@ class Tiku:
 
 
 
+    @abstractmethod
     def _query(self, q_info:dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
@@ -245,58 +247,67 @@ class Tiku:
         pass
 
 
-    def get_tiku_from_config(self):
+    @staticmethod
+    def get_tiku_from_config(config: Optional[dict] = None, config_path: Optional[str] = None):
         """
         从配置文件加载题库, 这个配置可以是用户提供, 可以是默认配置文件
         """
-        if not self._conf:
+        conf = config
+        path = config_path or Tiku.CONFIG_PATH
+        if not conf:
             # 尝试从默认配置文件加载
-            self.config_set(self._get_conf())
-        if self.DISABLE:
-            return self
+            try:
+                config_parser = configparser.ConfigParser()
+                config_parser.read(path, encoding="utf8")
+                conf = config_parser['tiku']
+            except (KeyError, FileNotFoundError):
+                logger.error("未找到题库配置, 已忽略题库功能")
+                dummy = DummyTiku(config_path=path)
+                return dummy
+
         try:
-            cls_name = self._conf['provider']
+            cls_name = conf['provider']
             if not cls_name:
                 raise KeyError
         except KeyError:
-            self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
-            return self
+            dummy = DummyTiku(config_path=path)
+            return dummy
 
         providers = [name.strip() for name in cls_name.split(',') if name.strip()]
         if not providers:
-            self.DISABLE = True
             logger.error("题库provider配置为空, 已忽略题库功能")
-            return self
+            dummy = DummyTiku(config_path=path)
+            return dummy
 
         invalid_providers = [name for name in providers if name not in PROVIDER_REGISTRY]
         if invalid_providers:
-            self.DISABLE = True
             logger.error(f"题库provider配置无效: {', '.join(invalid_providers)}")
-            return self
+            dummy = DummyTiku(config_path=path)
+            return dummy
 
         if len(providers) == 1:
             provider_cls = PROVIDER_REGISTRY[providers[0]]
             if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
-                self.DISABLE = True
                 logger.error(f"题库provider配置无效: {providers[0]}")
-                return self
-            new_cls = provider_cls()
-            new_cls.config_set(self._conf)
+                dummy = DummyTiku(config_path=path)
+                return dummy
+            new_cls = provider_cls(config_path=path)
+            new_cls.config_set(conf)
             return new_cls
 
         chain_providers = []
         for provider_name in providers:
             provider_cls = PROVIDER_REGISTRY[provider_name]
             if not isinstance(provider_cls, type) or not issubclass(provider_cls, Tiku):
-                self.DISABLE = True
                 logger.error(f"题库provider配置无效: {provider_name}")
-                return self
-            provider = provider_cls()
-            provider.config_set(self._conf)
+                dummy = DummyTiku(config_path=path)
+                return dummy
+            provider = provider_cls(config_path=path)
+            provider.config_set(conf)
             chain_providers.append(provider)
-        fallback = TikuFallback(chain_providers)
-        fallback.config_set(self._conf)
+        fallback = TikuFallback(chain_providers, config_path=path)
+        fallback.config_set(conf)
         return fallback
 
     def judgement_select(self, answer: str) -> bool:
@@ -337,8 +348,8 @@ class Tiku:
 
 class TikuFallback(Tiku):
     # 多题库回退实现，按 provider 中配置顺序依次查询。
-    def __init__(self, providers=None):
-        super().__init__()
+    def __init__(self, providers=None, config_path: Optional[str] = None):
+        super().__init__(config_path)
         self.name = '多题库回退'
         self.providers = providers or []
 
@@ -390,8 +401,8 @@ class TikuFallback(Tiku):
 
 class TikuYanxi(Tiku):
     # 言溪题库实现
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
         self.name = '言溪题库'
         self.api = 'https://tk.enncy.cn/query'
         self._token = None
@@ -440,8 +451,8 @@ class TikuYanxi(Tiku):
 
 class TikuGo(Tiku):
     # GO题（网课小工具题库）实现
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
         self.name = 'GO题（网课小工具题库）'
         self.api = 'https://q.icodef.com/wyn-nb?v=4'
         self._headers = {
@@ -609,8 +620,8 @@ class TikuGo(Tiku):
 
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
         self.name = 'LIKE知识库'
         self.ver = '2.0.0' #对应官网API版本
         self.query_api = 'https://app.datam.site/api/v1/query'
@@ -928,8 +939,8 @@ class TikuLike(Tiku):
 
 class TikuAdapter(Tiku):
     # TikuAdapter题库实现 https://github.com/DokiDoki1103/tikuAdapter
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
         self.name = 'TikuAdapter题库'
         self.api = ''
 
@@ -976,8 +987,8 @@ class TikuAdapter(Tiku):
 
 class AI(Tiku):
     # AI大模型答题实现
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
         self.name = 'AI大模型答题'
         self.last_request_time = None
 
@@ -1148,8 +1159,8 @@ class AI(Tiku):
 
 class SiliconFlow(Tiku):
     """硅基流动大模型答题实现"""
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config_path: Optional[str] = None):
+        super().__init__(config_path)
         self.name = '硅基流动大模型'
         self.last_request_time = None
 
@@ -1286,6 +1297,16 @@ class SiliconFlow(Tiku):
         except Exception as e:
             logger.error(f'{self.name} 连接检查失败：{e}')
             return False
+
+
+class DummyTiku(Tiku):
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
+        self.name = '空/禁用题库'
+        self.DISABLE = True
+
+    def _query(self, q_info: dict) -> Optional[str]:
+        return None
 
 
 PROVIDER_REGISTRY = {

@@ -8,7 +8,12 @@ import time
 import traceback
 from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-from queue import PriorityQueue, ShutDown
+try:
+    from queue import PriorityQueue, ShutDown
+except ImportError:
+    from queue import PriorityQueue
+    class ShutDown(Exception):
+        pass
 from threading import RLock
 from typing import Any
 
@@ -85,6 +90,9 @@ def parse_args():
     )
 
     parser.add_argument("--auto-sign", action="store_true", help="自动签到")
+    parser.add_argument(
+        "--retry-interval", type=float, default=1.0, help="重试等待时间, 单位秒 (默认1.0)"
+    )
 
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
@@ -117,6 +125,10 @@ def load_config_from_file(config_path):
         # 处理notopen_action，设置默认值为retry
         if "notopen_action" not in common_config:
             common_config["notopen_action"] = "retry"
+        if "retry_interval" in common_config:
+            common_config["retry_interval"] = float(common_config["retry_interval"])
+        else:
+            common_config["retry_interval"] = 1.0
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
         if "username" in common_config and common_config["username"] is not None:
@@ -148,7 +160,8 @@ def build_config_from_args(args):
         "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
         "speed": args.speed if args.speed else 1.0,
         "jobs": args.jobs,
-        "notopen_action": args.notopen_action if args.notopen_action else "retry"
+        "notopen_action": args.notopen_action if args.notopen_action else "retry",
+        "retry_interval": args.retry_interval if args.retry_interval else 1.0
     }
     return common_config, {}, {}
 
@@ -158,13 +171,14 @@ def init_config():
     args = parse_args()
 
     if args.config:
-        return load_config_from_file(args.config)
+        common_config, tiku_config, notification_config = load_config_from_file(args.config)
     else:
-        return build_config_from_args(args)
+        common_config, tiku_config, notification_config = build_config_from_args(args)
+    return common_config, tiku_config, notification_config, args.config
 
 
 
-def init_chaoxing(common_config, tiku_config):
+def init_chaoxing(common_config, tiku_config, config_path=None):
     """初始化超星实例"""
     username = common_config.get("username", "")
     password = common_config.get("password", "")
@@ -178,9 +192,7 @@ def init_chaoxing(common_config, tiku_config):
     account = Account(username, password)
     
     # 设置题库
-    tiku = Tiku()
-    tiku.config_set(tiku_config)  # 载入配置
-    tiku = tiku.get_tiku_from_config()  # 载入题库
+    tiku = Tiku.get_tiku_from_config(tiku_config, config_path=config_path)  # 载入题库
     tiku.init_tiku()  # 初始化题库
     
     # 获取查询延迟设置
@@ -273,20 +285,25 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
     return StudyResult.ERROR
 
 
-@dataclass(order=True)
+@dataclass
 class ChapterTask:
     index: int
     point: dict[str, Any]
+    course: dict[str, Any]
     result: ChapterResult = ChapterResult.PENDING
     tries: int = 0
 
+    def __lt__(self, other):
+        if not isinstance(other, ChapterTask):
+            return NotImplemented
+        return self.index < other.index
+
 class JobProcessor:
-    def __init__(self, chaoxing: Chaoxing, course: dict[str, Any], tasks: list[ChapterTask], config: dict[str, Any]):
+    def __init__(self, chaoxing: Chaoxing, tasks: list[ChapterTask], config: dict[str, Any]):
         if "jobs" not in config or not config["jobs"]:
             config["jobs"] = 4
         
         self.chaoxing = chaoxing
-        self.course = course
         self.speed = config["speed"]
         self.max_tries = 5
         self.tasks = tasks
@@ -297,6 +314,7 @@ class JobProcessor:
         self.threads: list[threading.Thread] = []
         self.worker_num = config["jobs"]
         self.config = config
+        self.retry_interval = config.get("retry_interval", 1.0)
 
     def run(self):
         for task in self.tasks:
@@ -311,12 +329,12 @@ class JobProcessor:
 
         self.task_queue.join()
         time.sleep(0.5)
-        self.task_queue.shutdown()
+        if hasattr(self.task_queue, "shutdown"):
+            self.task_queue.shutdown()
 
 
     @log_error
     def worker_thread(self):
-        tqdm.set_lock(tqdm.get_lock())
         while True:
             try:
                 task = self.task_queue.get()
@@ -324,26 +342,26 @@ class JobProcessor:
                 logger.info("Queue shut down")
                 return
 
-            task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed)
+            task.result = process_chapter(self.chaoxing, task.course, task.point, self.speed)
 
             match task.result:
                 case ChapterResult.SUCCESS:
-                    logger.debug("Task success: {}", task.point["title"])
+                    logger.debug("Task success: {} - {}", task.course["title"], task.point["title"])
                     self.task_queue.task_done()
                     logger.debug(f"unfinished task: {self.task_queue.unfinished_tasks}")
 
                 case ChapterResult.NOT_OPEN:
                     # task.tries += 1
                     if self.config["notopen_action"] == "continue":
-                        logger.warning("章节未开启: {}, 正在跳过", task.point["title"])
+                        logger.warning("章节未开启: {} - {}, 正在跳过", task.course["title"], task.point["title"])
                         self.task_queue.task_done()
                         continue
 
                     if task.tries >= self.max_tries:
                         logger.error(
-                            "章节未开启: {} 可能由于上一章节的章节检测未完成, 也可能由于该章节因为时效已关闭，"
+                            "章节未开启: {} - {} 可能由于上一章节的章节检测未完成, 也可能由于该章节因为时效已关闭，"
                             "请手动检查完成并提交再重试。或者在配置中配置(自动跳过关闭章节/开启题库并启用提交)"
-                        , task.point["title"])
+                        , task.course["title"], task.point["title"])
                         self.task_queue.task_done()
                         continue
 
@@ -352,10 +370,10 @@ class JobProcessor:
 
                 case ChapterResult.ERROR:
                     task.tries += 1
-                    logger.warning("Retrying task {} ({}/{} attempts)", task.point["title"], task.tries,
+                    logger.warning("Retrying task {} - {} ({}/{} attempts)", task.course["title"], task.point["title"], task.tries,
                                    self.max_tries)
                     if task.tries >= self.max_tries:
-                        logger.error("Max retries reached for task: {}", task.point["title"])
+                        logger.error("Max retries reached for task: {} - {}", task.course["title"], task.point["title"])
                         self.failed_tasks.append(task)
                         self.task_queue.task_done()
                         continue
@@ -375,7 +393,7 @@ class JobProcessor:
                 # task_done is not called when a task failed and needs to be retried so if is reinserted into the queue,
                 # the task num will increase by one and become more than the real task number
                 self.task_queue.task_done()
-                time.sleep(1) # TODO: Replace with a configurable wait time
+                time.sleep(self.retry_interval)
         except ShutDown:
             pass
 
@@ -402,7 +420,6 @@ def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, A
     if not jobs:
         pass
 
-    # TODO: 个别章节很恶心，多到5个点，可以并行处理，将来会让不同课程不同章节的所有任务点共享一个队列，从而实现全局并行
     job_results:list[StudyResult]=[]
     with ThreadPoolExecutor(max_workers=5) as executor:
         for result in executor.map(lambda job: process_job(chaoxing, course, job, job_info, speed), jobs):
@@ -429,14 +446,13 @@ def process_course(chaoxing: Chaoxing, course:dict[str, Any], config: dict):
 
     _old_format_sizeof = tqdm.format_sizeof
     tqdm.format_sizeof = format_time
-    tqdm.set_lock(RLock())
 
     tasks=[]
 
     for i, point in enumerate(point_list["points"]):
-        task = ChapterTask(point=point, index=i)
+        task = ChapterTask(point=point, index=i, course=course)
         tasks.append(task)
-    p = JobProcessor(chaoxing, course, tasks, config)
+    p = JobProcessor(chaoxing, tasks, config)
     p.run()
 
 
@@ -488,14 +504,14 @@ def main():
     """主程序入口"""
     try:
         # 初始化配置
-        common_config, tiku_config, notification_config = init_config()
+        common_config, tiku_config, notification_config, config_path = init_config()
         
         # 强制播放按照配置文件调节
         common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
         common_config["notopen_action"] = common_config.get("notopen_action", "retry")
         
         # 初始化超星实例
-        chaoxing = init_chaoxing(common_config, tiku_config)
+        chaoxing = init_chaoxing(common_config, tiku_config, config_path=config_path)
         
         # 设置外部通知
         notification = Notification()
@@ -516,8 +532,25 @@ def main():
         
         # 开始学习
         logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+        
+        _old_format_sizeof = tqdm.format_sizeof
+        tqdm.format_sizeof = format_time
+
+        tasks = []
         for course in course_task:
-            process_course(chaoxing, course, common_config)
+            logger.info(f"正在读取课程章节: {course['title']}")
+            point_list = chaoxing.get_course_point(
+                course["courseId"], course["clazzId"], course["cpi"]
+            )
+            for i, point in enumerate(point_list["points"]):
+                task = ChapterTask(point=point, index=i, course=course)
+                tasks.append(task)
+
+        # 全局并发执行所有课程的任务点
+        p = JobProcessor(chaoxing, tasks, common_config)
+        p.run()
+
+        tqdm.format_sizeof = _old_format_sizeof
         
         logger.info("所有课程学习任务已完成")
         notification.send("chaoxing : 所有课程学习任务已完成")
