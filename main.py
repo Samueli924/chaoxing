@@ -291,19 +291,24 @@ class ChapterTask:
     tries: int = 0
 
     def __lt__(self, other):
-        """比较两个任务的索引大小，用于优先级队列排序。"""
+        """
+        比较两个任务的索引大小，用于优先级队列排序.
+        """
         if not isinstance(other, ChapterTask):
             return NotImplemented
         return self.index < other.index
 
 class JobProcessor:
     def __init__(self, chaoxing: Chaoxing, tasks: list[ChapterTask], config: dict[str, Any]):
-        """初始化任务处理器。
+        """
+        初始化任务处理器.
 
-        Args:
-            chaoxing: Chaoxing API 实例
-            tasks: 任务列表
-            config: 配置字典
+        Args
+        ----
+        chaoxing: Chaoxing API 实例
+        tasks: 任务列表
+        config: 配置字典
+
         """
         if "jobs" not in config or not config["jobs"]:
             config["jobs"] = 4

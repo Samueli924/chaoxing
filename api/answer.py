@@ -438,11 +438,16 @@ class Tiku(ABC):
 class TikuFallback(Tiku):
     # 多题库回退实现，按 provider 中配置顺序依次查询。
     def __init__(self, providers=None, config_path: Optional[str] = None):
-        """初始化多题库回退。
+        """
+        初始化多题库回退.
 
-        Args:
-            providers: 子题库实例列表
-            config_path: 配置文件路径
+        Args
+        ----
+        providers : list, optional
+            子题库实例列表.
+        config_path : str, optional
+            配置文件路径.
+
         """
         super().__init__(config_path)
         self.name = '多题库回退'
@@ -1299,12 +1304,16 @@ class AI(Tiku):
 
 
 class SiliconFlow(Tiku):
-    """硅基流动大模型答题实现"""
+    """硅基流动大模型答题实现."""
     def __init__(self, config_path: Optional[str] = None):
-        """初始化硅基流动大模型题库。
+        """
+        初始化硅基流动大模型题库.
 
-        Args:
-            config_path: 配置文件路径
+        Args
+        ----
+        config_path : str, optional
+            配置文件路径.
+
         """
         super().__init__(config_path)
         self.name = '硅基流动大模型'
@@ -1491,7 +1500,7 @@ class TikuManual(Tiku):
 
     @staticmethod
     def _safe_close_tqdm_bars():
-        """安全地清除并关闭所有活动的 tqdm 进度条，防止私有属性变更引发异常。"""
+        """安全地清除并关闭所有活动的 tqdm 进度条，防止私有属性变更引发异常."""
         try:
             from tqdm import tqdm
             if hasattr(tqdm, '_instances') and hasattr(tqdm._instances, '__iter__'):
@@ -1581,14 +1590,8 @@ class TikuManual(Tiku):
             return normalized_ans
 
     def _validate_user_input(self, ans: str, q: dict) -> tuple[bool, str]:
-        """验证用户手动输入的答案是否合规。
-
-        Args:
-            ans: 用户输入的答案
-            q: 题目信息
-
-        Returns:
-            元组 (是否合规, 错误提示信息)
+        """
+        验证用户手动输入的答案是否合规.
         """
         if not ans:
             return True, ""
@@ -1605,7 +1608,7 @@ class TikuManual(Tiku):
         return True, ""
 
     def _validate_judgement_input(self, ans: str) -> tuple[bool, str]:
-        """验证判断题手动输入是否合规。"""
+        """验证判断题手动输入是否合规."""
         val = ans.lower()
         valid_judgements = [
             'true', 't', '1', '对', '正确', '√', '是', 'yes', 'y',
@@ -1616,44 +1619,19 @@ class TikuManual(Tiku):
         return True, ""
 
     def _validate_choice_input(self, ans: str, q: dict) -> tuple[bool, str]:
-        """验证选择题手动输入是否合规。"""
+        """
+        验证选择题手动输入是否合规.
+        """
         options = q.get('options', '')
-        parts = []
-        if isinstance(options, str):
-            parts = [o.strip() for o in options.split('\n') if o.strip()]
-            if len(parts) <= 1:
-                from api.answer_check import cut
-                cut_parts = cut(options)
-                if cut_parts:
-                    parts = cut_parts
-        elif isinstance(options, list):
-            parts = [str(o).strip() for o in options if str(o).strip()]
-
-        # 收集该题合法的选项字母
-        valid_keys = []
-        for p in parts:
-            first_char = p[:1].upper()
-            if first_char.isalpha():
-                valid_keys.append(first_char)
+        parts = self._parse_options(options)
+        valid_keys = self._extract_valid_keys(parts)
 
         if not valid_keys:
             return True, ""
 
         letters = self._extract_option_letters(ans)
         if not letters:
-            from api.answer_check import cut
-            split_ans = cut(ans)
-            if split_ans:
-                for item in split_ans:
-                    matched = False
-                    for p in parts:
-                        p_norm = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', p).strip().lower()
-                        if item.strip().lower() in p_norm or p_norm in item.strip().lower():
-                            matched = True
-                            break
-                    if not matched:
-                        return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
-            return True, ""
+            return self._validate_text_match(ans, parts)
 
         invalid_letters = [letter for letter in letters if letter not in valid_keys]
         if invalid_letters:
@@ -1664,15 +1642,54 @@ class TikuManual(Tiku):
 
         return True, ""
 
+    def _parse_options(self, options) -> list[str]:
+        """
+        解析选项.
+        """
+        parts = []
+        if isinstance(options, str):
+            parts = [o.strip() for o in options.split('\n') if o.strip()]
+            if len(parts) <= 1:
+                from api.answer_check import cut
+                cut_parts = cut(options)
+                if cut_parts:
+                    parts = cut_parts
+        elif isinstance(options, list):
+            parts = [str(o).strip() for o in options if str(o).strip()]
+        return parts
+
+    def _extract_valid_keys(self, parts: list[str]) -> list[str]:
+        """
+        提取合法的选项字母.
+        """
+        valid_keys = []
+        for p in parts:
+            first_char = p[:1].upper()
+            if first_char.isalpha():
+                valid_keys.append(first_char)
+        return valid_keys
+
+    def _validate_text_match(self, ans: str, parts: list[str]) -> tuple[bool, str]:
+        """
+        验证用户输入的文本是否和选项文本匹配.
+        """
+        from api.answer_check import cut
+        split_ans = cut(ans)
+        if split_ans:
+            for item in split_ans:
+                matched = False
+                for p in parts:
+                    p_norm = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', p).strip().lower()
+                    if item.strip().lower() in p_norm or p_norm in item.strip().lower():
+                        matched = True
+                        break
+                if not matched:
+                    return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
+        return True, ""
+
     def _normalize_user_input(self, ans: str, q: dict) -> Optional[str]:
-        """规整化用户的手动输入答案。
-
-        Args:
-            ans: 用户原始输入
-            q: 题目信息
-
-        Returns:
-            规整后的答案字符串
+        """
+        规整化用户的手动输入答案.
         """
         if not ans:
             return None
@@ -1689,7 +1706,9 @@ class TikuManual(Tiku):
         return ans
 
     def _normalize_judgement_input(self, ans: str) -> str:
-        """规整化判断题的手动输入。"""
+        """
+        规整化判断题的手动输入.
+        """
         val = ans.lower()
         if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
             return "正确"
@@ -1698,24 +1717,12 @@ class TikuManual(Tiku):
         return ans
 
     def _normalize_choice_input(self, ans: str, q: dict) -> str:
-        """规整化选择题的手动输入。"""
+        """
+        规整化选择题的手动输入.
+        """
         options = q.get('options', '')
-        parts = []
-        if isinstance(options, str):
-            parts = [o.strip() for o in options.split('\n') if o.strip()]
-            if len(parts) <= 1:
-                from api.answer_check import cut
-                cut_parts = cut(options)
-                if cut_parts:
-                    parts = cut_parts
-        elif isinstance(options, list):
-            parts = [str(o).strip() for o in options if str(o).strip()]
-
-        valid_keys = []
-        for p in parts:
-            first_char = p[:1].upper()
-            if first_char.isalpha():
-                valid_keys.append(first_char)
+        parts = self._parse_options(options)
+        valid_keys = self._extract_valid_keys(parts)
 
         letters = self._extract_option_letters(ans)
         if letters and all(letter in valid_keys for letter in letters):
@@ -1732,13 +1739,8 @@ class TikuManual(Tiku):
         return ans
 
     def _batch_query_flow(self, q_list: list[dict]) -> list[Optional[str]]:
-        """执行批量手动搜题交互。
-
-        Args:
-            q_list: 待搜题目列表
-
-        Returns:
-            规整后的用户输入答案列表
+        """
+        执行批量手动搜题交互.
         """
         self._print_batch_questions(q_list)
 
@@ -1781,7 +1783,7 @@ class TikuManual(Tiku):
                 print("已取消，请重新输入，或输入 'switch' 切换为单题输入模式。")
 
     def _print_batch_questions(self, q_list: list[dict]) -> None:
-        """批量打印题目内容及选项。"""
+        """批量打印题目内容及选项."""
         for idx, q in enumerate(q_list):
             type_str = self._get_type_display(q['type'])
             if q['type'] in ['single', 'multiple'] and q.get('options'):
@@ -1805,7 +1807,7 @@ class TikuManual(Tiku):
                 print(f"\n[{idx + 1}] 【{type_str}】 {q['title']}")
 
     def _print_batch_instructions(self, sep_desc: str) -> None:
-        """打印批量输入的使用引导说明。"""
+        """打印批量输入的使用引导说明."""
         print("\n" + "="*50)
         print("请依次输入每道题的答案。")
         print(f"格式要求：当前配置要求使用【{sep_desc}】分割各题的答案。")
@@ -1818,7 +1820,7 @@ class TikuManual(Tiku):
         print("="*50)
 
     def _split_batch_answers(self, raw_input: str, expected_len: int) -> list[str]:
-        """根据配置的分割符将批量的答案进行分拆和补齐。"""
+        """根据配置的分割符将批量的答案进行分拆和补齐."""
         if not raw_input:
             return [''] * expected_len
 
@@ -1838,7 +1840,7 @@ class TikuManual(Tiku):
         return answers
 
     def _parse_and_validate_batch(self, q_list: list[dict], answers: list[str]) -> tuple[bool, list[Optional[str]]]:
-        """批量解析用户输入并进行合法性校验。"""
+        """批量解析用户输入并进行合法性校验."""
         print("\n--- 解析答案结果 ---")
         has_error = False
         temp_answers = []
