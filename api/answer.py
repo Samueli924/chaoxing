@@ -146,6 +146,12 @@ class Tiku(ABC):
     false_list = None
 
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """
+        初始化题库基类。
+
+        Args:
+            config_path: 配置文件路径，若为 None 则使用默认的 CONFIG_PATH。
+        """
         self._name = None
         self._api = None
         self._conf = None
