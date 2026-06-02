@@ -1316,7 +1316,6 @@ class AI(Tiku):
 
 
 class SiliconFlow(Tiku):
-    """硅基流动大模型答题实现."""
 
     def __init__(self, config_path: Optional[str] = None):
         """初始化硅基流动大模型题库."""
