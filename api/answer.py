@@ -280,6 +280,15 @@ class Tiku(ABC):
         sub_q_list = [q_list[idx] for idx in pending_indices]
         sub_results = self._query_all(sub_q_list, query_delay=query_delay)
 
+        if not isinstance(sub_results, list):
+            logger.error(f"{self.name} _query_all 返回结果格式异常，期望列表")
+            sub_results = [None] * len(pending_indices)
+        elif len(sub_results) != len(pending_indices):
+            logger.error(f"{self.name} _query_all 返回结果长度不匹配，期望 {len(pending_indices)}，实际 {len(sub_results)}")
+            # 补齐或截断 sub_results 防止错位
+            sub_results = list(sub_results) + [None] * (len(pending_indices) - len(sub_results))
+            sub_results = sub_results[:len(pending_indices)]
+
         for idx, ans in zip(pending_indices, sub_results):
             q_info = q_list[idx]
             if ans:
@@ -1453,16 +1462,30 @@ class TikuManual(Tiku):
         elif self.separator.lower() in ['tab', '制表符']:
             self.separator = '\t'
 
-    def _query(self, q_info: dict) -> Optional[str]:
-        # 强行关闭清除所有当前活动的 tqdm 进度条
+    @staticmethod
+    def _safe_close_tqdm_bars():
+        """安全地清除并关闭所有活动的 tqdm 进度条，防止私有属性变更引发异常"""
         try:
             from tqdm import tqdm
-            for instance in list(tqdm._instances):
-                instance.leave = False
-                instance.clear()
-                instance.close()
-        except Exception:
-            pass
+            if hasattr(tqdm, '_instances') and hasattr(tqdm._instances, '__iter__'):
+                # 复制一份以防遍历时容器大小发生变化 (WeakSet/list)
+                instances = list(tqdm._instances)
+                for instance in instances:
+                    try:
+                        if hasattr(instance, 'leave'):
+                            instance.leave = False
+                        if hasattr(instance, 'clear'):
+                            instance.clear()
+                        if hasattr(instance, 'close'):
+                            instance.close()
+                    except Exception as ie:
+                        logger.debug(f"清理单个 tqdm 实例失败: {ie}")
+        except Exception as e:
+            logger.debug(f"获取/清理 tqdm 实例列表失败: {e}")
+
+    def _query(self, q_info: dict) -> Optional[str]:
+        # 强行关闭清除所有当前活动的 tqdm 进度条
+        self._safe_close_tqdm_bars()
 
         with self._manual_lock:
             ans = self._single_query(q_info)
@@ -1471,14 +1494,7 @@ class TikuManual(Tiku):
 
     def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
         # 强行关闭清除所有当前活动的 tqdm 进度条
-        try:
-            from tqdm import tqdm
-            for instance in list(tqdm._instances):
-                instance.leave = False
-                instance.clear()
-                instance.close()
-        except Exception:
-            pass
+        self._safe_close_tqdm_bars()
 
         with self._manual_lock:
             print(f"\n{'='*20} 手动输入题库 (共 {len(q_list)} 题) {'='*20}")

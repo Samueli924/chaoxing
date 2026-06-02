@@ -936,6 +936,15 @@ class Chaoxing:
         found_answers = 0
         query_delay = self.kwargs.get("query_delay", 0)
         answers = self.tiku.query_all(questions["questions"], query_delay=query_delay)
+
+        if not isinstance(answers, list):
+            logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
+            answers = [None] * total_questions
+        elif len(answers) != total_questions:
+            logger.error(f"题库返回的答案数量（{len(answers)}）与题目数量（{total_questions}）不匹配，正在补齐或截断以防错位！")
+            answers = list(answers) + [None] * (total_questions - len(answers))
+            answers = answers[:total_questions]
+
         for q, res in zip(questions["questions"], answers):
             logger.debug(f"当前题目信息 -> {q}")
             answer = ""
