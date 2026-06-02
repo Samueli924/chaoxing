@@ -18,7 +18,7 @@ def tqdm_sink(msg):
             TikuManual = getattr(sys.modules['api.answer'], 'TikuManual', None)
             if TikuManual and getattr(TikuManual, '_manual_lock', None):
                 manual_locked = TikuManual._manual_lock.locked()
-    except Exception:
+    except (AttributeError, KeyError, ImportError):
         pass
 
     if manual_locked:

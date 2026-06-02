@@ -438,6 +438,12 @@ class Tiku(ABC):
 class TikuFallback(Tiku):
     # 多题库回退实现，按 provider 中配置顺序依次查询。
     def __init__(self, providers=None, config_path: Optional[str] = None):
+        """初始化多题库回退。
+
+        Args:
+            providers: 子题库实例列表
+            config_path: 配置文件路径
+        """
         super().__init__(config_path)
         self.name = '多题库回退'
         self.providers = providers or []
@@ -1295,6 +1301,11 @@ class AI(Tiku):
 class SiliconFlow(Tiku):
     """硅基流动大模型答题实现"""
     def __init__(self, config_path: Optional[str] = None):
+        """初始化硅基流动大模型题库。
+
+        Args:
+            config_path: 配置文件路径
+        """
         super().__init__(config_path)
         self.name = '硅基流动大模型'
         self.last_request_time = None
@@ -1480,7 +1491,7 @@ class TikuManual(Tiku):
 
     @staticmethod
     def _safe_close_tqdm_bars():
-        """安全地清除并关闭所有活动的 tqdm 进度条，防止私有属性变更引发异常"""
+        """安全地清除并关闭所有活动的 tqdm 进度条，防止私有属性变更引发异常。"""
         try:
             from tqdm import tqdm
             if hasattr(tqdm, '_instances') and hasattr(tqdm._instances, '__iter__'):
@@ -1570,9 +1581,14 @@ class TikuManual(Tiku):
             return normalized_ans
 
     def _validate_user_input(self, ans: str, q: dict) -> tuple[bool, str]:
-        """
-        验证用户手动输入的答案是否合规。
-        返回 (是否合规, 错误提示信息)
+        """验证用户手动输入的答案是否合规。
+
+        Args:
+            ans: 用户输入的答案
+            q: 题目信息
+
+        Returns:
+            元组 (是否合规, 错误提示信息)
         """
         if not ans:
             return True, ""
@@ -1583,64 +1599,81 @@ class TikuManual(Tiku):
 
         q_type = q.get('type')
         if q_type == 'judgement':
-            val = ans.lower()
-            valid_judgements = [
-                'true', 't', '1', '对', '正确', '√', '是', 'yes', 'y',
-                'false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确'
-            ]
-            if val not in valid_judgements:
-                return False, f"无法识别的判断词 '{ans}'，请输入：对/错、正确/错误、T/F、1/0"
-            return True, ""
-
+            return self._validate_judgement_input(ans)
         elif q_type in ['single', 'multiple']:
-            options = q.get('options', '')
-            parts = []
-            if isinstance(options, str):
-                parts = [o.strip() for o in options.split('\n') if o.strip()]
-                if len(parts) <= 1:
-                    from api.answer_check import cut
-                    cut_parts = cut(options)
-                    if cut_parts:
-                        parts = cut_parts
-            elif isinstance(options, list):
-                parts = [str(o).strip() for o in options if str(o).strip()]
+            return self._validate_choice_input(ans, q)
+        return True, ""
 
-            # 收集该题合法的选项字母
-            valid_keys = []
-            for p in parts:
-                first_char = p[:1].upper()
-                if first_char.isalpha():
-                    valid_keys.append(first_char)
+    def _validate_judgement_input(self, ans: str) -> tuple[bool, str]:
+        """验证判断题手动输入是否合规。"""
+        val = ans.lower()
+        valid_judgements = [
+            'true', 't', '1', '对', '正确', '√', '是', 'yes', 'y',
+            'false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确'
+        ]
+        if val not in valid_judgements:
+            return False, f"无法识别的判断词 '{ans}'，请输入：对/错、正确/错误、T/F、1/0"
+        return True, ""
 
-            if valid_keys:
-                letters = self._extract_option_letters(ans)
-                if not letters:
-                    from api.answer_check import cut
-                    split_ans = cut(ans)
-                    if split_ans:
-                        for item in split_ans:
-                            matched = False
-                            for p in parts:
-                                p_norm = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', p).strip().lower()
-                                if item.strip().lower() in p_norm or p_norm in item.strip().lower():
-                                    matched = True
-                                    break
-                            if not matched:
-                                return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
-                    return True, ""
+    def _validate_choice_input(self, ans: str, q: dict) -> tuple[bool, str]:
+        """验证选择题手动输入是否合规。"""
+        options = q.get('options', '')
+        parts = []
+        if isinstance(options, str):
+            parts = [o.strip() for o in options.split('\n') if o.strip()]
+            if len(parts) <= 1:
+                from api.answer_check import cut
+                cut_parts = cut(options)
+                if cut_parts:
+                    parts = cut_parts
+        elif isinstance(options, list):
+            parts = [str(o).strip() for o in options if str(o).strip()]
 
-                invalid_letters = [letter for letter in letters if letter not in valid_keys]
-                if invalid_letters:
-                    return False, f"输入包含无效的选项字母 {invalid_letters}，当前题目的可用选项为: {', '.join(valid_keys)}"
+        # 收集该题合法的选项字母
+        valid_keys = []
+        for p in parts:
+            first_char = p[:1].upper()
+            if first_char.isalpha():
+                valid_keys.append(first_char)
 
-                if q_type == 'single' and len(letters) > 1:
-                    return False, "当前是单选题，但输入了多个选项字母！"
-
+        if not valid_keys:
             return True, ""
+
+        letters = self._extract_option_letters(ans)
+        if not letters:
+            from api.answer_check import cut
+            split_ans = cut(ans)
+            if split_ans:
+                for item in split_ans:
+                    matched = False
+                    for p in parts:
+                        p_norm = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', p).strip().lower()
+                        if item.strip().lower() in p_norm or p_norm in item.strip().lower():
+                            matched = True
+                            break
+                    if not matched:
+                        return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
+            return True, ""
+
+        invalid_letters = [letter for letter in letters if letter not in valid_keys]
+        if invalid_letters:
+            return False, f"输入包含无效的选项字母 {invalid_letters}，当前题目的可用选项为: {', '.join(valid_keys)}"
+
+        if q.get('type') == 'single' and len(letters) > 1:
+            return False, "当前是单选题，但输入了多个选项字母！"
 
         return True, ""
 
     def _normalize_user_input(self, ans: str, q: dict) -> Optional[str]:
+        """规整化用户的手动输入答案。
+
+        Args:
+            ans: 用户原始输入
+            q: 题目信息
+
+        Returns:
+            规整后的答案字符串
+        """
         if not ans:
             return None
 
@@ -1650,49 +1683,105 @@ class TikuManual(Tiku):
 
         q_type = q.get('type')
         if q_type == 'judgement':
-            val = ans.lower()
-            if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
-                return "正确"
-            elif val in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确']:
-                return "错误"
-            return ans
-
+            return self._normalize_judgement_input(ans)
         elif q_type in ['single', 'multiple']:
-            options = q.get('options', '')
-            parts = []
-            if isinstance(options, str):
-                parts = [o.strip() for o in options.split('\n') if o.strip()]
-                if len(parts) <= 1:
-                    from api.answer_check import cut
-                    cut_parts = cut(options)
-                    if cut_parts:
-                        parts = cut_parts
-            elif isinstance(options, list):
-                parts = [str(o).strip() for o in options if str(o).strip()]
+            return self._normalize_choice_input(ans, q)
+        return ans
 
-            valid_keys = []
-            for p in parts:
-                first_char = p[:1].upper()
-                if first_char.isalpha():
-                    valid_keys.append(first_char)
+    def _normalize_judgement_input(self, ans: str) -> str:
+        """规整化判断题的手动输入。"""
+        val = ans.lower()
+        if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
+            return "正确"
+        elif val in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确']:
+            return "错误"
+        return ans
 
-            letters = self._extract_option_letters(ans)
-            if letters and all(letter in valid_keys for letter in letters):
-                unique_ordered_letters = []
-                for letter in letters:
-                    if letter not in unique_ordered_letters:
-                        unique_ordered_letters.append(letter)
-                return "\n".join(unique_ordered_letters)
+    def _normalize_choice_input(self, ans: str, q: dict) -> str:
+        """规整化选择题的手动输入。"""
+        options = q.get('options', '')
+        parts = []
+        if isinstance(options, str):
+            parts = [o.strip() for o in options.split('\n') if o.strip()]
+            if len(parts) <= 1:
+                from api.answer_check import cut
+                cut_parts = cut(options)
+                if cut_parts:
+                    parts = cut_parts
+        elif isinstance(options, list):
+            parts = [str(o).strip() for o in options if str(o).strip()]
 
-            from api.answer_check import cut
-            split_ans = cut(ans)
-            if split_ans:
-                return "\n".join(split_ans)
-            return ans
+        valid_keys = []
+        for p in parts:
+            first_char = p[:1].upper()
+            if first_char.isalpha():
+                valid_keys.append(first_char)
 
+        letters = self._extract_option_letters(ans)
+        if letters and all(letter in valid_keys for letter in letters):
+            unique_ordered_letters = []
+            for letter in letters:
+                if letter not in unique_ordered_letters:
+                    unique_ordered_letters.append(letter)
+            return "\n".join(unique_ordered_letters)
+
+        from api.answer_check import cut
+        split_ans = cut(ans)
+        if split_ans:
+            return "\n".join(split_ans)
         return ans
 
     def _batch_query_flow(self, q_list: list[dict]) -> list[Optional[str]]:
+        """执行批量手动搜题交互。
+
+        Args:
+            q_list: 待搜题目列表
+
+        Returns:
+            规整后的用户输入答案列表
+        """
+        self._print_batch_questions(q_list)
+
+        sep_desc = self.separator
+        if self.separator == '\n':
+            sep_desc = '换行 (每题一行)'
+        elif self.separator == ' ':
+            sep_desc = '空格'
+        elif self.separator == '\t':
+            sep_desc = 'Tab制表符'
+
+        self._print_batch_instructions(sep_desc)
+
+        while True:
+            answers = []
+            if self.separator == '\n':
+                print(f"请直接粘贴或依次输入各题答案（每行一个，共 {len(q_list)} 行）：")
+                for i in range(len(q_list)):
+                    try:
+                        ans = input(f"  第 {i + 1} 题答案: ").strip()
+                    except EOFError:
+                        ans = ""
+                    answers.append(ans)
+            else:
+                raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                answers = self._split_batch_answers(raw_input, len(q_list))
+
+            has_error, temp_answers = self._parse_and_validate_batch(q_list, answers)
+
+            if has_error:
+                print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
+                continue
+
+            confirm = input("确认使用上述答案？[Y/n]: ").strip().lower()
+            if confirm in ['', 'y', 'yes']:
+                return temp_answers
+            elif confirm == 'switch':
+                return [self._single_query(q) for q in q_list]
+            else:
+                print("已取消，请重新输入，或输入 'switch' 切换为单题输入模式。")
+
+    def _print_batch_questions(self, q_list: list[dict]) -> None:
+        """批量打印题目内容及选项。"""
         for idx, q in enumerate(q_list):
             type_str = self._get_type_display(q['type'])
             if q['type'] in ['single', 'multiple'] and q.get('options'):
@@ -1715,14 +1804,8 @@ class TikuManual(Tiku):
             else:
                 print(f"\n[{idx + 1}] 【{type_str}】 {q['title']}")
 
-        sep_desc = self.separator
-        if self.separator == '\n':
-            sep_desc = '换行 (每题一行)'
-        elif self.separator == ' ':
-            sep_desc = '空格'
-        elif self.separator == '\t':
-            sep_desc = 'Tab制表符'
-
+    def _print_batch_instructions(self, sep_desc: str) -> None:
+        """打印批量输入的使用引导说明。"""
         print("\n" + "="*50)
         print("请依次输入每道题的答案。")
         print(f"格式要求：当前配置要求使用【{sep_desc}】分割各题的答案。")
@@ -1734,61 +1817,43 @@ class TikuManual(Tiku):
             print(f"示例输入: A{self.separator} B{self.separator} 正确{self.separator} 答案1, 答案2{self.separator} 错")
         print("="*50)
 
-        while True:
-            answers = []
-            if self.separator == '\n':
-                print(f"请直接粘贴或依次输入各题答案（每行一个，共 {len(q_list)} 行）：")
-                for i in range(len(q_list)):
-                    try:
-                        ans = input(f"  第 {i + 1} 题答案: ").strip()
-                    except EOFError:
-                        ans = ""
-                    answers.append(ans)
+    def _split_batch_answers(self, raw_input: str, expected_len: int) -> list[str]:
+        """根据配置的分割符将批量的答案进行分拆和补齐。"""
+        if not raw_input:
+            return [''] * expected_len
+
+        if self.separator in [';', '；']:
+            raw_input = raw_input.replace('；', ';')
+            answers = [ans.strip() for ans in raw_input.split(';')]
+        elif self.separator in [',', '，']:
+            raw_input = raw_input.replace('，', ',')
+            answers = [ans.strip() for ans in raw_input.split(',')]
+        else:
+            answers = [ans.strip() for ans in raw_input.split(self.separator)]
+
+        if len(answers) < expected_len:
+            answers.extend([''] * (expected_len - len(answers)))
+        elif len(answers) > expected_len:
+            answers = answers[:expected_len]
+        return answers
+
+    def _parse_and_validate_batch(self, q_list: list[dict], answers: list[str]) -> tuple[bool, list[Optional[str]]]:
+        """批量解析用户输入并进行合法性校验。"""
+        print("\n--- 解析答案结果 ---")
+        has_error = False
+        temp_answers = []
+        for idx, (q, ans) in enumerate(zip(q_list, answers)):
+            ok, err_msg = self._validate_user_input(ans, q)
+            if not ok:
+                has_error = True
+                print(f"第 {idx + 1} 题: {q['title']} ---> \033[31m[错误: {err_msg}]\033[0m")
+                temp_answers.append(None)
             else:
-                raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
-                if not raw_input:
-                    answers = [''] * len(q_list)
-                else:
-                    if self.separator in [';', '；']:
-                        raw_input = raw_input.replace('；', ';')
-                        answers = [ans.strip() for ans in raw_input.split(';')]
-                    elif self.separator in [',', '，']:
-                        raw_input = raw_input.replace('，', ',')
-                        answers = [ans.strip() for ans in raw_input.split(',')]
-                    else:
-                        answers = [ans.strip() for ans in raw_input.split(self.separator)]
-
-            if len(answers) < len(q_list):
-                answers.extend([''] * (len(q_list) - len(answers)))
-            elif len(answers) > len(q_list):
-                answers = answers[:len(q_list)]
-
-            print("\n--- 解析答案结果 ---")
-            has_error = False
-            temp_answers = []
-            for idx, (q, ans) in enumerate(zip(q_list, answers)):
-                ok, err_msg = self._validate_user_input(ans, q)
-                if not ok:
-                    has_error = True
-                    print(f"第 {idx + 1} 题: {q['title']} ---> \033[31m[错误: {err_msg}]\033[0m")
-                    temp_answers.append(None)
-                else:
-                    normalized_ans = self._normalize_user_input(ans, q)
-                    temp_answers.append(normalized_ans)
-                    print(f"第 {idx + 1} 题: {q['title']} ---> 答案: {normalized_ans if normalized_ans else '[跳过/随机]'}")
-            print("-------------------")
-
-            if has_error:
-                print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
-                continue
-
-            confirm = input("确认使用上述答案？[Y/n]: ").strip().lower()
-            if confirm in ['', 'y', 'yes']:
-                return temp_answers
-            elif confirm == 'switch':
-                return [self._single_query(q) for q in q_list]
-            else:
-                print("已取消，请重新输入，或输入 'switch' 切换为单题输入模式。")
+                normalized_ans = self._normalize_user_input(ans, q)
+                temp_answers.append(normalized_ans)
+                print(f"第 {idx + 1} 题: {q['title']} ---> 答案: {normalized_ans if normalized_ans else '[跳过/随机]'}")
+        print("-------------------")
+        return has_error, temp_answers
 
 
 class DummyTiku(Tiku):

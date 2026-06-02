@@ -17,6 +17,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 from tqdm import tqdm
 
 from api.answer import *
+from api.answer import TikuManual
 from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
@@ -73,7 +74,7 @@ class SessionManager:
             # 检查 cookie 会话是否仍然无效
             if chaoxing_instance._validate_cookie_session():
                 return True
-            
+
             logger.info("Cookie session invalid, attempting thread-safe relogin...")
             if chaoxing_instance.account and chaoxing_instance.account.username and chaoxing_instance.account.password:
                 login_result = chaoxing_instance.login(login_with_cookies=False)
