@@ -140,13 +140,15 @@ class Tiku(ABC):
     DISABLE = False     # 停用标志
     SUBMIT = False      # 提交标志
     COVER_RATE = 0.8    # 覆盖率
-    true_list = []
-    false_list = []
+    true_list = None
+    false_list = None
     def __init__(self, config_path: Optional[str] = None) -> None:
         self._name = None
         self._api = None
         self._conf = None
         self._config_path = config_path or self.CONFIG_PATH
+        self.true_list = []
+        self.false_list = []
 
     @property
     def name(self):
@@ -206,22 +208,24 @@ class Tiku(ABC):
             self.DISABLE = True
             return None
         
-    def query(self,q_info:dict) -> Optional[str]:
-        if self.DISABLE:
-            return None
-
-        is_manual = (
+    @property
+    def _is_manual_mode(self) -> bool:
+        return (
             getattr(self, 'is_manual', False) or
             self.__class__.__name__ == 'TikuManual' or
             (self.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self, 'providers', [])))
         )
 
+    def query(self,q_info:dict) -> Optional[str]:
+        if self.DISABLE:
+            return None
+
         # 预处理, 去除【单选题】这样与标题无关的字段
-        if not is_manual:
+        if not self._is_manual_mode:
             logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = sub(r'^\d+', '', q_info['title'])
         q_info['title'] = sub(r'（\d+\.\d+分）$', '', q_info['title'])
-        if not is_manual:
+        if not self._is_manual_mode:
             logger.debug(f"处理后标题：{q_info['title']}")
 
         # 先过缓存
@@ -249,22 +253,16 @@ class Tiku(ABC):
         if self.DISABLE:
             return [None] * len(q_list)
 
-        is_manual = (
-            getattr(self, 'is_manual', False) or
-            self.__class__.__name__ == 'TikuManual' or
-            (self.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self, 'providers', [])))
-        )
-
         results = [None] * len(q_list)
         pending_indices = []
 
         cache_dao = CacheDAO()
         for idx, q in enumerate(q_list):
-            if not is_manual:
+            if not self._is_manual_mode:
                 logger.debug(f"原始标题：{q['title']}")
             q['title'] = sub(r'^\d+', '', q['title'])
             q['title'] = sub(r'（\d+\.\d+分）$', '', q['title'])
-            if not is_manual:
+            if not self._is_manual_mode:
                 logger.debug(f"处理后标题：{q['title']}")
 
             answer = cache_dao.get_cache(q['title'])
@@ -507,7 +505,7 @@ class TikuFallback(Tiku):
                 continue
 
             next_pending_indices = []
-            for sub_idx, (orig_idx, ans) in enumerate(zip(pending_indices, sub_results)):
+            for orig_idx, ans in zip(pending_indices, sub_results):
                 if ans:
                     logger.info(f'{provider.name} 命中答案: {q_list[orig_idx]["title"]} -> {ans}')
                     results[orig_idx] = ans
@@ -1257,39 +1255,40 @@ class AI(Tiku):
         检查大模型连接是否可用
         发送一个简单的测试请求来验证 API 配置
         """
-        with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
-            try:
-                if self.http_proxy:
-                    httpx_client = httpx.Client(proxy=self.http_proxy)
-                    client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-                else:
-                    client = OpenAI(base_url=self.endpoint, api_key=self.key)
+        logger.info(f'正在检查 {self.name} 连接...')
+        try:
+            if self.http_proxy:
+                httpx_client = httpx.Client(proxy=self.http_proxy)
+                client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
+            else:
+                client = OpenAI(base_url=self.endpoint, api_key=self.key)
 
-                # 发送一个简单的测试请求
+            # 仅在需要重置或访问时间戳时使用锁，防止在网络IO期间一直独占锁
+            with self._lock:
                 self._wait_for_interval()
                 self.last_request_time = time.time()
-                completion = client.chat.completions.create(**self._completion_kwargs(
-                    model=self.model,
-                    messages=[
-                        {
-                            'role': 'user',
-                            'content': '你好，请回答：1+1 等于几？只回答数字。'
-                        }
-                    ],
-                    max_tokens=64
-                ))
 
-                if completion.choices and completion.choices[0].message.content:
-                    logger.info(f'{self.name} 连接检查成功')
-                    return True
-                else:
-                    logger.error(f'{self.name} 连接检查失败：未收到响应')
-                    return False
+            completion = client.chat.completions.create(**self._completion_kwargs(
+                model=self.model,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': '你好，请回答：1+1 等于几？只回答数字。'
+                    }
+                ],
+                max_tokens=64
+            ))
 
-            except Exception as e:
-                logger.error(f'{self.name} 连接检查失败：{e}')
+            if completion.choices and completion.choices[0].message.content:
+                logger.info(f'{self.name} 连接检查成功')
+                return True
+            else:
+                logger.error(f'{self.name} 连接检查失败：未收到响应')
                 return False
+
+        except Exception as e:
+            logger.error(f'{self.name} 连接检查失败：{e}')
+            return False
 
 
 class SiliconFlow(Tiku):
@@ -1393,51 +1392,55 @@ class SiliconFlow(Tiku):
         检查硅基流动大模型连接是否可用
         发送一个简单的测试请求来验证 API 配置
         """
-        with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
-            try:
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}',
-                    'Content-Type': 'application/json'
-                }
+        logger.info(f'正在检查 {self.name} 连接...')
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
 
-                payload = {
-                    'model': self.model_name,
-                    'messages': [
-                        {
-                            'role': 'user',
-                            'content': '你好，请回答：1+1 等于几？只回答数字。'
-                        }
-                    ],
-                    'stream': False,
-                    'max_tokens': 10,
-                    'temperature': 0.7,
-                    'top_p': 0.7,
-                    'response_format': {'type': 'text'}
-                }
+            payload = {
+                'model': self.model_name,
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': '你好，请回答：1+1 等于几？只回答数字。'
+                    }
+                ],
+                'stream': False,
+                'max_tokens': 10,
+                'temperature': 0.7,
+                'top_p': 0.7,
+                'response_format': {'type': 'text'}
+            }
 
-                response = requests.post(
-                    self.api_endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=30
-                )
+            # 仅在获取/重置间隔时使用锁，防止在网络IO期间一直独占锁
+            with self._lock:
+                # 硅基流动也可以参考限制，这里不显式调用 interval 等待但保留锁逻辑的一致性以防后续需要
+                pass
 
-                if response.status_code == 200:
-                    result = response.json()
-                    if result.get('choices') and result['choices'][0]['message']['content']:
-                        logger.info(f'{self.name} 连接检查成功')
-                        return True
-                    else:
-                        logger.error(f'{self.name} 连接检查失败：未收到有效响应')
-                        return False
+            response = requests.post(
+                self.api_endpoint,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('choices') and result['choices'][0]['message']['content']:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
                 else:
-                    logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
+                    logger.error(f'{self.name} 连接检查失败：未收到有效响应')
                     return False
-
-            except Exception as e:
-                logger.error(f'{self.name} 连接检查失败：{e}')
+            else:
+                logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
                 return False
+
+        except Exception as e:
+            logger.error(f'{self.name} 连接检查失败：{e}')
+            return False
 
 
 class TikuManual(Tiku):
@@ -1613,7 +1616,7 @@ class TikuManual(Tiku):
                                 return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
                     return True, ""
 
-                invalid_letters = [l for l in letters if l not in valid_keys]
+                invalid_letters = [letter for letter in letters if letter not in valid_keys]
                 if invalid_letters:
                     return False, f"输入包含无效的选项字母 {invalid_letters}，当前题目的可用选项为: {', '.join(valid_keys)}"
 
@@ -1661,11 +1664,11 @@ class TikuManual(Tiku):
                     valid_keys.append(first_char)
 
             letters = [c.upper() for c in ans if re.match(r'[A-Za-z]', c)]
-            if letters and all(l in valid_keys for l in letters):
+            if letters and all(letter in valid_keys for letter in letters):
                 unique_ordered_letters = []
-                for l in letters:
-                    if l not in unique_ordered_letters:
-                        unique_ordered_letters.append(l)
+                for letter in letters:
+                    if letter not in unique_ordered_letters:
+                        unique_ordered_letters.append(letter)
                 return "\n".join(unique_ordered_letters)
 
             from api.answer_check import cut

@@ -33,7 +33,7 @@ def ocr_init() -> Optional[DdddOcr]:
 
     Returns: DdddOcr对象
     """
-    if not HAS_DDDDOCR or DdddOcr is None:
+    if not HAS_DDDDOCR:
         logger.warning("未检测到 ddddocr 依赖，自动验证码识别将不可用。如遇403限制请在浏览器端手动完成验证。")
         return None
     try:
@@ -41,6 +41,9 @@ def ocr_init() -> Optional[DdddOcr]:
     except Exception as e:
         logger.warning(f"ddddocr 初始化失败: {e}，自动验证码识别将不可用")
         return None
+
+
+_MISSING = object()
 
 
 class CxCaptcha:
@@ -64,14 +67,14 @@ class CxCaptcha:
         'submit': '/html/processVerify.ac'
     }
 
-    def __init__(self, user_agent: str, cookies: str, ocr: Optional[DdddOcr] = None):
+    def __init__(self, user_agent: str, cookies: str, ocr: Optional[DdddOcr] = _MISSING):
         """
         初始化 CxCaptcha 实例。
 
         Args:
             user_agent (str): 用户代理字符串。
             cookies (str): 会话 cookies。
-            ocr (DdddOcr, optional): 已初始化的 DdddOcr 对象。默认为 None。据DdddOcr官方说明，每次初始化和初始化后的首次识别速度都非常慢，所以推荐传入一个现成的DdddOcr对象实现复用。
+            ocr (DdddOcr, optional): 已初始化的 DdddOcr 对象。如果未提供则自动初始化；如果显式传入 None 则禁用 OCR。据DdddOcr官方说明，每次初始化和初始化后的首次识别速度都非常慢，所以推荐传入一个现成的DdddOcr对象实现复用。
         """
 
         self.user_agent = user_agent
@@ -84,7 +87,7 @@ class CxCaptcha:
         })
         self.s.verify = False
 
-        self.ocr = ocr if ocr else ocr_init()
+        self.ocr = ocr_init() if ocr is _MISSING else ocr
 
     def getCaptcha(self) -> Optional[bytes]:
         """

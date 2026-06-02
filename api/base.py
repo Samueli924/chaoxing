@@ -712,6 +712,16 @@ class Chaoxing:
 
         return None
 
+    @staticmethod
+    def _close_pbar_safe(pbar_ref):
+        if pbar_ref is not None:
+            try:
+                pbar_ref.leave = False
+                pbar_ref.close()
+            except Exception as e:
+                logger.trace(f"关闭进度条失败: {e}")
+        return None
+
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
         _session = SessionManager.get_session()
@@ -775,13 +785,7 @@ class Chaoxing:
                             play_time = refreshed_meta.get("playTime", play_time)
 
                             logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, _duration, play_time)
-                            if pbar is not None:
-                                try:
-                                    pbar.leave = False
-                                    pbar.close()
-                                except Exception:
-                                    pass
-                                pbar = None
+                            pbar = self._close_pbar_safe(pbar)
                             continue
                         else:
                             logger.error("会话恢复失败，刷新后的元数据缺少必要字段 (dtoken, duration)")
@@ -804,17 +808,11 @@ class Chaoxing:
                 manual_locked = False
                 try:
                     manual_locked = TikuManual._manual_lock.locked()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.trace(f"无法检查手动锁状态: {e}")
 
                 if manual_locked:
-                    if pbar is not None:
-                        try:
-                            pbar.leave = False
-                            pbar.close()
-                        except Exception:
-                            pass
-                        pbar = None
+                    pbar = self._close_pbar_safe(pbar)
                 else:
                     if pbar is None:
                         pbar = tqdm(total=duration, initial=int(play_time), desc=_job["name"],
@@ -824,12 +822,7 @@ class Chaoxing:
 
                 time.sleep(gc.THRESHOLD)
         finally:
-            if pbar is not None:
-                try:
-                    pbar.leave = False
-                    pbar.close()
-                except Exception:
-                    pass
+            pbar = self._close_pbar_safe(pbar)
 
         logger.info("任务完成: {}", _job['name'])
         return StudyResult.SUCCESS

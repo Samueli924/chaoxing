@@ -39,7 +39,8 @@ class FontDecoder:
         try:
             try:
                 soup = BeautifulSoup(html_content, "lxml")
-            except Exception:
+            except (ImportError, LookupError, ValueError) as e:
+                logger.trace(f"lxml parser not available, falling back to html.parser: {e}")
                 soup = BeautifulSoup(html_content, "html.parser")
             style_tag = soup.find("style", id="cxSecretStyle")
             
