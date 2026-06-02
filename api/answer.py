@@ -1300,6 +1300,14 @@ class SiliconFlow(Tiku):
         self.last_request_time = None
         self._lock = threading.Lock()
 
+    def _wait_for_interval(self):
+        if self.last_request_time:
+            interval = time.time() - self.last_request_time
+            if interval < self.min_interval:
+                sleep_time = self.min_interval - interval
+                logger.debug(f"API请求间隔过短, 等待 {sleep_time} 秒")
+                time.sleep(sleep_time)
+
     def _query(self, q_info: dict):
         with self._lock:
             return self._query_locked(q_info)
@@ -1350,11 +1358,7 @@ class SiliconFlow(Tiku):
             "response_format": {"type": "text"}
         }
 
-        # 处理请求间隔
-        if self.last_request_time:
-            interval = time.time() - self.last_request_time
-            if interval < self.min_interval:
-                time.sleep(self.min_interval - interval)
+        self._wait_for_interval()
 
         try:
             response = requests.post(
@@ -1416,12 +1420,16 @@ class SiliconFlow(Tiku):
                     'response_format': {'type': 'text'}
                 }
 
+                # 在测试 API 连接时同样执行节流校验
+                self._wait_for_interval()
+
                 response = requests.post(
                     self.api_endpoint,
                     headers=headers,
                     json=payload,
                     timeout=30
                 )
+                self.last_request_time = time.time()
 
                 if response.status_code == 200:
                     result = response.json()
