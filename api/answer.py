@@ -542,6 +542,7 @@ class TikuFallback(Tiku):
 class TikuYanxi(Tiku):
     # 言溪题库实现
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化言溪题库实例."""
         super().__init__(config_path)
         self.name = '言溪题库'
         self.api = 'https://tk.enncy.cn/query'
@@ -1311,6 +1312,7 @@ class AI(Tiku):
 
 
 class SiliconFlow(Tiku):
+
     """硅基流动大模型答题实现."""
 
     def __init__(self, config_path: Optional[str] = None):
