@@ -781,10 +781,12 @@ class Chaoxing:
                         refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
                         if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get("duration") is not None:
                             _dtoken = refreshed_meta["dtoken"]
-                            _duration = refreshed_meta["duration"]
-                            play_time = refreshed_meta.get("playTime", play_time)
+                            duration = int(refreshed_meta["duration"])
+                            refreshed_play_time = refreshed_meta.get("playTime")
+                            if refreshed_play_time is not None:
+                                play_time = int(refreshed_play_time)
 
-                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, _duration, play_time)
+                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, duration, play_time)
                             pbar = self._close_pbar_safe(pbar)
                             continue
                         else:

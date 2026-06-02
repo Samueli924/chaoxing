@@ -44,7 +44,7 @@ def check_completion(answer):
 def check_answer(answer, type, tiku):  # 只会写小杯代码，这里用个tiku感觉怪怪的，但先这么写着
     # 如果是手动模式或多题库回退包装器，直接信任
     # （手动模式豁免常规校验；回退包装器因其子题库在各自环节均已单独校验过，此处无需二次校验，以防二次过滤误杀）
-    if getattr(tiku, 'is_manual', False) or tiku.__class__.__name__ in ['TikuManual', 'TikuFallback']:
+    if getattr(tiku, 'is_manual', False) or getattr(tiku, 'skip_answer_validation', False):
         return True
 
     if type == 'single':
