@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 import json
 import time
-from urllib import parse
-
-from api.logger import logger
 
 from api.base import SessionManager
 from api.config import GlobalConst as gc
+from api.logger import logger
 
 
 class Live:

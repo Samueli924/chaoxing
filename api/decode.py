@@ -417,16 +417,32 @@ def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
     """从BeautifulSoup对象中提取表单数据"""
     form_data = {}
     form_tag = soup.find("form")
-    
+
     if not form_tag:
         return form_data
-    
+
     # 提取所有非答案字段的input
     for input_tag in form_tag.find_all("input"):
-        if "name" not in input_tag.attrs or "answer" in input_tag.attrs["name"]:
+        name_attr = input_tag.attrs.get("name")
+        if name_attr is None:
             continue
-        form_data[input_tag.attrs["name"]] = input_tag.attrs.get("value", "")
-    
+
+        if isinstance(name_attr, list):
+            name_str = str(name_attr[0]) if name_attr else ""
+        else:
+            name_str = str(name_attr)
+
+        if not name_str or "answer" in name_str:
+            continue
+
+        val_attr = input_tag.attrs.get("value", "")
+        if isinstance(val_attr, list):
+            val_str = "".join(str(v) for v in val_attr)
+        else:
+            val_str = str(val_attr)
+
+        form_data[name_str] = val_str
+
     return form_data
 
 

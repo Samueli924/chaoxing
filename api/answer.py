@@ -23,7 +23,7 @@ from api.logger import logger
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
-__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow"]
+__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow", "TikuManual"]
 
 class CacheDAO:
     """
@@ -210,11 +210,19 @@ class Tiku(ABC):
         if self.DISABLE:
             return None
 
+        is_manual = (
+            getattr(self, 'is_manual', False) or
+            self.__class__.__name__ == 'TikuManual' or
+            (self.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self, 'providers', [])))
+        )
+
         # 预处理, 去除【单选题】这样与标题无关的字段
-        logger.debug(f"原始标题：{q_info['title']}")
+        if not is_manual:
+            logger.debug(f"原始标题：{q_info['title']}")
         q_info['title'] = sub(r'^\d+', '', q_info['title'])
         q_info['title'] = sub(r'（\d+\.\d+分）$', '', q_info['title'])
-        logger.debug(f"处理后标题：{q_info['title']}")
+        if not is_manual:
+            logger.debug(f"处理后标题：{q_info['title']}")
 
         # 先过缓存
         cache_dao = CacheDAO()
@@ -237,6 +245,56 @@ class Tiku(ABC):
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
 
+    def query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+        if self.DISABLE:
+            return [None] * len(q_list)
+
+        is_manual = (
+            getattr(self, 'is_manual', False) or
+            self.__class__.__name__ == 'TikuManual' or
+            (self.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self, 'providers', [])))
+        )
+
+        results = [None] * len(q_list)
+        pending_indices = []
+
+        cache_dao = CacheDAO()
+        for idx, q in enumerate(q_list):
+            if not is_manual:
+                logger.debug(f"原始标题：{q['title']}")
+            q['title'] = sub(r'^\d+', '', q['title'])
+            q['title'] = sub(r'（\d+\.\d+分）$', '', q['title'])
+            if not is_manual:
+                logger.debug(f"处理后标题：{q['title']}")
+
+            answer = cache_dao.get_cache(q['title'])
+            if answer:
+                logger.info(f"从缓存中获取答案：{q['title']} -> {answer}")
+                results[idx] = answer.strip()
+            else:
+                pending_indices.append(idx)
+
+        if not pending_indices:
+            return results
+
+        sub_q_list = [q_list[idx] for idx in pending_indices]
+        sub_results = self._query_all(sub_q_list, query_delay=query_delay)
+
+        for idx, ans in zip(pending_indices, sub_results):
+            q_info = q_list[idx]
+            if ans:
+                ans = ans.strip()
+                logger.info(f"从{self.name}获取答案：{q_info['title']} -> {ans}")
+                if check_answer(ans, q_info['type'], self):
+                    cache_dao.add_cache(q_info['title'], ans)
+                    results[idx] = ans
+                else:
+                    logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
+            else:
+                logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
+
+        return results
+
 
 
     @abstractmethod
@@ -245,6 +303,22 @@ class Tiku(ABC):
         查询接口, 交由自定义题库实现
         """
         pass
+
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+        """
+        批量查询的实现接口，默认循环调用单个查询 _query。
+        子类若有批量查询或交互需求（如手动模式），可重写此方法。
+        """
+        results = []
+        for q in q_list:
+            if query_delay > 0:
+                time.sleep(query_delay)
+            try:
+                results.append(self._query(q))
+            except Exception as e:
+                logger.error(f"{self.name} 查询单个题目发生异常: {e}")
+                results.append(None)
+        return results
 
 
     @staticmethod
@@ -318,10 +392,18 @@ class Tiku(ABC):
         if self.DISABLE:
             return False
         # 对响应的答案作处理
-        answer = answer.strip()
-        if answer in self.true_list:
+        answer = answer.strip().lower()
+        
+        # 内置的高频通用判断词规整
+        if answer in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
             return True
-        elif answer in self.false_list:
+        if answer in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确']:
+            return False
+
+        # 兼容自定义配置列表
+        if answer in [x.lower() for x in self.true_list] or answer in self.true_list:
+            return True
+        elif answer in [x.lower() for x in self.false_list] or answer in self.false_list:
             return False
         else:
             # 无法判断, 随机选择
@@ -388,6 +470,44 @@ class TikuFallback(Tiku):
 
             logger.info(f'{provider.name} 返回答案类型不符，回退到下一个题库')
         return None
+
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+        results = [None] * len(q_list)
+        pending_indices = list(range(len(q_list)))
+
+        for provider in self.providers:
+            if not pending_indices:
+                break
+            if provider.DISABLE:
+                continue
+
+            sub_q_list = [q_list[idx] for idx in pending_indices]
+            try:
+                sub_results = provider.query_all(sub_q_list, query_delay=query_delay)
+            except Exception as e:
+                provider_id = f'{provider.name}({provider.__class__.__name__})'
+                logger.exception(f'{self.name} 批量查询时 {provider_id} 异常: {e}')
+                continue
+
+            if not isinstance(sub_results, list):
+                logger.error(f"{provider.name} 批量查询返回数据格式异常（非列表），跳过该题库")
+                continue
+
+            if len(sub_results) != len(pending_indices):
+                logger.error(f"{provider.name} 批量查询返回结果长度（{len(sub_results)}）与请求题目数（{len(pending_indices)}）不匹配，跳过该题库以防答案错位")
+                continue
+
+            next_pending_indices = []
+            for sub_idx, (orig_idx, ans) in enumerate(zip(pending_indices, sub_results)):
+                if ans:
+                    logger.info(f'{provider.name} 命中答案: {q_list[orig_idx]["title"]} -> {ans}')
+                    results[orig_idx] = ans
+                else:
+                    logger.info(f'{provider.name} 未命中或返回答案无效，将回退')
+                    next_pending_indices.append(orig_idx)
+            pending_indices = next_pending_indices
+
+        return results
 
     def check_llm_connection(self) -> bool:
         for provider in self.providers:
@@ -991,6 +1111,7 @@ class AI(Tiku):
         super().__init__(config_path)
         self.name = 'AI大模型答题'
         self.last_request_time = None
+        self._lock = threading.Lock()
 
     def _is_deepseek_v4(self) -> bool:
         return (
@@ -1013,6 +1134,10 @@ class AI(Tiku):
                 time.sleep(sleep_time)
 
     def _query(self, q_info: dict):
+        with self._lock:
+            return self._query_locked(q_info)
+
+    def _query_locked(self, q_info: dict):
         def remove_md_json_wrapper(md_str):
             # 使用正则表达式匹配Markdown代码块并提取内容
             pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
@@ -1123,38 +1248,39 @@ class AI(Tiku):
         检查大模型连接是否可用
         发送一个简单的测试请求来验证 API 配置
         """
-        logger.info(f'正在检查 {self.name} 连接...')
-        try:
-            if self.http_proxy:
-                httpx_client = httpx.Client(proxy=self.http_proxy)
-                client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-            else:
-                client = OpenAI(base_url=self.endpoint, api_key=self.key)
+        with self._lock:
+            logger.info(f'正在检查 {self.name} 连接...')
+            try:
+                if self.http_proxy:
+                    httpx_client = httpx.Client(proxy=self.http_proxy)
+                    client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
+                else:
+                    client = OpenAI(base_url=self.endpoint, api_key=self.key)
 
-            # 发送一个简单的测试请求
-            self._wait_for_interval()
-            self.last_request_time = time.time()
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': '你好，请回答：1+1 等于几？只回答数字。'
-                    }
-                ],
-                max_tokens=64
-            ))
-            
-            if completion.choices and completion.choices[0].message.content:
-                logger.info(f'{self.name} 连接检查成功')
-                return True
-            else:
-                logger.error(f'{self.name} 连接检查失败：未收到响应')
+                # 发送一个简单的测试请求
+                self._wait_for_interval()
+                self.last_request_time = time.time()
+                completion = client.chat.completions.create(**self._completion_kwargs(
+                    model=self.model,
+                    messages=[
+                        {
+                            'role': 'user',
+                            'content': '你好，请回答：1+1 等于几？只回答数字。'
+                        }
+                    ],
+                    max_tokens=64
+                ))
+
+                if completion.choices and completion.choices[0].message.content:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
+                else:
+                    logger.error(f'{self.name} 连接检查失败：未收到响应')
+                    return False
+
+            except Exception as e:
+                logger.error(f'{self.name} 连接检查失败：{e}')
                 return False
-                
-        except Exception as e:
-            logger.error(f'{self.name} 连接检查失败：{e}')
-            return False
 
 
 class SiliconFlow(Tiku):
@@ -1163,8 +1289,13 @@ class SiliconFlow(Tiku):
         super().__init__(config_path)
         self.name = '硅基流动大模型'
         self.last_request_time = None
+        self._lock = threading.Lock()
 
     def _query(self, q_info: dict):
+        with self._lock:
+            return self._query_locked(q_info)
+
+    def _query_locked(self, q_info: dict):
         def remove_md_json_wrapper(md_str):
             # 解析可能存在的JSON包装
             pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
@@ -1253,50 +1384,379 @@ class SiliconFlow(Tiku):
         检查硅基流动大模型连接是否可用
         发送一个简单的测试请求来验证 API 配置
         """
-        logger.info(f'正在检查 {self.name} 连接...')
-        try:
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            
-            payload = {
-                'model': self.model_name,
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': '你好，请回答：1+1 等于几？只回答数字。'
-                    }
-                ],
-                'stream': False,
-                'max_tokens': 10,
-                'temperature': 0.7,
-                'top_p': 0.7,
-                'response_format': {'type': 'text'}
-            }
-            
-            response = requests.post(
-                self.api_endpoint,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('choices') and result['choices'][0]['message']['content']:
-                    logger.info(f'{self.name} 连接检查成功')
-                    return True
+        with self._lock:
+            logger.info(f'正在检查 {self.name} 连接...')
+            try:
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}',
+                    'Content-Type': 'application/json'
+                }
+
+                payload = {
+                    'model': self.model_name,
+                    'messages': [
+                        {
+                            'role': 'user',
+                            'content': '你好，请回答：1+1 等于几？只回答数字。'
+                        }
+                    ],
+                    'stream': False,
+                    'max_tokens': 10,
+                    'temperature': 0.7,
+                    'top_p': 0.7,
+                    'response_format': {'type': 'text'}
+                }
+
+                response = requests.post(
+                    self.api_endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('choices') and result['choices'][0]['message']['content']:
+                        logger.info(f'{self.name} 连接检查成功')
+                        return True
+                    else:
+                        logger.error(f'{self.name} 连接检查失败：未收到有效响应')
+                        return False
                 else:
-                    logger.error(f'{self.name} 连接检查失败：未收到有效响应')
+                    logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
                     return False
-            else:
-                logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
+
+            except Exception as e:
+                logger.error(f'{self.name} 连接检查失败：{e}')
                 return False
-                
-        except Exception as e:
-            logger.error(f'{self.name} 连接检查失败：{e}')
-            return False
+
+
+class TikuManual(Tiku):
+    _manual_lock = threading.Lock()
+    is_manual = True
+
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        super().__init__(config_path)
+        self.name = '手动输入题库'
+        self.default_mode = 'batch'
+
+    def _init_tiku(self):
+        self.default_mode = self._conf.get('manual_mode_default', 'batch').strip().lower()
+        if self.default_mode not in ['batch', 'single']:
+            self.default_mode = 'batch'
+        
+        self.separator = self._conf.get('manual_mode_separator', ';')
+        if self.separator.lower() in ['\\n', 'newline', '换行']:
+            self.separator = '\n'
+        elif self.separator.lower() in ['space', '空格']:
+            self.separator = ' '
+        elif self.separator.lower() in ['tab', '制表符']:
+            self.separator = '\t'
+
+    def _query(self, q_info: dict) -> Optional[str]:
+        # 强行关闭清除所有当前活动的 tqdm 进度条
+        try:
+            from tqdm import tqdm
+            for instance in list(tqdm._instances):
+                instance.leave = False
+                instance.clear()
+                instance.close()
+        except Exception:
+            pass
+
+        with self._manual_lock:
+            ans = self._single_query(q_info)
+        logger.debug("手动答题结束，冲刷缓存日志")
+        return ans
+
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+        # 强行关闭清除所有当前活动的 tqdm 进度条
+        try:
+            from tqdm import tqdm
+            for instance in list(tqdm._instances):
+                instance.leave = False
+                instance.clear()
+                instance.close()
+        except Exception:
+            pass
+
+        with self._manual_lock:
+            print(f"\n{'='*20} 手动输入题库 (共 {len(q_list)} 题) {'='*20}")
+            if self.default_mode == 'batch':
+                ans_list = self._batch_query_flow(q_list)
+            else:
+                ans_list = [self._single_query(q) for q in q_list]
+        logger.debug("手动答题结束，冲刷缓存日志")
+        return ans_list
+
+    @staticmethod
+    def _get_type_display(type_str: str) -> str:
+        type_map = {
+            'single': '单选题',
+            'multiple': '多选题',
+            'completion': '填空题',
+            'judgement': '判断题'
+        }
+        return type_map.get(type_str, '其他类型')
+
+    def _single_query(self, q: dict) -> Optional[str]:
+        type_str = self._get_type_display(q['type'])
+        if q['type'] in ['single', 'multiple'] and q.get('options'):
+            options = q['options']
+            parts = []
+            if isinstance(options, str):
+                parts = [o.strip() for o in options.split('\n') if o.strip()]
+                if len(parts) <= 1:
+                    from api.answer_check import cut
+                    cut_parts = cut(options)
+                    if cut_parts:
+                        parts = cut_parts
+            elif isinstance(options, list):
+                parts = [str(o).strip() for o in options if str(o).strip()]
+
+            options_text = "  ".join(parts)
+            print(f"\n【{type_str}】 {q['title']} 选项: {options_text}")
+        elif q['type'] == 'judgement':
+            print(f"\n【{type_str}】 {q['title']} 选项: 正确 / 错误")
+        else:
+            print(f"\n【{type_str}】 {q['title']}")
+
+        while True:
+            ans = input("请输入答案 (直接回车表示跳过/无答案): ").strip()
+            if not ans:
+                print(f"  [已记录] 题目: {q['title']} ---> 答案: [跳过/随机]")
+                return None
+
+            # 即时校验
+            ok, err_msg = self._validate_user_input(ans, q)
+            if not ok:
+                print(f"  \033[31m[输入错误] {err_msg}\033[0m")
+                continue
+
+            normalized_ans = self._normalize_user_input(ans, q)
+            print(f"  [已记录] 题目: {q['title']} ---> 答案: {normalized_ans}")
+            return normalized_ans
+
+    def _validate_user_input(self, ans: str, q: dict) -> tuple[bool, str]:
+        """
+        验证用户手动输入的答案是否合规。
+        返回 (是否合规, 错误提示信息)
+        """
+        if not ans:
+            return True, ""
+
+        ans = ans.strip()
+        if not ans:
+            return True, ""
+
+        q_type = q.get('type')
+        if q_type == 'judgement':
+            val = ans.lower()
+            valid_judgements = [
+                'true', 't', '1', '对', '正确', '√', '是', 'yes', 'y',
+                'false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确'
+            ]
+            if val not in valid_judgements:
+                return False, f"无法识别的判断词 '{ans}'，请输入：对/错、正确/错误、T/F、1/0"
+            return True, ""
+
+        elif q_type in ['single', 'multiple']:
+            options = q.get('options', '')
+            parts = []
+            if isinstance(options, str):
+                parts = [o.strip() for o in options.split('\n') if o.strip()]
+                if len(parts) <= 1:
+                    from api.answer_check import cut
+                    cut_parts = cut(options)
+                    if cut_parts:
+                        parts = cut_parts
+            elif isinstance(options, list):
+                parts = [str(o).strip() for o in options if str(o).strip()]
+
+            # 收集该题合法的选项字母
+            valid_keys = []
+            for p in parts:
+                first_char = p[:1].upper()
+                if first_char.isalpha():
+                    valid_keys.append(first_char)
+
+            if valid_keys:
+                letters = [c.upper() for c in ans if re.match(r'[A-Za-z]', c)]
+                if not letters:
+                    from api.answer_check import cut
+                    split_ans = cut(ans)
+                    if split_ans:
+                        for item in split_ans:
+                            matched = False
+                            for p in parts:
+                                p_norm = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', p).strip().lower()
+                                if item.strip().lower() in p_norm or p_norm in item.strip().lower():
+                                    matched = True
+                                    break
+                            if not matched:
+                                return False, f"输入的文本 '{item}' 在所有选项中均无法匹配，请输入合法的选项文本或字母"
+                    return True, ""
+
+                invalid_letters = [l for l in letters if l not in valid_keys]
+                if invalid_letters:
+                    return False, f"输入包含无效的选项字母 {invalid_letters}，当前题目的可用选项为: {', '.join(valid_keys)}"
+
+                if q_type == 'single' and len(letters) > 1:
+                    return False, "当前是单选题，但输入了多个选项字母！"
+
+            return True, ""
+
+        return True, ""
+
+    def _normalize_user_input(self, ans: str, q: dict) -> Optional[str]:
+        if not ans:
+            return None
+
+        ans = ans.strip()
+        if not ans:
+            return None
+
+        q_type = q.get('type')
+        if q_type == 'judgement':
+            val = ans.lower()
+            if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
+                return "正确"
+            elif val in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确']:
+                return "错误"
+            return ans
+
+        elif q_type in ['single', 'multiple']:
+            options = q.get('options', '')
+            parts = []
+            if isinstance(options, str):
+                parts = [o.strip() for o in options.split('\n') if o.strip()]
+                if len(parts) <= 1:
+                    from api.answer_check import cut
+                    cut_parts = cut(options)
+                    if cut_parts:
+                        parts = cut_parts
+            elif isinstance(options, list):
+                parts = [str(o).strip() for o in options if str(o).strip()]
+
+            valid_keys = []
+            for p in parts:
+                first_char = p[:1].upper()
+                if first_char.isalpha():
+                    valid_keys.append(first_char)
+
+            letters = [c.upper() for c in ans if re.match(r'[A-Za-z]', c)]
+            if letters and all(l in valid_keys for l in letters):
+                unique_ordered_letters = []
+                for l in letters:
+                    if l not in unique_ordered_letters:
+                        unique_ordered_letters.append(l)
+                return "\n".join(unique_ordered_letters)
+
+            from api.answer_check import cut
+            split_ans = cut(ans)
+            if split_ans:
+                return "\n".join(split_ans)
+            return ans
+
+        return ans
+
+    def _batch_query_flow(self, q_list: list[dict]) -> list[Optional[str]]:
+        for idx, q in enumerate(q_list):
+            type_str = self._get_type_display(q['type'])
+            if q['type'] in ['single', 'multiple'] and q.get('options'):
+                options = q['options']
+                parts = []
+                if isinstance(options, str):
+                    parts = [o.strip() for o in options.split('\n') if o.strip()]
+                    if len(parts) <= 1:
+                        from api.answer_check import cut
+                        cut_parts = cut(options)
+                        if cut_parts:
+                            parts = cut_parts
+                elif isinstance(options, list):
+                    parts = [str(o).strip() for o in options if str(o).strip()]
+
+                options_text = "  ".join(parts)
+                print(f"\n[{idx + 1}] 【{type_str}】 {q['title']} 选项: {options_text}")
+            elif q['type'] == 'judgement':
+                print(f"\n[{idx + 1}] 【{type_str}】 {q['title']} 选项: 正确 / 错误")
+            else:
+                print(f"\n[{idx + 1}] 【{type_str}】 {q['title']}")
+
+        sep_desc = self.separator
+        if self.separator == '\n':
+            sep_desc = '换行 (每题一行)'
+        elif self.separator == ' ':
+            sep_desc = '空格'
+        elif self.separator == '\t':
+            sep_desc = 'Tab制表符'
+
+        print("\n" + "="*50)
+        print("请依次输入每道题的答案。")
+        print(f"格式要求：当前配置要求使用【{sep_desc}】分割各题的答案。")
+        print("如果是多选题，答案中的多个选项直接连着写即可（例如：AB 或 AC）。")
+        print("直接按回车或输入空格跳过的题，对应的答案将为空（会触发随机答题）。")
+        if self.separator == '\n':
+            print("粘贴多行时，每行会被解析为对应一题的答案。")
+        else:
+            print(f"示例输入: A{self.separator} B{self.separator} 正确{self.separator} 答案1, 答案2{self.separator} 错")
+        print("="*50)
+
+        while True:
+            answers = []
+            if self.separator == '\n':
+                print(f"请直接粘贴或依次输入各题答案（每行一个，共 {len(q_list)} 行）：")
+                for i in range(len(q_list)):
+                    try:
+                        ans = input(f"  第 {i + 1} 题答案: ").strip()
+                    except EOFError:
+                        ans = ""
+                    answers.append(ans)
+            else:
+                raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                if not raw_input:
+                    answers = [''] * len(q_list)
+                else:
+                    if self.separator in [';', '；']:
+                        raw_input = raw_input.replace('；', ';')
+                        answers = [ans.strip() for ans in raw_input.split(';')]
+                    elif self.separator in [',', '，']:
+                        raw_input = raw_input.replace('，', ',')
+                        answers = [ans.strip() for ans in raw_input.split(',')]
+                    else:
+                        answers = [ans.strip() for ans in raw_input.split(self.separator)]
+
+            if len(answers) < len(q_list):
+                answers.extend([''] * (len(q_list) - len(answers)))
+            elif len(answers) > len(q_list):
+                answers = answers[:len(q_list)]
+
+            print("\n--- 解析答案结果 ---")
+            has_error = False
+            temp_answers = []
+            for idx, (q, ans) in enumerate(zip(q_list, answers)):
+                ok, err_msg = self._validate_user_input(ans, q)
+                if not ok:
+                    has_error = True
+                    print(f"第 {idx + 1} 题: {q['title']} ---> \033[31m[错误: {err_msg}]\033[0m")
+                    temp_answers.append(None)
+                else:
+                    normalized_ans = self._normalize_user_input(ans, q)
+                    temp_answers.append(normalized_ans)
+                    print(f"第 {idx + 1} 题: {q['title']} ---> 答案: {normalized_ans if normalized_ans else '[跳过/随机]'}")
+            print("-------------------")
+
+            if has_error:
+                print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
+                continue
+
+            confirm = input("确认使用上述答案？[Y/n]: ").strip().lower()
+            if confirm in ['', 'y', 'yes']:
+                return temp_answers
+            elif confirm == 'switch':
+                return [self._single_query(q) for q in q_list]
+            else:
+                print("已取消，请重新输入，或输入 'switch' 切换为单题输入模式。")
 
 
 class DummyTiku(Tiku):
@@ -1316,4 +1776,5 @@ PROVIDER_REGISTRY = {
     'TikuAdapter': TikuAdapter,
     'AI': AI,
     'SiliconFlow': SiliconFlow,
+    'TikuManual': TikuManual,
 }

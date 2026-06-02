@@ -6,19 +6,9 @@ import sys
 import threading
 import time
 import traceback
-from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-try:
-    from queue import PriorityQueue, ShutDown
-except ImportError:
-    from queue import PriorityQueue
-    class ShutDown(Exception):
-        pass
-from threading import RLock
 from typing import Any
-
 from tqdm import tqdm
-
 from api.answer import Tiku
 from api.base import Chaoxing, Account, StudyResult
 from api.exceptions import LoginError, InputFormatError
@@ -26,6 +16,13 @@ from api.logger import logger
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
+
+try:
+    from queue import PriorityQueue, ShutDown
+except ImportError:
+    from queue import PriorityQueue
+    class ShutDown(Exception):
+        pass
 
 class ChapterResult(enum.Enum):
     SUCCESS=0,
@@ -370,17 +367,17 @@ class JobProcessor:
 
                 case ChapterResult.ERROR:
                     task.tries += 1
-                    logger.warning("Retrying task {} - {} ({}/{} attempts)", task.course["title"], task.point["title"], task.tries,
+                    logger.warning("重试任务 {} - {} ({}/{} 次尝试)", task.course["title"], task.point["title"], task.tries,
                                    self.max_tries)
                     if task.tries >= self.max_tries:
-                        logger.error("Max retries reached for task: {} - {}", task.course["title"], task.point["title"])
+                        logger.error("任务重试次数达到上限: {} - {}", task.course["title"], task.point["title"])
                         self.failed_tasks.append(task)
                         self.task_queue.task_done()
                         continue
                     self.retry_queue.put(task)
 
                 case _:
-                    logger.error("Invalid task state {} for task {}", task.result, task.point["title"])
+                    logger.error("任务 {} 的状态无效 {}", task.result, task.point["title"])
                     self.failed_tasks.append(task)
                     self.task_queue.task_done()
 
@@ -421,9 +418,9 @@ def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, A
         pass
 
     job_results:list[StudyResult]=[]
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        for result in executor.map(lambda job: process_job(chaoxing, course, job, job_info, speed), jobs):
-            job_results.append(result)
+    for job in jobs:
+        result = process_job(chaoxing, course, job, job_info, speed)
+        job_results.append(result)
     
     for result in job_results:
         if result.is_failure():

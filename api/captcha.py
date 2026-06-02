@@ -15,8 +15,16 @@ __version__ = "1.0.0"
 
 from random import randint
 from typing import Optional
-from ddddocr import DdddOcr
+
+from loguru import logger
 from requests import session
+
+try:
+    from ddddocr import DdddOcr
+    HAS_DDDDOCR = True
+except ImportError:
+    DdddOcr = None
+    HAS_DDDDOCR = False
 
 
 def ocr_init() -> Optional[DdddOcr]:
@@ -25,7 +33,14 @@ def ocr_init() -> Optional[DdddOcr]:
 
     Returns: DdddOcr对象
     """
-    return DdddOcr(show_ad=False)
+    if not HAS_DDDDOCR or DdddOcr is None:
+        logger.warning("未检测到 ddddocr 依赖，自动验证码识别将不可用。如遇403限制请在浏览器端手动完成验证。")
+        return None
+    try:
+        return DdddOcr(show_ad=False)
+    except Exception as e:
+        logger.warning(f"ddddocr 初始化失败: {e}，自动验证码识别将不可用")
+        return None
 
 
 class CxCaptcha:
@@ -114,11 +129,14 @@ class CxCaptcha:
         使用 DdddOcr 对验证码图片进行识别。
 
         Args:
-            img (bytes): 验证码图片的二进制数据。
+            img (bytes): 验证码图片的二进制数据.
 
         Returns:
             str: 返回识别出的验证码字符串。
         """
+        if not self.ocr:
+            logger.error("ddddocr 实例未成功初始化，无法执行验证码识别")
+            raise RuntimeError("ddddocr is not available")
         res = self.ocr.classification(img)
         return res
 
@@ -131,8 +149,12 @@ class CxCaptcha:
         Returns:
             bool: 如果验证码成功通过验证，则返回 True；否则返回 False。
         """
-        cap_img = self.getCaptcha()
-        if not cap_img:
+        try:
+            cap_img = self.getCaptcha()
+            if not cap_img:
+                return False
+            cap_token = self.recognition(cap_img)
+            return self.submitCaptcha(cap_token)
+        except Exception as e:
+            logger.error(f"验证码自动验证时发生异常: {e}")
             return False
-        cap_token = self.recognition(cap_img)
-        return self.submitCaptcha(cap_token)

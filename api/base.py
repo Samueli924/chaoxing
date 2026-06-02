@@ -8,12 +8,12 @@ from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
 from typing import Self, Optional, Literal
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 
 import requests
 from loguru import logger
 from requests import RequestException
 from requests.adapters import HTTPAdapter
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 from tqdm import tqdm
 
 from api.answer import *
@@ -28,7 +28,6 @@ from api.decode import (
     decode_course_folder,
     decode_questions_info,
 )
-from api.exceptions import MaxRetryExceeded
 
 
 def get_timestamp():
@@ -71,11 +70,10 @@ class SessionManager:
     @classmethod
     def relogin_if_needed(cls, chaoxing_instance) -> bool:
         with cls._login_lock:
-            # Check if cookie session is still invalid
+            # 检查 cookie 会话是否仍然无效
             if chaoxing_instance._validate_cookie_session():
                 return True
             
-            # Try to relogin
             logger.info("Cookie session invalid, attempting thread-safe relogin...")
             if chaoxing_instance.account and chaoxing_instance.account.username and chaoxing_instance.account.password:
                 login_result = chaoxing_instance.login(login_with_cookies=False)
@@ -212,8 +210,8 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
     return ""
 
 def is_subsequence(a, o):
-    iter_o = iter(o)
-    return all(c in iter_o for c in a)
+    iter_o = iter(o.lower())
+    return all(c in iter_o for c in a.lower())
 
 def random_answer(options: str, q_type: str) -> str:
     answer = ""
@@ -742,14 +740,17 @@ class Chaoxing:
 
         logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
 
+        forbidden_retry = 0
+        max_forbidden_retry = 2
+
         passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
                                                 _type, headers=headers, _isdrag=4)
         if passed:
             logger.info("任务瞬间完成: {}", _job['name'])
             return StudyResult.SUCCESS
 
-        with tqdm(total=duration, initial=play_time, desc=_job["name"],
-                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}') as pbar:
+        pbar = None
+        try:
             while not passed:
                 # Sometimes the last request needs to be sent several times to complete the task
                 if play_time - last_log_time >= wait_time or play_time == duration:
@@ -773,7 +774,14 @@ class Chaoxing:
                             _duration = refreshed_meta["duration"]
                             play_time = refreshed_meta.get("playTime", play_time)
 
-                            logger.debug("Refreshed token: {}, duration: {}, play time: {}", _dtoken, _duration, play_time)
+                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, _duration, play_time)
+                            if pbar is not None:
+                                try:
+                                    pbar.leave = False
+                                    pbar.close()
+                                except Exception:
+                                    pass
+                                pbar = None
                             continue
                         else:
                             logger.error("会话恢复失败，刷新后的元数据缺少必要字段 (dtoken, duration)")
@@ -792,9 +800,36 @@ class Chaoxing:
                 last_iter = time.time()
                 play_time = min(duration, play_time + dt)
 
-                pbar.n = int(play_time)
-                pbar.refresh()
+                # 检查手动模式锁是否被锁定
+                manual_locked = False
+                try:
+                    manual_locked = TikuManual._manual_lock.locked()
+                except Exception:
+                    pass
+
+                if manual_locked:
+                    if pbar is not None:
+                        try:
+                            pbar.leave = False
+                            pbar.close()
+                        except Exception:
+                            pass
+                        pbar = None
+                else:
+                    if pbar is None:
+                        pbar = tqdm(total=duration, initial=int(play_time), desc=_job["name"],
+                                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', leave=False)
+                    pbar.n = int(play_time)
+                    pbar.refresh()
+
                 time.sleep(gc.THRESHOLD)
+        finally:
+            if pbar is not None:
+                try:
+                    pbar.leave = False
+                    pbar.close()
+                except Exception:
+                    pass
 
         logger.info("任务完成: {}", _job['name'])
         return StudyResult.SUCCESS
@@ -899,12 +934,10 @@ class Chaoxing:
         # 搜题
         total_questions = len(questions["questions"])
         found_answers = 0
-        for q in questions["questions"]:
+        query_delay = self.kwargs.get("query_delay", 0)
+        answers = self.tiku.query_all(questions["questions"], query_delay=query_delay)
+        for q, res in zip(questions["questions"], answers):
             logger.debug(f"当前题目信息 -> {q}")
-            # 添加搜题延迟 #428 - 默认0s延迟
-            query_delay = self.kwargs.get("query_delay", 0)
-            time.sleep(query_delay)
-            res = self.tiku.query(q)
             answer = ""
             if not res:
                 # 随机答题
@@ -969,9 +1002,14 @@ class Chaoxing:
         cover_rate = (found_answers / total_questions) * 100
         logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
         # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
+        is_manual_mode = (
+            getattr(self.tiku, 'is_manual', False) or
+            self.tiku.__class__.__name__ == 'TikuManual' or
+            (self.tiku.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self.tiku, 'providers', [])))
+        )
         if self.tiku.get_submit_params() == "1":
             questions["pyFlag"] = "1"
-        elif cover_rate >= self.tiku.COVER_RATE * 100 or self.rollback_times >= 1:
+        elif is_manual_mode or cover_rate >= self.tiku.COVER_RATE * 100 or self.rollback_times >= 1:
             questions["pyFlag"] = ""
         else:
             questions["pyFlag"] = "1"
