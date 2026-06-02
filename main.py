@@ -467,8 +467,9 @@ def filter_courses(all_course, course_list):
         # 手动输入要学习的课程ID列表
         print("*" * 10 + "课程列表" + "*" * 10)
         for course in all_course:
-            print(f"ID: {course['courseId']} 课程名: {course['title']}")
+            print(f"ID: {course['courseId']} 班级ID: {course['clazzId']} 课程名: {course['title']}")
         print("*" * 28)
+        print("提示: 同一 courseId 下若存在多个班级, 将分别完成。")
         try:
             course_list = input(
                 "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
@@ -478,12 +479,13 @@ def filter_courses(all_course, course_list):
 
     # 筛选需要学习的课程
     course_task = []
-    course_ids = []
+    seen_keys = set()
     for course in all_course:
-        if course["courseId"] in course_list and course["courseId"] not in course_ids:
+        key = (course["courseId"], course["clazzId"])
+        if course["courseId"] in course_list and key not in seen_keys:
             course_task.append(course)
-            course_ids.append(course["courseId"])
-
+            seen_keys.add(key)
+    
     # 如果没有指定课程，则学习所有课程
     if not course_task:
         course_task = all_course
