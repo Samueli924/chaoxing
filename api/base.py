@@ -16,8 +16,7 @@ from requests.adapters import HTTPAdapter
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 from tqdm import tqdm
 
-from api.answer import *
-from api.answer import TikuManual
+from api.answer import Tiku, TikuManual
 from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
