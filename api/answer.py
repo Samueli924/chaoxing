@@ -23,7 +23,9 @@ from api.logger import logger
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
 
-__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow", "TikuManual"]
+__all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow",
+           "TikuManual"]
+
 
 class CacheDAO:
     """
@@ -57,7 +59,7 @@ class CacheDAO:
                         end = text.rfind('}')
                         if start != -1 and end != -1 and start < end:
                             try:
-                                return json.loads(text[start:end+1])
+                                return json.loads(text[start:end + 1])
                             except Exception:
                                 pass
                     except Exception:
@@ -80,7 +82,7 @@ class CacheDAO:
                         end = text.rfind('}')
                         if start != -1 and end != -1 and start < end:
                             try:
-                                return json.loads(text[start:end+1])
+                                return json.loads(text[start:end + 1])
                             except Exception:
                                 pass
                     except Exception:
@@ -137,11 +139,12 @@ class CacheDAO:
 
 class Tiku(ABC):
     CONFIG_PATH = os.path.join(os.getcwd(), "config.ini")
-    DISABLE = False     # 停用标志
-    SUBMIT = False      # 提交标志
-    COVER_RATE = 0.8    # 覆盖率
+    DISABLE = False  # 停用标志
+    SUBMIT = False  # 提交标志
+    COVER_RATE = 0.8  # 覆盖率
     true_list = None
     false_list = None
+
     def __init__(self, config_path: Optional[str] = None) -> None:
         self._name = None
         self._api = None
@@ -192,7 +195,7 @@ class Tiku(ABC):
         # 仅用于题库初始化, 例如配置token, 交由自定义题库完成
         pass
 
-    def config_set(self,config):
+    def config_set(self, config):
         self._conf = config
 
     def _get_conf(self):
@@ -207,16 +210,18 @@ class Tiku(ABC):
             logger.info("未找到tiku配置, 已忽略题库功能")
             self.DISABLE = True
             return None
-        
+
     @property
     def _is_manual_mode(self) -> bool:
         return (
-            getattr(self, 'is_manual', False) or
-            self.__class__.__name__ == 'TikuManual' or
-            (self.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self, 'providers', [])))
+                getattr(self, 'is_manual', False) or
+                self.__class__.__name__ == 'TikuManual' or
+                (self.__class__.__name__ == 'TikuFallback' and any(
+                    getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in
+                    getattr(self, 'providers', [])))
         )
 
-    def query(self,q_info:dict) -> Optional[str]:
+    def query(self, q_info: dict) -> Optional[str]:
         if self.DISABLE:
             return None
 
@@ -282,7 +287,8 @@ class Tiku(ABC):
             logger.error(f"{self.name} _query_all 返回结果格式异常，期望列表")
             sub_results = [None] * len(pending_indices)
         elif len(sub_results) != len(pending_indices):
-            logger.error(f"{self.name} _query_all 返回结果长度不匹配，期望 {len(pending_indices)}，实际 {len(sub_results)}")
+            logger.error(
+                f"{self.name} _query_all 返回结果长度不匹配，期望 {len(pending_indices)}，实际 {len(sub_results)}")
             # 补齐或截断 sub_results 防止错位
             sub_results = list(sub_results) + [None] * (len(pending_indices) - len(sub_results))
             sub_results = sub_results[:len(pending_indices)]
@@ -302,10 +308,8 @@ class Tiku(ABC):
 
         return results
 
-
-
     @abstractmethod
-    def _query(self, q_info:dict) -> Optional[str]:
+    def _query(self, q_info: dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
         """
@@ -326,7 +330,6 @@ class Tiku(ABC):
                 logger.error(f"{self.name} 查询单个题目发生异常: {e}")
                 results.append(None)
         return results
-
 
     @staticmethod
     def get_tiku_from_config(config: Optional[dict] = None, config_path: Optional[str] = None):
@@ -400,7 +403,7 @@ class Tiku(ABC):
             return False
         # 对响应的答案作处理
         answer = answer.strip().lower()
-        
+
         # 内置的高频通用判断词规整
         if answer in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
             return True
@@ -414,8 +417,9 @@ class Tiku(ABC):
             return False
         else:
             # 无法判断, 随机选择
-            logger.error(f'无法判断答案 -> {answer} 对应的是正确还是错误, 请自行判断并加入配置文件重启脚本, 本次将会随机选择选项')
-            return random.choice([True,False])
+            logger.error(
+                f'无法判断答案 -> {answer} 对应的是正确还是错误, 请自行判断并加入配置文件重启脚本, 本次将会随机选择选项')
+            return random.choice([True, False])
 
     def get_submit_params(self):
         """
@@ -460,7 +464,7 @@ class TikuFallback(Tiku):
         else:
             logger.info(f"多题库回退已启用，查询顺序: {', '.join([p.__class__.__name__ for p in self.providers])}")
 
-    def _query(self, q_info:dict) -> Optional[str]:
+    def _query(self, q_info: dict) -> Optional[str]:
         for provider in self.providers:
             try:
                 answer = provider._query(q_info)
@@ -503,7 +507,8 @@ class TikuFallback(Tiku):
                 continue
 
             if len(sub_results) != len(pending_indices):
-                logger.error(f"{provider.name} 批量查询返回结果长度（{len(sub_results)}）与请求题目数（{len(pending_indices)}）不匹配，跳过该题库以防答案错位")
+                logger.error(
+                    f"{provider.name} 批量查询返回结果长度（{len(sub_results)}）与请求题目数（{len(pending_indices)}）不匹配，跳过该题库以防答案错位")
                 continue
 
             next_pending_indices = []
@@ -535,14 +540,14 @@ class TikuYanxi(Tiku):
         self.name = '言溪题库'
         self.api = 'https://tk.enncy.cn/query'
         self._token = None
-        self._token_index = 0   # token队列计数器
-        self._times = 100   # 查询次数剩余, 初始化为100, 查询后校对修正
+        self._token_index = 0  # token队列计数器
+        self._times = 100  # 查询次数剩余, 初始化为100, 查询后校对修正
 
-    def _query(self,q_info:dict):
+    def _query(self, q_info: dict):
         res = requests.get(
             self.api,
             params={
-                'question':q_info['title'],
+                'question': q_info['title'],
                 'token': self._token,
                 # 'type':q_info['type'], #修复478题目类型与答案类型不符（不想写后处理了）
                 # 没用，就算有type和options，言溪题库还是可能返回类型不符，问了客服，type仅用于收集
@@ -559,9 +564,10 @@ class TikuYanxi(Tiku):
                     self.load_token()
                     # 重新查询
                     return self._query(q_info)
-                logger.error(f'{self.name}查询失败:\n\t剩余查询数{res_json["data"].get("times",f"{self._times}(仅参考)")}:\n\t消息:{res_json["message"]}')
+                logger.error(
+                    f'{self.name}查询失败:\n\t剩余查询数{res_json["data"].get("times", f"{self._times}(仅参考)")}:\n\t消息:{res_json["message"]}')
                 return None
-            self._times = res_json["data"].get("times",self._times)
+            self._times = res_json["data"].get("times", self._times)
             return res_json['data']['answer'].strip()
         else:
             logger.error(f'{self.name}查询失败:\n{res.text}')
@@ -577,6 +583,7 @@ class TikuYanxi(Tiku):
 
     def _init_tiku(self):
         self.load_token()
+
 
 class TikuGo(Tiku):
     # GO题（网课小工具题库）实现
@@ -747,12 +754,13 @@ class TikuGo(Tiku):
         except (TypeError, ValueError):
             logger.warning(f'{self.name}配置 go_retry_backoff 无效，使用默认值 {self._retry_backoff}')
 
+
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
     def __init__(self, config_path: Optional[str] = None) -> None:
         super().__init__(config_path)
         self.name = 'LIKE知识库'
-        self.ver = '2.0.0' #对应官网API版本
+        self.ver = '2.0.0'  # 对应官网API版本
         self.query_api = 'https://app.datam.site/api/v1/query'
         self.models_api = 'https://app.datam.site/api/v1/query/models'
         self.balance_api = 'https://app.datam.site/api/v1/balance'
@@ -768,11 +776,11 @@ class TikuLike(Tiku):
         self._count = 0
         self._headers = {"Content-Type": "application/json"}
 
-    def _query(self, q_info:dict = None):
+    def _query(self, q_info: dict = None):
         if not q_info:
             logger.error("当前无题目信息，请检查")
             return ""
-        
+
         q_info_map = {"single": "【单选题】", "multiple": "【多选题】", "completion": "【填空题】", "judgement": "【判断题】"}
         q_info_prefix = q_info_map.get(q_info['type'], "【其他类型题目】")
         options = ', '.join(q_info['options']) if isinstance(q_info['options'], list) else q_info['options']
@@ -783,7 +791,7 @@ class TikuLike(Tiku):
 
         # 随机选择一个token进行查询
         token = random.choice(self._tokens)
-        
+
         # 检查该token是否有余额
         if self._balance.get(token, 0) <= 0:
             logger.error(f'{self.name}当前Token查询次数不足: ...{token[-5:]}')
@@ -797,7 +805,7 @@ class TikuLike(Tiku):
 
         ans = None
         try_times = 0
-        
+
         # 尝试查询，直到成功或达到重试次数
         while not ans and self._retry and try_times < self._retry_times:
             ans = self._query_single(token, question)
@@ -808,14 +816,14 @@ class TikuLike(Tiku):
                 break
             elif try_times < self._retry_times:
                 logger.warning(f'使用Token ...{token[-5:]} 查询失败，进行第 {try_times + 1} 次重试...')
-        
+
         # 10次查询后更新余额
         self._count = (self._count + 1) % 10
         if self._count == 0:
             self.update_times()
 
         return ans
-    
+
     def _query_single(self, token: str = "", query: str = "") -> str:
         """
         查询单个问题的答案
@@ -831,15 +839,15 @@ class TikuLike(Tiku):
         if not token:
             logger.error(f'{self.name}查询失败: 未提供有效的token')
             return None
-        
+
         if not query:
             logger.error(f'{self.name}查询失败: 查询内容为空')
             return None
-            
+
         # 设置请求头
         temp_headers = self._headers.copy()
         temp_headers['Authorization'] = f'Bearer {token}'
-        
+
         # 准备请求数据
         request_data = {
             'query': query,
@@ -847,7 +855,7 @@ class TikuLike(Tiku):
             'search': self._search,
             'vision': self._vision
         }
-        
+
         # 发送API请求
         try:
             res = requests.post(
@@ -885,9 +893,9 @@ class TikuLike(Tiku):
             logger.error(f'{self.name}访问被拒绝: 可能是Token权限不足')
         else:
             logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应内容: \n{res.text}')
-        
+
         return None
-    
+
     def _parse_response(self, response):
         """
         解析API响应
@@ -906,7 +914,7 @@ class TikuLike(Tiku):
         except Exception as e:
             logger.error(f'{self.name}响应解析异常: {e}')
             return None
-        
+
         # 记录响应消息
         msg = res_json.get('message', '')
         if msg:
@@ -916,25 +924,25 @@ class TikuLike(Tiku):
         if not results or not isinstance(results, dict):
             logger.error(f'{self.name}查询结果格式错误: API返回结果中results字段格式不正确')
             return None
-            
+
         output = results.get('output', None)
         if output is None or not isinstance(output, dict):
             logger.error(f'{self.name}查询结果中output字段格式错误或不存在')
             return None
-            
+
         q_type = output.get('questionType', None)
         if q_type is None:
             logger.error(f'{self.name}查询结果中questionType字段不存在')
             return None
-            
+
         answer = output.get('answer', None)
         if answer is None:
             logger.error(f'{self.name}查询结果中answer字段不存在')
             return None
-            
+
         # 根据题目类型提取答案
         return self._extract_answer_by_type(q_type, answer)
-    
+
     def _extract_answer_by_type(self, q_type: str, answer: dict) -> str:
         """
         根据题目类型提取答案
@@ -949,7 +957,7 @@ class TikuLike(Tiku):
         if not isinstance(answer, dict):
             logger.error(f'{self.name}答案格式错误: 不是有效的字典格式')
             return None
-            
+
         if q_type == "CHOICE":
             selected_options = answer.get('selectedOptions', None)
             if selected_options is not None:
@@ -990,14 +998,14 @@ class TikuLike(Tiku):
                 return str(otherText)
             else:
                 logger.error(f'{self.name}未知题目类型{q_type}且缺少otherText字段')
-        
+
         return None
-    
-    def get_api_balance(self, token:str = ""):
+
+    def get_api_balance(self, token: str = ""):
         if not token:
             logger.error(f'{self.name}获取余额失败: 未提供有效的token')
             return 0
-            
+
         temp_headers = self._headers.copy()
         temp_headers['Authorization'] = f'Bearer {token}'
         try:
@@ -1033,7 +1041,8 @@ class TikuLike(Tiku):
         for token in self._tokens:
             balance = self.get_api_balance(token)
             self._balance[token] = balance
-            logger.info(f"当前LIKE知识库Token: ...{token[-5:]} 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
+            logger.info(
+                f"当前LIKE知识库Token: ...{token[-5:]} 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
 
     def load_tokens(self) -> None:
         tokens_str = self._conf.get('tokens')
@@ -1065,6 +1074,7 @@ class TikuLike(Tiku):
         else:
             logger.error(f'{self.name}初始化失败: 未加载任何有效的Token')
             self.DISABLE = True
+
 
 class TikuAdapter(Tiku):
     # TikuAdapter题库实现 https://github.com/DokiDoki1103/tikuAdapter
@@ -1114,6 +1124,7 @@ class TikuAdapter(Tiku):
         # self.load_token()
         self.api = self._conf['url']
 
+
 class AI(Tiku):
     # AI大模型答题实现
     def __init__(self, config_path: Optional[str] = None) -> None:
@@ -1124,8 +1135,8 @@ class AI(Tiku):
 
     def _is_deepseek_v4(self) -> bool:
         return (
-            'api.deepseek.com' in (self.endpoint or '').lower()
-            and (self.model or '').lower().startswith('deepseek-v4')
+                'api.deepseek.com' in (self.endpoint or '').lower()
+                and (self.model or '').lower().startswith('deepseek-v4')
         )
 
     def _completion_kwargs(self, **kwargs):
@@ -1156,9 +1167,9 @@ class AI(Tiku):
         if self.http_proxy:
             proxy = self.http_proxy
             httpx_client = httpx.Client(proxy=proxy)
-            client = OpenAI(http_client=httpx_client, base_url = self.endpoint,api_key = self.key)
+            client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
         else:
-            client = OpenAI(base_url = self.endpoint,api_key = self.key)
+            client = OpenAI(base_url=self.endpoint, api_key=self.key)
         # 去除选项字母，防止大模型直接输出字母而非内容
         options_list = q_info['options'].split('\n')
         cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
@@ -1168,7 +1179,7 @@ class AI(Tiku):
         self.last_request_time = time.time()
         if q_info['type'] == "single":
             completion = client.chat.completions.create(**self._completion_kwargs(
-                model = self.model,
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -1182,7 +1193,7 @@ class AI(Tiku):
             ))
         elif q_info['type'] == 'multiple':
             completion = client.chat.completions.create(**self._completion_kwargs(
-                model = self.model,
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -1196,7 +1207,7 @@ class AI(Tiku):
             ))
         elif q_info['type'] == 'completion':
             completion = client.chat.completions.create(**self._completion_kwargs(
-                model = self.model,
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -1210,7 +1221,7 @@ class AI(Tiku):
             ))
         elif q_info['type'] == 'judgement':
             completion = client.chat.completions.create(**self._completion_kwargs(
-                model = self.model,
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -1224,7 +1235,7 @@ class AI(Tiku):
             ))
         else:
             completion = client.chat.completions.create(**self._completion_kwargs(
-                model = self.model,
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -1295,6 +1306,7 @@ class AI(Tiku):
 
 class SiliconFlow(Tiku):
     """硅基流动大模型答题实现."""
+
     def __init__(self, config_path: Optional[str] = None):
         """初始化硅基流动大模型题库."""
         super().__init__(config_path)
@@ -1391,7 +1403,6 @@ class SiliconFlow(Tiku):
 
         self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-V3')
 
-
         self.min_interval = int(self._conf.get('min_interval_seconds', 3))
 
     def check_llm_connection(self) -> bool:
@@ -1471,7 +1482,7 @@ class TikuManual(Tiku):
         self.default_mode = self._conf.get('manual_mode_default', 'batch').strip().lower()
         if self.default_mode not in ['batch', 'single']:
             self.default_mode = 'batch'
-        
+
         self.separator = self._conf.get('manual_mode_separator', ';')
         if self.separator.lower() in ['\\n', 'newline', '换行']:
             self.separator = '\n'
@@ -1515,7 +1526,7 @@ class TikuManual(Tiku):
         self._safe_close_tqdm_bars()
 
         with self._manual_lock:
-            print(f"\n{'='*20} 手动输入题库 (共 {len(q_list)} 题) {'='*20}")
+            print(f"\n{'=' * 20} 手动输入题库 (共 {len(q_list)} 题) {'=' * 20}")
             if self.default_mode == 'batch':
                 ans_list = self._batch_query_flow(q_list)
             else:
@@ -1790,7 +1801,7 @@ class TikuManual(Tiku):
 
     def _print_batch_instructions(self, sep_desc: str) -> None:
         """打印批量输入的使用引导说明."""
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("请依次输入每道题的答案。")
         print(f"格式要求：当前配置要求使用【{sep_desc}】分割各题的答案。")
         print("如果是多选题，答案中的多个选项直接连着写即可（例如：AB 或 AC）。")
@@ -1799,7 +1810,7 @@ class TikuManual(Tiku):
             print("粘贴多行时，每行会被解析为对应一题的答案。")
         else:
             print(f"示例输入: A{self.separator} B{self.separator} 正确{self.separator} 答案1, 答案2{self.separator} 错")
-        print("="*50)
+        print("=" * 50)
 
     def _split_batch_answers(self, raw_input: str, expected_len: int) -> list[str]:
         """根据配置的分割符将批量的答案进行分拆和补齐."""

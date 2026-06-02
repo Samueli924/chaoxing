@@ -156,6 +156,7 @@ def multi_cut(answer: str, origin_html_content="", logger=logger):
     else:
         return res
 
+
 def clean_res(res):
     cleaned_res = []
     if isinstance(res, str):
@@ -165,6 +166,7 @@ def clean_res(res):
         cleaned = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
         cleaned_res.append(cleaned.strip())
     return cleaned_res
+
 
 def normalize_text(text: str) -> str:
     if not isinstance(text, str):
@@ -182,8 +184,10 @@ def normalize_text(text: str) -> str:
     normalized = re.sub(r'[，。！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', normalized)
     return normalized.lower()
 
+
 def get_option_text(option: str) -> str:
     return re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*', '', option).strip()
+
 
 def best_option_by_similarity(target: str, options: list, threshold: float = 0.8) -> str:
     if not target or not options:
@@ -209,9 +213,11 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
         return best_letter
     return ""
 
+
 def is_subsequence(a, o):
     iter_o = iter(o.lower())
     return all(c in iter_o for c in a.lower())
+
 
 def random_answer(options: str, q_type: str) -> str:
     answer = ""
@@ -411,7 +417,6 @@ class Chaoxing:
 
         return data["data"]["activeList"]
 
-
     def pre_sign(self, course: dict, activity_id):
         s = SessionManager.get_session()
         params = {
@@ -433,7 +438,6 @@ class Chaoxing:
             logger.error("Failed to get sign in, return code: " + str(resp.status_code) + "message: " + resp_txt)
 
         return resp_txt
-
 
     def sign_in_normal(self, course: dict, activity_id, name="", obj_id="aaa", lat=-1, lon=-1, type_=SignType.NORMAL):
         s = SessionManager.get_session()
@@ -466,7 +470,6 @@ class Chaoxing:
         logger.warning(f"距离签到位置 {msg}m")
         # TOD0: Implement triangulation for location signs
         return resp_txt
-
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
         _session = SessionManager.get_session()
@@ -779,7 +782,8 @@ class Chaoxing:
                         )
                         time.sleep(random.uniform(2, 4))
                         refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
-                        if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get("duration") is not None:
+                        if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get(
+                                "duration") is not None:
                             _dtoken = refreshed_meta["dtoken"]
                             duration = int(refreshed_meta["duration"])
                             refreshed_play_time = refreshed_meta.get("playTime")
@@ -936,7 +940,8 @@ class Chaoxing:
             logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
             answers = [None] * total_questions
         elif len(answers) != total_questions:
-            logger.error(f"题库返回的答案数量（{len(answers)}）与题目数量（{total_questions}）不匹配，正在补齐或截断以防错位！")
+            logger.error(
+                f"题库返回的答案数量（{len(answers)}）与题目数量（{total_questions}）不匹配，正在补齐或截断以防错位！")
             answers = list(answers) + [None] * (total_questions - len(answers))
             answers = answers[:total_questions]
 
@@ -962,7 +967,7 @@ class Chaoxing:
                                 ):
                                     answer += o[:1]
                                     matched = True
-                                    break # 找到匹配项后立即停止，防止重复添加
+                                    break  # 找到匹配项后立即停止，防止重复添加
                             if not matched:
                                 best_letter = best_option_by_similarity(_a, options_list, threshold=0.8)
                                 if best_letter:
@@ -1007,9 +1012,11 @@ class Chaoxing:
         logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
         # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
         is_manual_mode = (
-            getattr(self.tiku, 'is_manual', False) or
-            self.tiku.__class__.__name__ == 'TikuManual' or
-            (self.tiku.__class__.__name__ == 'TikuFallback' and any(getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in getattr(self.tiku, 'providers', [])))
+                getattr(self.tiku, 'is_manual', False) or
+                self.tiku.__class__.__name__ == 'TikuManual' or
+                (self.tiku.__class__.__name__ == 'TikuFallback' and any(
+                    getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in
+                    getattr(self.tiku, 'providers', [])))
         )
         if self.tiku.get_submit_params() == "1":
             questions["pyFlag"] = "1"

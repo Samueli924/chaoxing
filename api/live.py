@@ -24,14 +24,14 @@ class Live:
         stream_name = self.attachment.get("property", {}).get("streamName")
         vdoid = self.attachment.get("property", {}).get("vdoid")
         user_id = self.defaults.get("userid")
-        
+
         if not all([stream_name, vdoid, user_id]):
             logger.error("缺少直播必要参数，无法提交时长")
             return False
-        
+
         # 构造时长记录请求URL（超星直播时长记录接口）
-        url = f"https://zhibo.chaoxing.com/saveTimePc?streamName={stream_name}&vdoid={vdoid}&userId={user_id}&isStart=0&t={int(time.time()*1000)}&courseId={self.course_id}"
-        
+        url = f"https://zhibo.chaoxing.com/saveTimePc?streamName={stream_name}&vdoid={vdoid}&userId={user_id}&isStart=0&t={int(time.time() * 1000)}&courseId={self.course_id}"
+
         # 发送请求记录时长
         session = SessionManager.get_session()
         try:
@@ -43,20 +43,20 @@ class Live:
             logger.error(f"提交直播时长失败: {str(e)}")
             return False
 
-    def get_status(self) -> dict|None:
+    def get_status(self) -> dict | None:
         """获取直播状态（总时长等信息）"""
         live_id = self.attachment.get("property", {}).get("liveId")
         user_id = self.defaults.get("userid")
         clazz_id = self.defaults.get("clazzId")
         knowledge_id = self.defaults.get("knowledgeid")
-        
+
         if not all([live_id, user_id, clazz_id, knowledge_id]):
             logger.error("缺少直播状态查询必要参数")
             return None
-        
+
         # 构造直播状态请求URL
         status_url = f"https://mooc1.chaoxing.com/ananas/live/liveinfo?liveid={live_id}&userid={user_id}&clazzid={clazz_id}&knowledgeid={knowledge_id}&courseid={self.course_id}&jobid={self.attachment.get('property', {}).get('_jobid', '')}&ut=s"
-        
+
         # 发送请求并解析状态（包含总时长）
         session = SessionManager.get_session()
         try:

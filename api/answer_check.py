@@ -28,7 +28,8 @@ def check_judgement(answer, true_list, false_list):
     val = str(answer).strip().lower()
     if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y'] or val in [x.lower() for x in true_list]:
         return 1
-    elif val in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确'] or val in [x.lower() for x in false_list]:
+    elif val in ['false', 'f', '0', '错', '错误', '×', '否', 'no', 'n', '不对', '不正确'] or val in [x.lower() for x in
+                                                                                                     false_list]:
         return 0
     else:
         return -1

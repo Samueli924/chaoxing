@@ -21,6 +21,7 @@ from requests import session
 
 try:
     from ddddocr import DdddOcr
+
     HAS_DDDDOCR = True
 except ImportError:
     DdddOcr = None
