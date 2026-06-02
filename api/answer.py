@@ -595,6 +595,7 @@ class TikuYanxi(Tiku):
 class TikuGo(Tiku):
     # GO题（网课小工具题库）实现
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化GO题实例."""
         super().__init__(config_path)
         self.name = 'GO题（网课小工具题库）'
         self.api = 'https://q.icodef.com/wyn-nb?v=4'
@@ -765,6 +766,7 @@ class TikuGo(Tiku):
 class TikuLike(Tiku):
     # LIKE知识库实现 参考 https://www.datam.site/
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化LIKE知识库实例"""
         super().__init__(config_path)
         self.name = 'LIKE知识库'
         self.ver = '2.0.0'  # 对应官网API版本
@@ -1086,6 +1088,7 @@ class TikuLike(Tiku):
 class TikuAdapter(Tiku):
     # TikuAdapter题库实现 https://github.com/DokiDoki1103/tikuAdapter
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化TikuAdapter题库实例"""
         super().__init__(config_path)
         self.name = 'TikuAdapter题库'
         self.api = ''
@@ -1135,6 +1138,7 @@ class TikuAdapter(Tiku):
 class AI(Tiku):
     # AI大模型答题实现
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化AI大模型答题实现"""
         super().__init__(config_path)
         self.name = 'AI大模型答题'
         self.last_request_time = None
@@ -1474,6 +1478,7 @@ class TikuManual(Tiku):
     is_manual = True
 
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化手动题库实例"""
         super().__init__(config_path)
         self.name = '手动输入题库'
         self.default_mode = 'batch'
@@ -1861,6 +1866,7 @@ class TikuManual(Tiku):
 
 class DummyTiku(Tiku):
     def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化空题库"""
         super().__init__(config_path)
         self.name = '空/禁用题库'
         self.DISABLE = True
