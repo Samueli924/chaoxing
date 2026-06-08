@@ -7,7 +7,7 @@ from api.config import GlobalConst as gc
 
 
 def pkcs7_unpadding(string):
-    return string[0 : -ord(string[-1])]
+    return string[0: -ord(string[-1])]
 
 
 def pkcs7_padding(s, block_size=16):

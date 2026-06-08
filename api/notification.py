@@ -275,6 +275,7 @@ class Bark(NotificationService):
         except ValueError as e:
             logger.error(f"Bark返回数据解析失败: {e}")
 
+
 class Telegram(NotificationService):
     """
     通过Telegram发送通知
@@ -315,6 +316,7 @@ class Telegram(NotificationService):
             logger.error(f"Telegram通知发送失败: {e}")
         except ValueError as e:
             logger.error(f"Telegram返回数据解析失败: {e}")
+
 
 # 为了向后兼容，保留原来的Notification类
 Notification = DefaultNotification

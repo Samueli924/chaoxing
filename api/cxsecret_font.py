@@ -44,7 +44,7 @@ def resource_path(relative_path: str) -> str:
     except Exception:
         # 非打包环境，使用当前目录
         base_path = os.path.abspath(".")
-    
+
     return os.path.join(base_path, relative_path)
 
 
@@ -66,7 +66,7 @@ class FontHashDAO:
         """
         self.char_map: Dict[str, str] = {}  # unicode -> hash
         self.hash_map: Dict[str, str] = {}  # hash -> unicode
-        
+
         full_path = resource_path(file_path)
         try:
             with open(full_path, "r", encoding="utf-8") as fp:
@@ -122,10 +122,10 @@ def hash_glyph(glyph: Glyph) -> str:
     """
     if glyph.numberOfContours <= 0:
         return ""
-    
+
     pos_data = []
     last_index = 0
-    
+
     for i in range(glyph.numberOfContours):
         end_point = glyph.endPtsOfContours[i]
         for j in range(last_index, end_point + 1):
@@ -133,7 +133,7 @@ def hash_glyph(glyph: Glyph) -> str:
             flag = glyph.flags[j] & 0x01
             pos_data.append(f"{x}{y}{flag}")
         last_index = end_point + 1
-    
+
     pos_bin = "".join(pos_data)
     return hashlib.md5(pos_bin.encode()).hexdigest()
 
@@ -152,7 +152,7 @@ def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
         ValueError: 当无法解析字体数据时
     """
     font_hashmap = {}
-    
+
     # 处理Base64编码的字体数据
     if isinstance(font_data, str) and font_data.startswith("data:application/font-ttf;charset=utf-8;base64,"):
         try:
@@ -186,11 +186,11 @@ def decrypt(dst_fontmap: Dict[str, str], encrypted_text: str) -> str:
         解密后的文本
     """
     result = []
-    
+
     for char in encrypted_text:
         # 构造Unicode字符名称 (如 "uni4E00")
         char_code = f"uni{ord(char):X}"
-        
+
         # 查找字符在目标字体中的哈希值
         if char_code in dst_fontmap:
             dst_hash = dst_fontmap[char_code]
@@ -204,10 +204,10 @@ def decrypt(dst_fontmap: Dict[str, str], encrypted_text: str) -> str:
                     continue
                 except (ValueError, IndexError):
                     pass
-        
+
         # 如果无法解密，则保留原字符
         result.append(char)
-    
+
     # 替换解密后的康熙部首
     decrypted_text = "".join(result).translate(KX_RADICALS_TAB)
     return decrypted_text

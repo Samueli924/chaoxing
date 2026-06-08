@@ -1,10 +1,8 @@
 import time
 
-from api.config import GlobalConst as gc
 from api.live import Live
 from api.logger import logger
-import time
-import threading
+
 
 class LiveProcessor:
     @staticmethod
@@ -33,10 +31,10 @@ class LiveProcessor:
 
         # 循环提交时长（每59秒一次，模拟持续观看）
         for i in range(total_minutes):
-            logger.info(f"直播'{live.name}'已观看{i+1}/{total_minutes}分钟")
+            logger.info(f"直播'{live.name}'已观看{i + 1}/{total_minutes}分钟")
             success = live.do_finish()  # 提交当前时长
             if not success:
-                logger.warning(f"第{i+1}分钟时长提交失败，将重试")
+                logger.warning(f"第{i + 1}分钟时长提交失败，将重试")
                 # 失败重试一次
                 time.sleep(5)
                 live.do_finish()
