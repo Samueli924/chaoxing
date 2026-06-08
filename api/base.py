@@ -299,6 +299,12 @@ class Chaoxing:
                     return self.login(login_with_cookies=False)
                 return {"status": False, "msg": "cookies 已失效，请更新 cookies 或提供账号密码"}
             logger.info("登录成功...")
+            try:
+                realname = self.get_name()
+                if realname:
+                    logger.info(f"当前登录用户: {realname}")
+            except Exception as e:
+                logger.debug(f"获取当前登录用户名失败: {e}")
             return {"status": True, "msg": "登录成功"}
 
         _session = requests.Session()
@@ -320,9 +326,28 @@ class Chaoxing:
             save_cookies(_session)
             SessionManager.update_cookies()
             logger.info("登录成功...")
+            try:
+                realname = self.get_name()
+                if realname:
+                    logger.info(f"当前登录用户: {realname}")
+            except Exception as e:
+                logger.debug(f"获取当前登录用户名失败: {e}")
             return {"status": True, "msg": "登录成功"}
         else:
             return {"status": False, "msg": str(resp.json()["msg2"])}
+
+    @staticmethod
+    def get_name() -> str:
+        _session = SessionManager.get_session()
+        try:
+            resp = _session.get("https://passport2.chaoxing.com/mooc/accountManage", timeout=10)
+            if resp.status_code == 200:
+                match = re.search(r'id="messageName"\s+value="([^"]*)"', resp.text)
+                if match:
+                    return match.group(1).strip()
+        except Exception as e:
+            logger.debug(f"获取用户名失败: {e}")
+        return ""
 
     def _validate_cookie_session(self) -> bool:
         session = SessionManager.get_instance()._session
