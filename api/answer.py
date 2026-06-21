@@ -1131,15 +1131,18 @@ class AI(Tiku):
                         'content': '你好，请回答：1+1 等于几？只回答数字。'
                     }
                 ],
-                max_tokens=64
+                max_tokens=200
             ))
-            
-            if completion.choices and completion.choices[0].message.content:
-                logger.info(f'{self.name} 连接检查成功')
-                return True
-            else:
-                logger.error(f'{self.name} 连接检查失败：未收到响应')
-                return False
+
+            if completion.choices:
+                msg = completion.choices[0].message
+                has_content = bool(msg.content)
+                has_reasoning = bool(getattr(msg, 'reasoning_content', None))
+                if has_content or has_reasoning:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
+            logger.error(f'{self.name} 连接检查失败：未收到响应')
+            return False
                 
         except Exception as e:
             logger.error(f'{self.name} 连接检查失败：{e}')
@@ -1258,7 +1261,7 @@ class SiliconFlow(Tiku):
                     }
                 ],
                 'stream': False,
-                'max_tokens': 10,
+                'max_tokens': 200,
                 'temperature': 0.7,
                 'top_p': 0.7,
                 'response_format': {'type': 'text'}
@@ -1273,9 +1276,13 @@ class SiliconFlow(Tiku):
             
             if response.status_code == 200:
                 result = response.json()
-                if result.get('choices') and result['choices'][0]['message']['content']:
-                    logger.info(f'{self.name} 连接检查成功')
-                    return True
+                if result.get('choices'):
+                    msg = result['choices'][0]['message']
+                    has_content = bool(msg.get('content'))
+                    has_reasoning = bool(msg.get('reasoning_content'))
+                    if has_content or has_reasoning:
+                        logger.info(f'{self.name} 连接检查成功')
+                        return True
                 else:
                     logger.error(f'{self.name} 连接检查失败：未收到有效响应')
                     return False
