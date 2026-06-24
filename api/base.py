@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import functools
 import random
+import secrets
 import re
 import threading
 import time
@@ -1060,6 +1061,7 @@ class Chaoxing:
     def _send_monitor_heartbeat(self, course, point):
         """
         发送章节监控心跳包到 detect.chaoxing.com。
+
         模拟真实浏览器的 JSONP 打点请求，佐证访问行为的真人属性。
 
         Args:
@@ -1067,7 +1069,7 @@ class Chaoxing:
             point: 当前章节信息字典
         """
         version = get_timestamp()
-        callback = f"jsonp{random.randint(10**20, 10**21 - 1)}"
+        callback = f"jsonp{secrets.randbelow(10**21 - 10**20) + 10**20}"
         params = {
             "version": version,
             "refer": "http://i.mooc.chaoxing.com",
@@ -1108,6 +1110,7 @@ class Chaoxing:
                 "microTopicId": 0,
                 "editorPreview": 0,
             },
+            timeout=8,
         )
         if _resp.status_code != 200:
             logger.error(f"空页面任务失败 -> [{_resp.status_code}]{point['title']}")
@@ -1131,6 +1134,7 @@ class Chaoxing:
                 "microTopicId": 0,
                 "editorPreview": 0,
             },
+            timeout=8,
         )
         if _resp.status_code != 200:
             logger.error(f"章节访问失败 -> [{_resp.status_code}]{point['title']}")
@@ -1187,6 +1191,9 @@ class Chaoxing:
         consecutive_failures = 0
         max_consecutive_failures = 10
         logger.info(f"开始增加章节学习次数, 目标总次数: {target_count}, 章节数: {len(points)}")
+        if not points:
+            logger.warning("章节列表为空, 跳过章节学习次数增加")
+            return StudyResult.SUCCESS
         while total < target_count:
             for point in points:
                 if total >= target_count:

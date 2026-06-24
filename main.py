@@ -552,8 +552,8 @@ def main():
         # 刷课完成后，如果开启了增加章节学习次数，则执行
         if add_learning_count:
             logger.info("刷课完成，开始增加章节学习次数...")
+            common_config["target_count"] = target_count
             for course in course_task:
-                common_config["target_count"] = target_count
                 increase_learning_count_for_course(chaoxing, course, common_config)
             logger.info("所有课程章节学习次数增加完成")
             notification.send("chaoxing : 所有课程章节学习次数增加完成")

@@ -66,6 +66,7 @@ def show_progress(task_name: str, start_position: int, duration: int,
 def increase_learning_count_for_course(chaoxing, course, config):
     """
     为单个课程增加章节学习次数。
+
     遍历课程的所有章节，轮询调用 studentstudyAjax，直到总次数达到 target_count。
 
     Args:
