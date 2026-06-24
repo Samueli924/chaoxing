@@ -21,6 +21,7 @@ from api.logger import logger
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
+from api.process import increase_learning_count_for_course
 
 class ChapterResult(enum.Enum):
     SUCCESS=0,
@@ -86,6 +87,20 @@ def parse_args():
 
     parser.add_argument("--auto-sign", action="store_true", help="自动签到")
 
+    parser.add_argument(
+        "-lc",
+        "--add-learning-count",
+        action="store_true",
+        help="开启章节学习次数增加模式",
+    )
+    parser.add_argument(
+        "-tc",
+        "--target-count",
+        type=int,
+        default=100,
+        help="章节学习次数目标总次数 (默认100)",
+    )
+
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
         parser.print_help()
@@ -119,6 +134,10 @@ def load_config_from_file(config_path):
             common_config["notopen_action"] = "retry"
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
+        if "add_learning_count" in common_config:
+            common_config["add_learning_count"] = str_to_bool(common_config["add_learning_count"])
+        if "target_count" in common_config:
+            common_config["target_count"] = int(common_config["target_count"])
         if "username" in common_config and common_config["username"] is not None:
             common_config["username"] = common_config["username"].strip()
         if "password" in common_config and common_config["password"] is not None:
@@ -148,7 +167,9 @@ def build_config_from_args(args):
         "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
         "speed": args.speed if args.speed else 1.0,
         "jobs": args.jobs,
-        "notopen_action": args.notopen_action if args.notopen_action else "retry"
+        "notopen_action": args.notopen_action if args.notopen_action else "retry",
+        "add_learning_count": args.add_learning_count,
+        "target_count": args.target_count,
     }
     return common_config, {}, {}
 
@@ -496,6 +517,10 @@ def main():
         common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
         common_config["notopen_action"] = common_config.get("notopen_action", "retry")
         
+        # 初始化增加章节学习次数配置
+        add_learning_count = str_to_bool(common_config.get("add_learning_count", False))
+        target_count = int(common_config.get("target_count", 100))
+        
         # 初始化超星实例
         chaoxing = init_chaoxing(common_config, tiku_config)
         
@@ -515,14 +540,23 @@ def main():
         
         # 过滤要学习的课程
         course_task = filter_courses(all_course, common_config.get("course_list"))
-        
-        # 开始学习
         logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+
+        # 开始学习
         for course in course_task:
             process_course(chaoxing, course, common_config)
         
         logger.info("所有课程学习任务已完成")
         notification.send("chaoxing : 所有课程学习任务已完成")
+
+        # 刷课完成后，如果开启了增加章节学习次数，则执行
+        if add_learning_count:
+            logger.info("刷课完成，开始增加章节学习次数...")
+            for course in course_task:
+                common_config["target_count"] = target_count
+                increase_learning_count_for_course(chaoxing, course, common_config)
+            logger.info("所有课程章节学习次数增加完成")
+            notification.send("chaoxing : 所有课程章节学习次数增加完成")
         
     except SystemExit as e:
         if e.code != 0:

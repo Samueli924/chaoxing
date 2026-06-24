@@ -1,5 +1,6 @@
 import time
 
+from api.logger import logger
 from api.config import GlobalConst as gc
 
 
@@ -60,3 +61,35 @@ def show_progress(task_name: str, start_position: int, duration: int,
         
         print(progress_text, end="", flush=True)
         time.sleep(gc.THRESHOLD)
+
+
+def increase_learning_count_for_course(chaoxing, course, config):
+    """
+    为单个课程增加章节学习次数。
+    遍历课程的所有章节，轮询调用 studentstudyAjax，直到总次数达到 target_count。
+
+    Args:
+        chaoxing: Chaoxing 实例
+        course: 课程信息字典
+        config: 配置字典，需包含 target_count 字段
+    """
+    target_count = config.get("target_count", 100)
+    logger.info(f"开始为课程 [{course['title']}] 增加章节学习次数, 目标总次数: {target_count}")
+
+    # 获取课程所有章节
+    point_list = chaoxing.get_course_point(
+        course["courseId"], course["clazzId"], course["cpi"]
+    )
+    points = point_list.get("points", [])
+    if not points:
+        logger.warning(f"课程 [{course['title']}] 没有章节, 跳过")
+        return
+
+    logger.info(f"课程 [{course['title']}] 共有 {len(points)} 个章节")
+
+    # 调用核心方法
+    result = chaoxing.increase_chapter_learning_count(course, points, target_count)
+    if result.is_success():
+        logger.info(f"课程 [{course['title']}] 章节学习次数增加完成")
+    else:
+        logger.error(f"课程 [{course['title']}] 章节学习次数增加失败")

@@ -1057,6 +1057,42 @@ class Chaoxing:
             logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
             return StudyResult.SUCCESS
 
+    def _send_monitor_heartbeat(self, course, point):
+        """
+        发送章节监控心跳包到 detect.chaoxing.com。
+        模拟真实浏览器的 JSONP 打点请求，佐证访问行为的真人属性。
+
+        Args:
+            course: 课程信息字典
+            point: 当前章节信息字典
+        """
+        version = get_timestamp()
+        callback = f"jsonp{random.randint(10**20, 10**21 - 1)}"
+        params = {
+            "version": version,
+            "refer": "http://i.mooc.chaoxing.com",
+            "from": "",
+            "fid": self.get_fid(),
+            "jsoncallback": callback,
+            "t": get_timestamp(),
+        }
+        referer_url = (
+            f"https://mooc1.chaoxing.com/mycourse/studentstudy?"
+            f"chapterId={point['id']}&courseId={course['courseId']}"
+            f"&clazzid={course['clazzId']}&cpi={course['cpi']}&mooc2=1"
+        )
+        try:
+            session = SessionManager.get_session()
+            resp = session.get(
+                "https://detect.chaoxing.com/api/monitor",
+                params=params,
+                headers={"Referer": referer_url},
+                timeout=5,
+            )
+            logger.trace(f"Monitor heartbeat sent -> {resp.status_code}")
+        except Exception as e:
+            logger.trace(f"Monitor heartbeat failed (non-critical): {e}")
+
     def study_emptypage(self, _course, point):
         _session = SessionManager.get_session()
         # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
@@ -1079,3 +1115,109 @@ class Chaoxing:
         else:
             logger.info(f"空页面任务完成 -> {point['title']}")
             return StudyResult.SUCCESS
+
+    def _access_chapter_for_count(self, _course, point):
+        _session = SessionManager.get_session()
+        # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
+        _resp = _session.get(
+            url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
+            params={
+                "courseId": _course["courseId"],
+                "clazzid": _course["clazzId"],
+                "chapterId": point["id"],
+                "cpi": _course["cpi"],
+                "verificationcode": "",
+                "mooc2": 1,
+                "microTopicId": 0,
+                "editorPreview": 0,
+            },
+        )
+        if _resp.status_code != 200:
+            logger.error(f"章节访问失败 -> [{_resp.status_code}]{point['title']}")
+            return None
+        else:
+            logger.info(f"章节访问成功 -> {point['title']}")
+            return _resp.text
+
+    def _extract_and_send_setlog(self, html_text):
+        """
+        从 studentstudyAjax 返回的 HTML 中提取 setlog URL 并执行。
+        该 URL 包含服务端生成的 encode 参数，是记录章节学习次数的关键 API。
+
+        Args:
+            html_text: studentstudyAjax 返回的 HTML 内容
+        """
+        match = re.search(
+            r'<script[^>]+src="(https://fystat-ans\.chaoxing\.com/log/setlog[^"]+)"',
+            html_text
+        )
+        if not match:
+            logger.trace("未在响应中找到 setlog URL")
+            return
+
+        setlog_url = match.group(1)
+        try:
+            session = SessionManager.get_session()
+            resp = session.get(setlog_url, timeout=5)
+            logger.trace(f"Setlog sent -> {resp.status_code}")
+        except Exception as e:
+            logger.trace(f"Setlog failed (non-critical): {e}")
+
+    def increase_chapter_learning_count(self, course, points, target_count):
+        """
+        增加课程章节学习次数。
+
+        循环遍历课程的所有章节，每访问一个章节页面：
+        1. 调 studentstudyAjax 获取页面 HTML（含服务端生成的 setlog URL）
+        2. 提取并执行 setlog URL（记录学习次数）
+        3. 立即发送 monitor 心跳包（模拟 fn() 首次心跳）
+        4. 停留 30 秒（模拟前端 setInterval(fn, 30000) 的间隔）
+        5. 再次发送 monitor 心跳包（模拟 30s 后的第二次心跳）
+        6. 计数器 +1，继续下一个章节
+
+        Args:
+            course: 课程信息字典
+            points: 课程所有章节列表
+            target_count: 目标总次数
+
+        Returns:
+            StudyResult: 操作结果
+        """
+        total = 0
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+        logger.info(f"开始增加章节学习次数, 目标总次数: {target_count}, 章节数: {len(points)}")
+        while total < target_count:
+            for point in points:
+                if total >= target_count:
+                    break
+                self.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
+                html_text = self._access_chapter_for_count(course, point)
+                if not html_text:
+                    logger.error(f"章节学习次数增加失败, 当前章节: {point['title']}")
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error(
+                            f"章节学习次数增加连续失败 {consecutive_failures} 次, 终止任务"
+                        )
+                        return StudyResult.ERROR
+                    continue
+
+                consecutive_failures = 0
+
+                # 第 1 步：从 HTML 中提取 setlog URL 并执行（真正的计次 API）
+                self._extract_and_send_setlog(html_text)
+
+                # 第 2 步：立即发送 monitor 心跳包（模拟 fn()）
+                self._send_monitor_heartbeat(course, point)
+
+                # 第 3 步：停留 30 秒（模拟前端 setInterval 间隔）
+                time.sleep(30)
+
+                # 第 4 步：再次发送 monitor 心跳包（模拟 setInterval 触发的第二次心跳）
+                self._send_monitor_heartbeat(course, point)
+
+                total += 1
+                logger.info(f"章节学习次数进度: {total}/{target_count}")
+        logger.info(f"章节学习次数增加完成, 共完成: {total} 次")
+        return StudyResult.SUCCESS
