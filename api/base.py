@@ -1146,6 +1146,7 @@ class Chaoxing:
     def _extract_and_send_setlog(self, html_text):
         """
         从 studentstudyAjax 返回的 HTML 中提取 setlog URL 并执行。
+
         该 URL 包含服务端生成的 encode 参数，是记录章节学习次数的关键 API。
 
         Args:
