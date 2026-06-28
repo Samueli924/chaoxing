@@ -119,6 +119,17 @@ def load_config_from_file(config_path):
             common_config["notopen_action"] = "retry"
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
+        if "force_repeat_learn" in common_config:
+            common_config["force_repeat_learn"] = str_to_bool(common_config["force_repeat_learn"])
+        else:
+            common_config["force_repeat_learn"] = False
+        if "repeat_times" in common_config:
+            try:
+                common_config["repeat_times"] = int(common_config["repeat_times"])
+            except (ValueError, TypeError):
+                common_config["repeat_times"] = 1
+        else:
+            common_config["repeat_times"] = 1
         if "username" in common_config and common_config["username"] is not None:
             common_config["username"] = common_config["username"].strip()
         if "password" in common_config and common_config["password"] is not None:
@@ -148,7 +159,9 @@ def build_config_from_args(args):
         "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
         "speed": args.speed if args.speed else 1.0,
         "jobs": args.jobs,
-        "notopen_action": args.notopen_action if args.notopen_action else "retry"
+        "notopen_action": args.notopen_action if args.notopen_action else "retry",
+        "force_repeat_learn": False,
+        "repeat_times": 1,
     }
     return common_config, {}, {}
 
@@ -324,7 +337,7 @@ class JobProcessor:
                 logger.info("Queue shut down")
                 return
 
-            task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed)
+            task.result = process_chapter(self.chaoxing, self.course, task.point, self.speed, self.config)
 
             match task.result:
                 case ChapterResult.SUCCESS:
@@ -380,10 +393,10 @@ class JobProcessor:
             pass
 
 
-def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, Any], speed:float) -> ChapterResult:
+def process_chapter(chaoxing: Chaoxing, course:dict[str, Any], point:dict[str, Any], speed:float, config: dict) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
-    if point["has_finished"]:
+    if not config.get("force_repeat_learn", False) and point["has_finished"]:
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
         return ChapterResult.SUCCESS
     
@@ -517,12 +530,35 @@ def main():
         course_task = filter_courses(all_course, common_config.get("course_list"))
         
         # 开始学习
-        logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
-        for course in course_task:
-            process_course(chaoxing, course, common_config)
-        
-        logger.info("所有课程学习任务已完成")
-        notification.send("chaoxing : 所有课程学习任务已完成")
+        force_repeat = common_config.get("force_repeat_learn", False)
+        repeat_times = common_config.get("repeat_times", 1)
+
+        if force_repeat:
+            # 无限循环：0 或负数
+            if repeat_times <= 0:
+                logger.info("检测到 force_repeat_learn=true 且 repeat_times<=0，进入无限循环模式 (Ctrl+C 停止)")
+                repeat_iter = iter(lambda: None, None)  # 无限迭代器
+            else:
+                logger.info(f"检测到 force_repeat_learn=true，将循环学习 {repeat_times} 轮")
+                repeat_iter = range(repeat_times)
+
+            for round_num in repeat_iter:
+                # 每轮重新获取章节快照（course_task 已经是过滤后的课程列表，每轮会重新调用 get_course_point）
+                round_label = f"第 {round_num + 1}/{repeat_times}" if repeat_times > 0 else "第 ∞ 轮"
+                logger.info(f"=== {round_label} ===")
+                for course in course_task:
+                    process_course(chaoxing, course, common_config)
+
+            logger.info("所有课程学习任务已完成")
+            notification.send("chaoxing : 所有课程学习任务已完成")
+        else:
+            # 原有逻辑不变
+            logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+            for course in course_task:
+                process_course(chaoxing, course, common_config)
+
+            logger.info("所有课程学习任务已完成")
+            notification.send("chaoxing : 所有课程学习任务已完成")
         
     except SystemExit as e:
         if e.code != 0:
