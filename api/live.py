@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 import time
-from urllib import parse
 
 from api.logger import logger
 

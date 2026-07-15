@@ -15,6 +15,11 @@ from api.font_decoder import FontDecoder
 from api.logger import logger
 
 
+def _normalize_display_spaces(value: str) -> str:
+    """将页面展示文本中的不换行空格和窄空格统一为普通空格。"""
+    return value.translate(str.maketrans({"\u00a0": " ", "\u2009": " ", "\u202f": " "}))
+
+
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
     """
     解析课程列表页面，提取课程信息
@@ -42,9 +47,9 @@ def decode_course_list(html_text: str) -> List[Dict[str, str]]:
             "clazzId": course.select_one("input.clazzId").attrs["value"],
             "courseId": course.select_one("input.courseId").attrs["value"],
             "cpi": re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0],
-            "title": course.select_one("span.course-name").attrs["title"],
-            "desc": course.select_one("p.margint10").attrs["title"] if course.select_one("p.margint10") else "",
-            "teacher": course.select_one("p.color3").attrs["title"]
+            "title": _normalize_display_spaces(course.select_one("span.course-name").attrs["title"]),
+            "desc": _normalize_display_spaces(course.select_one("p.margint10").attrs["title"]) if course.select_one("p.margint10") else "",
+            "teacher": _normalize_display_spaces(course.select_one("p.color3").attrs["title"])
         }
         course_list.append(course_detail)
     
@@ -123,11 +128,16 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
     
     for raw_point in raw_points:
         point = raw_point.div
-        if "id" not in point.attrs:
+        if point is None:
             continue
-            
-        point_id = re.findall(r"^cur(\d{1,20})$", point.attrs["id"])[0]
-        point_title = point.select_one("a.clicktitle").text.replace("\n", "").strip()
+
+        point_id_match = re.fullmatch(r"cur(\d{1,20})", point.attrs.get("id", ""))
+        title_element = point.select_one("a.clicktitle")
+        if not point_id_match or title_element is None:
+            continue
+
+        point_id = point_id_match.group(1)
+        point_title = title_element.get_text().replace("\n", "").strip()
         
         # 提取任务数量
         job_count = 1  # 默认为1
@@ -388,6 +398,10 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
         包含表单数据和问题列表的字典
     """
     soup = BeautifulSoup(html_content, "lxml")
+    form_tag = soup.find("form")
+    if form_tag is None:
+        return {"questions": [], "answerwqbid": ""}
+
     form_data = _extract_form_data(soup)
     
     # 检查是否存在字体加密
@@ -401,7 +415,7 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
     
     # 处理所有问题
     questions = []
-    for div_tag in soup.find("form").find_all("div", class_="singleQuesId"):
+    for div_tag in form_tag.find_all("div", class_="singleQuesId"):
         question = _process_question(div_tag, font_decoder)
         if question:
             questions.append(question)
@@ -468,6 +482,7 @@ def _get_question_type(type_code: str) -> str:
         "0": "single",      # 单选题
         "1": "multiple",    # 多选题
         "2": "completion",  # 填空题
+        "10": "completion", # 新版填空题
         "3": "judgement",   # 判断题
         "4": "shortanswer", # 简答题
     }

@@ -8,7 +8,7 @@ import time
 from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
-from typing import Self, Optional, Literal
+from typing import Optional, Literal
 
 import requests
 from loguru import logger
@@ -16,7 +16,7 @@ from requests import RequestException
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 
-from api.answer import *
+from api.answer import Tiku
 from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
@@ -28,34 +28,125 @@ from api.decode import (
     decode_course_folder,
     decode_questions_info,
 )
-from api.exceptions import MaxRetryExceeded
+from api.exceptions import LoginError, MaxRetryExceeded
 
 
 def get_timestamp():
     return str(int(time.time() * 1000))
 
 
+_COMPLETION_TYPE_CODES = frozenset({"2", "10"})
+
+
+def split_completion_answer(answer, expected_count: int = 0) -> list[str]:
+    """Split completion answers without splitting punctuation inside an answer."""
+    if answer is None:
+        return []
+
+    if isinstance(answer, (list, tuple)):
+        items = [str(item).strip() for item in answer if str(item).strip()]
+        if expected_count == 1:
+            return ["\n".join(items)] if items else []
+        if expected_count > 1 and len(items) > expected_count:
+            return items[: expected_count - 1] + ["\n".join(items[expected_count - 1 :])]
+        return items
+
+    text = str(answer).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return []
+    if expected_count == 1:
+        return [text]
+
+    separator_pattern = r"[\n#]" if expected_count > 1 else r"\n"
+    max_split = expected_count - 1 if expected_count > 1 else 0
+    return [
+        piece.strip()
+        for piece in re.split(separator_pattern, text, maxsplit=max_split)
+        if piece.strip()
+    ]
+
+
+def _positive_int(value, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def build_work_submit_form(form_data: dict) -> dict:
+    """Build the payload expected by addStudentWorkNew.
+
+    Completion questions use one ``answerEditor{id}{index}`` field per blank.
+    Other question types keep the legacy ``answer{id}`` field.
+    """
+    payload = {key: value for key, value in form_data.items() if key != "questions"}
+    save_only = str(payload.get("pyFlag", "")) == "1"
+
+    for question in form_data.get("questions", []):
+        question_id = str(question.get("id", ""))
+        if not question_id:
+            continue
+
+        answer_field = question.get("answerField", {})
+        answer_key = f"answer{question_id}"
+        answer_type_key = f"answertype{question_id}"
+        answer_type = str(answer_field.get(answer_type_key, ""))
+        answer = answer_field.get(answer_key, "")
+        answer_source = question.get(f"answerSource{question_id}", "")
+        if save_only and answer_source != "cover":
+            answer = ""
+
+        payload[answer_type_key] = answer_type
+        is_completion = (
+            question.get("type") == "completion"
+            or answer_type in _COMPLETION_TYPE_CODES
+        )
+        if not is_completion:
+            payload[answer_key] = answer
+            continue
+
+        payload.pop(answer_key, None)
+        size_key = f"tiankongsize{question_id}"
+        declared_count = _positive_int(payload.get(size_key))
+        answers = split_completion_answer(answer, expected_count=declared_count)
+        blank_count = declared_count or max(len(answers), 1)
+        payload[size_key] = blank_count
+        for index in range(1, blank_count + 1):
+            payload[f"answerEditor{question_id}{index}"] = (
+                answers[index - 1] if index <= len(answers) else ""
+            )
+
+    return payload
+
+
 class SessionManager:
     _instance = None
+    _lock = threading.RLock()
 
     def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
-        self._session = requests.Session()
-        self._session.mount("https://", HTTPAdapter(max_retries=10))
-        self._session.mount("http://", HTTPAdapter(max_retries=10))
-        self._session.request = functools.partial(self._session.request, timeout=5)
-        # For debug purposes
-        # self._session.verify=False
-        self._session.headers.clear()
-        self._session.headers.update(gc.HEADERS)
-        self._session.cookies.update(use_cookies())
+        with self._lock:
+            if getattr(self, "_initialized", False):
+                return
+            self._session = requests.Session()
+            self._session.mount("https://", HTTPAdapter(max_retries=10))
+            self._session.mount("http://", HTTPAdapter(max_retries=10))
+            self._session.request = functools.partial(self._session.request, timeout=5)
+            # For debug purposes
+            # self._session.verify=False
+            self._session.headers.clear()
+            self._session.headers.update(gc.HEADERS)
+            self._session.cookies.update(use_cookies())
+            self._initialized = True
 
     @classmethod
-    def get_instance(cls) -> Self:
+    def get_instance(cls) -> "SessionManager":
         return cls()
 
     @classmethod
@@ -138,7 +229,8 @@ class Chaoxing:
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
-            logger.debug(f"Logged in with cookies: {SessionManager.get_instance()._session.cookies}")
+            cookie_count = len(SessionManager.get_instance()._session.cookies)
+            logger.debug("Cookie 登录已载入 {} 个 Cookie", cookie_count)
             if not self._validate_cookie_session():
                 logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
                 if self.account and self.account.username and self.account.password:
@@ -162,7 +254,7 @@ class Chaoxing:
         }
         logger.trace("正在尝试登录...")
         resp = _session.post(_url, headers=gc.HEADERS, data=_data)
-        if resp and resp.json()["status"] == True:
+        if resp and resp.json()["status"]:
             save_cookies(_session)
             SessionManager.update_cookies()
             logger.info("登录成功...")
@@ -327,9 +419,17 @@ class Chaoxing:
         logger.trace("开始读取课程所有章节...")
         _resp = _session.get(_url)
 
+        if _resp.status_code != 200:
+            raise RequestException(f"读取课程章节失败: HTTP {_resp.status_code}")
+        if "passport2.chaoxing.com" in _resp.text or "fanyalogin" in _resp.text:
+            raise LoginError("登录状态已失效，课程章节页面被重定向到登录页")
+
         logger.trace(f"原始章节列表内容:\n{_resp.text}")
         logger.info("课程章节读取成功...")
-        return decode_course_point(_resp.text)
+        course_points = decode_course_point(_resp.text)
+        if not course_points.get("points"):
+            raise ValueError("课程章节页面解析结果为空")
+        return course_points
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
         _session = SessionManager.get_session()
@@ -356,7 +456,7 @@ class Chaoxing:
             if _resp.status_code != 200:
                 logger.error(f"未知错误: {_resp.status_code} 正在跳过")
                 logger.error(_resp.text)
-                return [], {}
+                return [], {"error": f"读取任务点失败: HTTP {_resp.status_code}"}
 
             _job_list, _job_info = decode_course_card(_resp.text)
             if _job_info.get("notOpen", False):
@@ -368,7 +468,9 @@ class Chaoxing:
             job_info.update(_job_info)
 
         if not job_list:
-            self.study_emptypage(course, point)
+            empty_page_result = self.study_emptypage(course, point)
+            if empty_page_result.is_failure():
+                return [], {"error": "空页面任务提交失败"}
 
         logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.info("章节任务点读取成功...")
@@ -511,7 +613,7 @@ class Chaoxing:
             return None
 
         if resp.status_code != 200:
-            logger.debug("刷新视频状态返回码异常: {}" % resp.status_code)
+            logger.debug("刷新视频状态返回码异常: {}", resp.status_code)
             logger.debug(resp.text)
             return None
 
@@ -743,27 +845,6 @@ class Chaoxing:
             # ',' 在常规被正确划分的, 选项中出现, 导致 multi_cut 无法正确划分选项 #391
             # IndexError: Cannot choose from an empty sequence #391
             # 同时为了避免没有考虑到的 case, 应该先按照 '\n' 匹配, 匹配不到再按照其他字符匹配
-            cut_char = [
-                "\n",
-                ",",
-                "，",
-                "|",
-                "\r",
-                "\t",
-                "#",
-                "*",
-                "-",
-                "_",
-                "+",
-                "@",
-                "~",
-                "/",
-                "\\",
-                ".",
-                "&",
-                " ",
-                "、",
-            ]  # 多选答案切割符
             res = cut(answer)
             if res is None:
                 logger.warning(
@@ -954,7 +1035,7 @@ class Chaoxing:
                     answer = "true" if self.tiku.judgement_select(res) else "false"
                 elif q["type"] == "completion":
                     if isinstance(res, list):
-                        answer = "".join(res)
+                        answer = "\n".join(str(item) for item in res)
                     elif isinstance(res, str):
                         answer = res
                 else:
@@ -982,26 +1063,8 @@ class Chaoxing:
         else:
             questions["pyFlag"] = "1"
             logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE * 100:.0f}%，不予提交")
-        # 组建提交表单
-        if questions["pyFlag"] == "1":
-            for q in questions["questions"]:
-                questions.update(
-                    {
-                        f'answer{q["id"]}':
-                            q["answerField"][f'answer{q["id"]}'] if q[f'answerSource{q["id"]}'] == "cover" else '',
-                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                    }
-                )
-        else:
-            for q in questions["questions"]:
-                questions.update(
-                    {
-                        f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
-                        f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                    }
-                )
-
-        del questions["questions"]
+        # 组建提交表单。填空题必须使用 answerEditor{id}{序号} 与 tiankongsize{id}。
+        questions = build_work_submit_form(questions)
 
         res = _session.post(
             "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew",
@@ -1025,10 +1088,16 @@ class Chaoxing:
         )
         if res.status_code == 200:
             res_json = res.json()
-            if res_json["status"]:
+            if res_json.get("status"):
+                if questions["pyFlag"] == "" and str(res_json.get("stuStatus", "")) == "5":
+                    logger.error(
+                        "提交答题成功，但作业未达到及格线 -> {}",
+                        res_json.get("msg", ""),
+                    )
+                    return StudyResult.ERROR
                 logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
             else:
-                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json["msg"]}')
+                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json.get("msg", "未知错误")}')
                 return StudyResult.ERROR
         else:
             logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')

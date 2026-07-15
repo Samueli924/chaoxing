@@ -1,6 +1,7 @@
+import sys
+
 from loguru import logger
 from tqdm import tqdm
-import sys
 
 tqdm_stream = sys.stderr
 
@@ -10,4 +11,10 @@ def tqdm_sink(msg):
 
 logger.remove()
 logger.add(tqdm_sink, colorize=True, enqueue=True)
-logger.add("chaoxing.log", rotation="10 MB", level="TRACE")
+logger.add(
+    "chaoxing.log",
+    rotation="10 MB",
+    retention="14 days",
+    encoding="utf-8",
+    level="TRACE",
+)
