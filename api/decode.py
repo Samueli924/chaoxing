@@ -16,7 +16,7 @@ from api.logger import logger
 
 
 def _normalize_display_spaces(value: str) -> str:
-    """将页面展示文本中的不换行空格和窄空格统一为普通空格。"""
+    """Normalize non-breaking and narrow spaces in displayed text."""
     return value.translate(str.maketrans({"\u00a0": " ", "\u2009": " ", "\u202f": " "}))
 
 

@@ -75,7 +75,8 @@ def _positive_int(value, default: int = 0) -> int:
 
 
 def build_work_submit_form(form_data: dict) -> dict:
-    """Build the payload expected by addStudentWorkNew.
+    """
+    Build the payload expected by addStudentWorkNew.
 
     Completion questions use one ``answerEditor{id}{index}`` field per blank.
     Other question types keep the legacy ``answer{id}`` field.
