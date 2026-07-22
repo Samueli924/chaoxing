@@ -1310,10 +1310,33 @@ class AI(Tiku):
                     logger.error(f'{self.name} 连接检查失败：未收到响应')
                     return False
 
-            except Exception as e:
-                logger.error(f'{self.name} 连接检查失败：{e}')
-                return False
+            # 发送一个简单的测试请求
+            self._wait_for_interval()
+            self.last_request_time = time.time()
+            completion = client.chat.completions.create(**self._completion_kwargs(
+                model=self.model,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': '你好，请回答：1+1 等于几？只回答数字。'
+                    }
+                ],
+                max_tokens=200
+            ))
 
+            if completion.choices:
+                msg = completion.choices[0].message
+                has_content = bool(msg.content)
+                has_reasoning = bool(getattr(msg, 'reasoning_content', None))
+                if has_content or has_reasoning:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
+            logger.error(f'{self.name} 连接检查失败：未收到响应')
+            return False
+                
+        except Exception as e:
+            logger.error(f'{self.name} 连接检查失败：{e}')
+            return False
 
 class SiliconFlow(Tiku):
 
