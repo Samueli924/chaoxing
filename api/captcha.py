@@ -16,17 +16,35 @@ __version__ = "1.0.0"
 from random import randint
 from typing import Optional
 
-from ddddocr import DdddOcr
+from loguru import logger
 from requests import session
 
+try:
+    from ddddocr import DdddOcr
 
-def ocr_init() -> DdddOcr:
+    HAS_DDDDOCR = True
+except ImportError:
+    DdddOcr = None
+    HAS_DDDDOCR = False
+
+
+def ocr_init() -> Optional[DdddOcr]:
     """
     初始化OCR对象
 
     Returns: DdddOcr对象
     """
-    return DdddOcr(show_ad=False)
+    if not HAS_DDDDOCR:
+        logger.warning("未检测到 ddddocr 依赖，自动验证码识别将不可用。如遇403限制请在浏览器端手动完成验证。")
+        return None
+    try:
+        return DdddOcr(show_ad=False)
+    except Exception as e:
+        logger.warning(f"ddddocr 初始化失败: {e}，自动验证码识别将不可用")
+        return None
+
+
+_MISSING = object()
 
 
 class CxCaptcha:
@@ -50,14 +68,14 @@ class CxCaptcha:
         'submit': '/html/processVerify.ac'
     }
 
-    def __init__(self, user_agent: str, cookies: str, ocr: Optional[DdddOcr] = None):
+    def __init__(self, user_agent: str, cookies: str, ocr: Optional[DdddOcr] = _MISSING):
         """
         初始化 CxCaptcha 实例。
 
         Args:
             user_agent (str): 用户代理字符串。
             cookies (str): 会话 cookies。
-            ocr (DdddOcr, optional): 已初始化的 DdddOcr 对象。默认为 None。据DdddOcr官方说明，每次初始化和初始化后的首次识别速度都非常慢，所以推荐传入一个现成的DdddOcr对象实现复用。
+            ocr (DdddOcr, optional): 已初始化的 DdddOcr 对象。如果未提供则自动初始化；如果显式传入 None 则禁用 OCR。据DdddOcr官方说明，每次初始化和初始化后的首次识别速度都非常慢，所以推荐传入一个现成的DdddOcr对象实现复用。
         """
 
         self.user_agent = user_agent
@@ -70,7 +88,7 @@ class CxCaptcha:
         })
         self.s.verify = False
 
-        self.ocr = ocr if ocr else ocr_init()
+        self.ocr = ocr_init() if ocr is _MISSING else ocr
 
     def getCaptcha(self) -> Optional[bytes]:
         """
@@ -115,11 +133,14 @@ class CxCaptcha:
         使用 DdddOcr 对验证码图片进行识别。
 
         Args:
-            img (bytes): 验证码图片的二进制数据。
+            img (bytes): 验证码图片的二进制数据.
 
         Returns:
             str: 返回识别出的验证码字符串。
         """
+        if not self.ocr:
+            logger.error("ddddocr 实例未成功初始化，无法执行验证码识别")
+            raise RuntimeError("ddddocr is not available")
         res = self.ocr.classification(img)
         return res
 
@@ -132,8 +153,12 @@ class CxCaptcha:
         Returns:
             bool: 如果验证码成功通过验证，则返回 True；否则返回 False。
         """
-        cap_img = self.getCaptcha()
-        if not cap_img:
+        try:
+            cap_img = self.getCaptcha()
+            if not cap_img:
+                return False
+            cap_token = self.recognition(cap_img)
+            return self.submitCaptcha(cap_token)
+        except Exception as e:
+            logger.error(f"验证码自动验证时发生异常: {e}")
             return False
-        cap_token = self.recognition(cap_img)
-        return self.submitCaptcha(cap_token)
