@@ -1282,16 +1282,18 @@ class AI(Tiku):
         with self._lock:
             logger.info(f'正在检查 {self.name} 连接...')
             try:
+                # 初始化客户端
                 if self.http_proxy:
                     httpx_client = httpx.Client(proxy=self.http_proxy)
                     client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
                 else:
                     client = OpenAI(base_url=self.endpoint, api_key=self.key)
 
-                # 发送一个简单的测试请求
+                # 限流等待
                 self._wait_for_interval()
                 self.last_request_time = time.time()
 
+                # 发送测试请求
                 completion = client.chat.completions.create(**self._completion_kwargs(
                     model=self.model,
                     messages=[
@@ -1300,43 +1302,22 @@ class AI(Tiku):
                             'content': '你好，请回答：1+1 等于几？只回答数字。'
                         }
                     ],
-                    max_tokens=64
+                    max_tokens=200  # 增大以支持可能返回的 reasoning_content
                 ))
 
-                if completion.choices and completion.choices[0].message.content:
-                    logger.info(f'{self.name} 连接检查成功')
-                    return True
-                else:
-                    logger.error(f'{self.name} 连接检查失败：未收到响应')
-                    return False
+                # 统一检查响应
+                if completion.choices:
+                    msg = completion.choices[0].message
+                    if msg.content or getattr(msg, 'reasoning_content', None):
+                        logger.info(f'{self.name} 连接检查成功')
+                        return True
 
-            # 发送一个简单的测试请求
-            self._wait_for_interval()
-            self.last_request_time = time.time()
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': '你好，请回答：1+1 等于几？只回答数字。'
-                    }
-                ],
-                max_tokens=200
-            ))
+                logger.error(f'{self.name} 连接检查失败：未收到响应')
+                return False
 
-            if completion.choices:
-                msg = completion.choices[0].message
-                has_content = bool(msg.content)
-                has_reasoning = bool(getattr(msg, 'reasoning_content', None))
-                if has_content or has_reasoning:
-                    logger.info(f'{self.name} 连接检查成功')
-                    return True
-            logger.error(f'{self.name} 连接检查失败：未收到响应')
-            return False
-                
-        except Exception as e:
-            logger.error(f'{self.name} 连接检查失败：{e}')
-            return False
+            except Exception as e:
+                logger.error(f'{self.name} 连接检查失败：{e}')
+                return False
 
 class SiliconFlow(Tiku):
 
