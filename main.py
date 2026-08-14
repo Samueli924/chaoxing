@@ -178,10 +178,10 @@ def build_config_from_args(args):
         "username": args.username,
         "password": args.password,
         "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
-        "speed": args.speed if args.speed else 1.0,
+        "speed": args.speed or 1.0,
         "jobs": args.jobs,
-        "notopen_action": args.notopen_action if args.notopen_action else "retry",
-        "retry_interval": args.retry_interval if args.retry_interval else 1.0
+        "notopen_action": args.notopen_action or "retry",
+        "retry_interval": args.retry_interval or 1.0,
         "add_learning_count": args.add_learning_count,
         "target_count": args.target_count,
     }

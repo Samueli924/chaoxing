@@ -936,7 +936,7 @@ class Chaoxing:
             questions = decode_questions_info(_resp.text)
 
             if _resp.status_code == 200 and questions.get("questions"):
-                return (_resp, questions)
+                return _resp, questions
 
             logger.warning(
                 f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中...")
