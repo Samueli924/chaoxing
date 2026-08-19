@@ -52,8 +52,15 @@ class JobProcessorTestCase(unittest.TestCase):
 
     def _run_with_timeout(self, processor, timeout=5.0):
         """在独立线程中运行 run()，超时抛出异常，避免旧代码无限重试导致测试永久卡死。"""
-        result = {}
-        thread = threading.Thread(target=lambda: result.setdefault("done", processor.run()))
+        exception = {}
+
+        def target():
+            try:
+                processor.run()
+            except BaseException as exc:  # noqa: BLE001 - 子线程异常需在主线程重新抛出
+                exception["exc"] = exc
+
+        thread = threading.Thread(target=target)
         thread.daemon = True
         thread.start()
         thread.join(timeout)
@@ -61,6 +68,8 @@ class JobProcessorTestCase(unittest.TestCase):
             self.fail(
                 f"JobProcessor.run() 超过 {timeout}s 未返回，疑似无限重试（Issue #612）"
             )
+        if exception:
+            raise exception["exc"]
 
     def _not_open_job_info(self):
         return {"jobs": [], "job_info": {"notOpen": True}}
