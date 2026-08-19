@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-针对 Issue #612 的回归测试：未开放章节 (NOT_OPEN) 不再无限重试.
-
-不依赖任何第三方测试框架，仅使用 Python 标准库 unittest。
-
-main.py 使用相对的 ``from api...`` 导入，因此需要把仓库根目录
-（main.py 所在目录）加入 sys.path，使测试能在任意 cwd 下运行。
-"""
+"""Issue #612 的回归测试：未开放章节不再无限重试."""
 import os
 import sys
 import threading
