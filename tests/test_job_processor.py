@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""针对 Issue #612 的回归测试：未开放章节 (NOT_OPEN) 不再无限重试。
+"""
+针对 Issue #612 的回归测试：未开放章节 (NOT_OPEN) 不再无限重试.
 
 不依赖任何第三方测试框架，仅使用 Python 标准库 unittest。
 
@@ -17,9 +18,10 @@ import main  # noqa: E402
 
 
 class DummyChaoxing:
-    """仅提供 process_chapter 所需的最小接口，不发任何网络请求。"""
+    """仅提供 process_chapter 所需的最小接口，不发任何网络请求."""
 
     def __init__(self, job_info):
+        """初始化测试替身，保存固定的任务点数据."""
         self.job_info = job_info
         self.rate_limiter = _NoopRateLimiter()
 
@@ -51,7 +53,7 @@ class JobProcessorTestCase(unittest.TestCase):
         return processor, task
 
     def _run_with_timeout(self, processor, timeout=5.0):
-        """在独立线程中运行 run()，超时抛出异常，避免旧代码无限重试导致测试永久卡死。"""
+        """在独立线程中运行 run()，超时抛出异常，避免旧代码无限重试导致测试永久卡死."""
         exception = {}
 
         def target():
