@@ -145,6 +145,13 @@ def load_config_from_file(config_path):
             common_config["retry_interval"] = float(common_config["retry_interval"])
         else:
             common_config["retry_interval"] = 1.0
+        if "work_max_retries" in common_config:
+            try:
+                common_config["work_max_retries"] = int(common_config["work_max_retries"])
+            except ValueError:
+                common_config["work_max_retries"] = 3
+        else:
+            common_config["work_max_retries"] = 3
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
         if "add_learning_count" in common_config:
@@ -236,8 +243,16 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
 
     query_delay = tiku_config.get("delay", 0)
 
+    # 章节检测答错后允许的最大重做次数（答错时反馈给AI并重新提交，直到全部正确）
+    work_max_retries = common_config.get("work_max_retries", 3)
+
     # 实例化超星API
-    chaoxing = Chaoxing(account=account, tiku=tiku, query_delay=query_delay)
+    chaoxing = Chaoxing(
+        account=account,
+        tiku=tiku,
+        query_delay=query_delay,
+        work_max_retries=work_max_retries,
+    )
 
     return chaoxing
 
