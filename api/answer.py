@@ -4,6 +4,7 @@ import os
 import random
 import re
 import shutil
+import sqlite3
 import tempfile
 import threading
 import time
@@ -24,7 +25,7 @@ from api.logger import logger
 disable_warnings(exceptions.InsecureRequestWarning)
 
 __all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow",
-           "TikuManual"]
+           "TikuManual", "TikuLocal", "Bailian"]
 
 
 class CacheDAO:
@@ -252,6 +253,7 @@ class Tiku(ABC):
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {answer}")
                 if check_answer(answer, q_info['type'], self):
                     cache_dao.add_cache(q_info['title'], answer)
+                    self._save_auto(q_info, answer)
                     return answer
                 else:
                     logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
@@ -318,6 +320,13 @@ class Tiku(ABC):
     def _query(self, q_info: dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
+        """
+        pass
+
+    def _save_auto(self, q_info: dict, answer: str):
+        """
+        自动保存钩子。上游题库搜到答案后可存入本地库，默认不保存，
+        由 TikuLocal 等子类重写。
         """
         pass
 
@@ -1877,6 +1886,138 @@ class DummyTiku(Tiku):
         return None
 
 
+class TikuLocal(Tiku):
+    """本地 SQLite 题库。查询本地库；配合 _save_auto 可自动积累答案。"""
+
+    def __init__(self, config_path: Optional[str] = None):
+        super().__init__(config_path)
+        self.name = '本地题库'
+        self._db_path = None
+        self._conn = None
+
+    def _init_tiku(self):
+        self._db_path = self._conf.get(
+            'db_path',
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'tiku.db')
+        )
+        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        self._conn.execute('''
+            CREATE TABLE IF NOT EXISTS tiku (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                type TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_question ON tiku(question)')
+        self._conn.commit()
+        self._conn.execute('PRAGMA journal_mode=WAL')
+        logger.info(f'本地题库已初始化: {self._db_path}')
+
+    def _query(self, q_info: dict):
+        title = q_info.get('title', '').strip()
+        if not title or not self._conn:
+            return None
+        cur = self._conn.cursor()
+        cur.execute('SELECT answer FROM tiku WHERE question = ?', (title,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        cur.execute('SELECT answer FROM tiku WHERE question LIKE ? LIMIT 1', (f'%{title}%',))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+    def add_question(self, question: str, answer: str, q_type: str = ''):
+        try:
+            self._conn.execute(
+                'INSERT OR IGNORE INTO tiku (question, answer, type) VALUES (?, ?, ?)',
+                (question, answer, q_type)
+            )
+            self._conn.commit()
+        except Exception as e:
+            logger.debug(f'添加题目失败: {e}')
+
+    def _save_auto(self, q_info: dict, answer: str):
+        if self.name == '本地题库':
+            return
+        self.add_question(q_info['title'], answer, q_info.get('type', ''))
+
+    def stats(self) -> dict:
+        cur = self._conn.cursor()
+        cur.execute('SELECT COUNT(*) FROM tiku')
+        total = cur.fetchone()[0]
+        cur.execute('SELECT type, COUNT(*) FROM tiku GROUP BY type')
+        return {'total': total, 'by_type': dict(cur.fetchall())}
+
+    def close(self):
+        if self._conn:
+            self._conn.close()
+
+
+class Bailian(Tiku):
+    """阿里云百炼（DashScope OpenAI 兼容接口）答题实现。"""
+
+    def __init__(self, config_path: Optional[str] = None):
+        super().__init__(config_path)
+        self.name = '阿里云百炼'
+        self.last_request_time = None
+
+    def _query(self, q_info: dict):
+        def remove_md_json_wrapper(md_str):
+            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
+            match = re.search(pattern, md_str, re.DOTALL)
+            return match.group(1).strip() if match else md_str.strip()
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        prompts = {
+            "single": "本题为单选题，请选择唯一正确答案，输出选项的具体内容而非ABCD，以JSON格式输出：{\"Answer\": [\"正确选项内容\"]}。不要输出多余内容。",
+            "multiple": "本题为多选题，请选择所有正确选项，输出选项的具体内容而非ABCD，以JSON格式输出：{\"Answer\": [\"选项1\",\"选项2\"]}。不要输出多余内容。",
+            "completion": "本题为填空题，请直接给出填空内容，以JSON格式输出：{\"Answer\": [\"答案文本\"]}。不要输出多余内容。",
+            "judgement": "本题为判断题，请回答'正确'或'错误'，以JSON格式输出：{\"Answer\": [\"正确\"]}。不要输出多余内容。",
+        }
+        system_prompt = prompts.get(q_info['type'], prompts["single"])
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"}
+            ],
+            "stream": False,
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "top_p": 0.7,
+        }
+        if self.last_request_time:
+            interval = time.time() - self.last_request_time
+            if interval < self.min_interval:
+                time.sleep(self.min_interval - interval)
+        try:
+            response = requests.post(self.api_endpoint, headers=headers, json=payload, timeout=30)
+            self.last_request_time = time.time()
+            if response.status_code == 200:
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+                parsed = json.loads(remove_md_json_wrapper(content))
+                return "\n".join(parsed['Answer']).strip()
+            logger.error(f"API请求失败：{response.status_code} {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"百炼API异常：{e}")
+            return None
+
+    def _init_tiku(self):
+        self.api_endpoint = self._conf.get(
+            'bailian_endpoint', 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions')
+        self.api_key = self._conf['bailian_key']
+        self.model_name = self._conf.get('bailian_model', 'qwen-plus')
+        self.min_interval = int(self._conf.get('min_interval_seconds', 3))
+
+
 PROVIDER_REGISTRY = {
     'TikuYanxi': TikuYanxi,
     'TikuGo': TikuGo,
@@ -1885,4 +2026,6 @@ PROVIDER_REGISTRY = {
     'AI': AI,
     'SiliconFlow': SiliconFlow,
     'TikuManual': TikuManual,
+    'TikuLocal': TikuLocal,
+    'Bailian': Bailian,
 }
