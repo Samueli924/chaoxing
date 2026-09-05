@@ -239,12 +239,15 @@ class Tiku(ABC):
         if not self._is_manual_mode:
             logger.debug(f"处理后标题：{q_info['title']}")
 
-        # 先过缓存
-        cache_dao = CacheDAO()
-        answer = cache_dao.get_cache(q_info['title'])
-        if answer:
-            logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
-            return answer.strip()
+        # 先过缓存（若存在章节检测错误反馈，说明处于重做模式，跳过缓存让大模型参考反馈重新作答）
+        if not getattr(self, 'work_feedback', None):
+            cache_dao = CacheDAO()
+            answer = cache_dao.get_cache(q_info['title'])
+            if answer:
+                logger.info(f"从缓存中获取答案：{q_info['title']} -> {answer}")
+                return answer.strip()
+            else:
+                answer = self._query(q_info)
         else:
             answer = self._query(q_info)
             if answer:
@@ -268,6 +271,7 @@ class Tiku(ABC):
         pending_indices = []
 
         cache_dao = CacheDAO()
+        skip_cache = bool(getattr(self, 'work_feedback', None))
         for idx, q in enumerate(q_list):
             if not self._is_manual_mode:
                 logger.debug(f"原始标题：{q['title']}")
@@ -275,6 +279,11 @@ class Tiku(ABC):
             q['title'] = sub(r'（\d+\.\d+分）$', '', q['title'])
             if not self._is_manual_mode:
                 logger.debug(f"处理后标题：{q['title']}")
+
+            if skip_cache:
+                # 重做模式：不走缓存，让大模型参考错误反馈重新作答
+                pending_indices.append(idx)
+                continue
 
             answer = cache_dao.get_cache(q['title'])
             if answer:
@@ -318,6 +327,16 @@ class Tiku(ABC):
     def _query(self, q_info: dict) -> Optional[str]:
         """
         查询接口, 交由自定义题库实现
+        """
+        pass
+
+
+    def set_work_feedback(self, feedback) -> None:
+        """
+        设置上一轮章节检测的错误反馈，供支持反馈的大模型题库在重新作答时参考。
+
+        Args:
+            feedback: 错误反馈，可以是 str 或 list[str]（描述哪些题目答错、正确答案是什么）
         """
         pass
 
@@ -528,6 +547,15 @@ class TikuFallback(Tiku):
             pending_indices = next_pending_indices
 
         return results
+
+    def set_work_feedback(self, feedback) -> None:
+        """将章节检测错误反馈转发给支持反馈的子题库（如 AI 大模型）."""
+        for provider in self.providers:
+            if hasattr(provider, 'set_work_feedback'):
+                try:
+                    provider.set_work_feedback(feedback)
+                except Exception as e:
+                    logger.warning(f"向子题库 {provider.name} 设置错误反馈失败: {e}")
 
     def check_llm_connection(self) -> bool:
         for provider in self.providers:
@@ -1143,6 +1171,31 @@ class AI(Tiku):
         self.name = 'AI大模型答题'
         self.last_request_time = None
         self._lock = threading.Lock()
+        self.work_feedback = None  # 章节检测错误反馈（重做时参考）
+
+    def set_work_feedback(self, feedback) -> None:
+        """
+        设置章节检测上一轮的错误反馈，供重新作答时参考。
+
+        Args:
+            feedback: str 或 list[str]，描述答错的题目与正确答案
+        """
+        self.work_feedback = feedback
+
+    def _build_work_feedback_text(self) -> str:
+        """将 work_feedback 转为提示词文本."""
+        fb = self.work_feedback
+        if not fb:
+            return ""
+        if isinstance(fb, str):
+            return fb
+        lines = [
+            "你上一次作答的章节检测中有以下题目回答错误，"
+            "请根据题目与正确答案仔细思考错因，纠正你的判断，本次作答务必保证每道题都正确："
+        ]
+        for item in fb:
+            lines.append(str(item))
+        return "\n".join(lines)
 
     def _is_deepseek_v4(self) -> bool:
         return (
@@ -1185,78 +1238,75 @@ class AI(Tiku):
         options_list = q_info['options'].split('\n')
         cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
         options = "\n".join(cleaned_options)
+
+        # 上一轮章节检测的错误反馈（若有）
+        feedback_text = self._build_work_feedback_text()
+
+        def _make_messages(system_content: str, user_content: str) -> list:
+            """构造带反馈上下文的消息列表."""
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+            ]
+            if feedback_text:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": feedback_text
+                    }
+                )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            )
+            return messages
+
         # 判断题目类型
         self._wait_for_interval()
         self.last_request_time = time.time()
         if q_info['type'] == "single":
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
-                    },
-                    {
-                        "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{options}"
-                    }
-                ]
+                messages=_make_messages(
+                    "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+                    f"题目：{q_info['title']}\n选项：{options}"
+                )
             ))
         elif q_info['type'] == 'multiple':
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
-                    },
-                    {
-                        "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{options}"
-                    }
-                ]
+                messages=_make_messages(
+                    "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+                    f"题目：{q_info['title']}\n选项：{options}"
+                )
             ))
         elif q_info['type'] == 'completion':
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
-                    },
-                    {
-                        "role": "user",
-                        "content": f"题目：{q_info['title']}"
-                    }
-                ]
+                messages=_make_messages(
+                    "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+                    f"题目：{q_info['title']}"
+                )
             ))
         elif q_info['type'] == 'judgement':
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
-                    },
-                    {
-                        "role": "user",
-                        "content": f"题目：{q_info['title']}"
-                    }
-                ]
+                messages=_make_messages(
+                    "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+                    f"题目：{q_info['title']}"
+                )
             ))
         else:
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
-                    },
-                    {
-                        "role": "user",
-                        "content": f"题目：{q_info['title']}"
-                    }
-                ]
+                messages=_make_messages(
+                    "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+                    f"题目：{q_info['title']}"
+                )
             ))
 
         try:
