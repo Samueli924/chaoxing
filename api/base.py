@@ -369,12 +369,12 @@ def normalize_answer_text(ans) -> str:
     交由调用方的满分分数兜底处理.
     """
     s = re.sub(r'\s+', '', str(ans or '')).upper()
-    if re.fullmatch(r'[A-Z0-9]+', s):
-        return s
     if s in _JUDGE_TRUE_SET:
         return 'TRUE'
     if s in _JUDGE_FALSE_SET:
         return 'FALSE'
+    if re.fullmatch(r'[A-Z0-9]+', s):
+        return s
     s = re.sub(r'^[A-Z][.、:：)?）]', '', s)
     s = re.sub(r'[，。、！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', s)
     return s
@@ -1376,6 +1376,7 @@ class Chaoxing:
                         for q in detail:
                             if not q.get("parse_ok", True):
                                 unknown += 1
+                                all_correct = False
                                 continue
                             my_ans = (q.get("my_answer") or "").strip()
                             correct_ans = (q.get("correct_answer") or "").strip()
@@ -1442,6 +1443,7 @@ class Chaoxing:
         for q in detail:
             if not q.get("parse_ok", True):
                 unknown += 1
+                all_correct = False
                 continue
             my_ans = (q.get("my_answer") or "").strip()
             correct_ans = (q.get("correct_answer") or "").strip()

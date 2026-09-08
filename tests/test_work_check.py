@@ -16,6 +16,16 @@ class NormalizeAnswerTextTest(unittest.TestCase):
         self.assertEqual(normalize_answer_text('false'), normalize_answer_text('错误'))
         self.assertNotEqual(normalize_answer_text('true'), normalize_answer_text('false'))
 
+    def test_judge_letter_aliases(self):
+        """单字母别名 T/F/1/0/Y/N/X 应与 true/false 归一一致(不被字母数字短路)."""
+        self.assertEqual(normalize_answer_text('T'), 'TRUE')
+        self.assertEqual(normalize_answer_text('F'), 'FALSE')
+        self.assertEqual(normalize_answer_text('1'), 'TRUE')
+        self.assertEqual(normalize_answer_text('0'), 'FALSE')
+        self.assertEqual(normalize_answer_text('Y'), 'TRUE')
+        self.assertEqual(normalize_answer_text('N'), 'FALSE')
+        self.assertEqual(normalize_answer_text('X'), 'FALSE')
+
     def test_letter_answer_kept(self):
         """纯字母答案不能被前缀剥离破坏."""
         self.assertEqual(normalize_answer_text('B'), 'B')
