@@ -293,6 +293,10 @@ def _parse_work_record_list(html_text: str) -> list[tuple[int, float]]:
     records = []
     times_list = re.findall(r'viewNum">第(\d+)次', html_text)
     scores = re.findall(r'viewScore">([\d.]+)分', html_text)
+    if len(times_list) != len(scores):
+        # 次数/成绩数量不齐时 zip 会错位, 成绩按 0 处理(放弃分数捷径, 仅做逐题比对)
+        logger.warning(f"作答记录次数/成绩数量不匹配({len(times_list)}/{len(scores)}), 成绩按0处理")
+        scores = ['0'] * len(times_list)
     for t, s in zip(times_list, scores):
         try:
             records.append((int(t), float(s)))
@@ -326,22 +330,54 @@ def _parse_work_record_detail(html_text: str) -> list[dict]:
             title = ""
         title = re.sub(r'\s+', ' ', title).strip()
 
-        # 我的答案
-        mam = re.search(r'我的答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        my_answer = re.sub(r'<[^>]+>', '', mam.group(1)).strip() if mam else ''
+        # 我的答案/正确答案: 多模式匹配, 兼容属性顺序变化与额外 class 的页面变体
+        ans_patterns = [
+            r'{label}[:：]</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>',
+            r'{label}[:：]\s*</span>\s*<div[^>]*class="[^"]*answerCon[^"]*"[^>]*>\s*(.*?)\s*</div>',
+            r'{label}[:：]\s*</span>\s*<span[^>]*>\s*(.*?)\s*</span>',
+        ]
 
-        # 正确答案
-        cam = re.search(r'正确答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        correct_answer = re.sub(r'<[^>]+>', '', cam.group(1)).strip() if cam else ''
+        def _extract_answer(label):
+            for pat in ans_patterns:
+                m = re.search(pat.format(label=label), qb, re.S)
+                if m:
+                    return re.sub(r'<[^>]+>', '', m.group(1)).strip()
+            return None
+
+        my_raw = _extract_answer('我的答案')
+        correct_raw = _extract_answer('正确答案')
 
         questions.append({
             "id": qid,
             "title": title,
             "type_label": type_label,
-            "my_answer": my_answer,
-            "correct_answer": correct_answer,
+            "my_answer": my_raw or '',
+            "correct_answer": correct_raw or '',
+            "parse_ok": my_raw is not None and correct_raw is not None,
         })
     return questions
+
+
+_JUDGE_TRUE_SET = {'TRUE', 'T', '1', '对', '正确', '√', '是', 'YES', 'Y'}
+_JUDGE_FALSE_SET = {'FALSE', 'F', '0', '错', '错误', '×', 'X', '否', 'NO', 'N', '不对', '不正确'}
+
+
+def normalize_answer_text(ans) -> str:
+    """作答详情答案归一化: 消除 对/错与true/false、全半角标点等格式差异.
+
+    归一化是确定性的, 两侧同格式必然相等; 跨格式差异(如字母 vs 选项全文)
+    交由调用方的满分分数兜底处理.
+    """
+    s = re.sub(r'\s+', '', str(ans or '')).upper()
+    if s in _JUDGE_TRUE_SET:
+        return 'TRUE'
+    if s in _JUDGE_FALSE_SET:
+        return 'FALSE'
+    if re.fullmatch(r'[A-Z0-9]+', s):
+        return s
+    s = re.sub(r'^[A-Z][.、:：)?）]', '', s)
+    s = re.sub(r'[，。、！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', s)
+    return s
 
 
 class Chaoxing:
@@ -1008,12 +1044,17 @@ class Chaoxing:
             raise RuntimeError(f"请求返回无效数据 (Code: {_resp.status_code})")
 
         # 章节检测最大重做次数（答错后收集错误反馈并重新提交，直到全对）
-        try:
-            max_retries = max(1, int(self.kwargs.get("work_max_retries", 3)))
-        except (TypeError, ValueError):
-            max_retries = 3
+        # work_redo_enabled=false 时为单轮模式: 提交+检查+报告成绩, 不自动重做(适用于只允许作答一次的课程)
+        if bool(self.kwargs.get("work_redo_enabled", False)):
+            try:
+                max_retries = max(1, int(self.kwargs.get("work_max_retries", 3)))
+            except (TypeError, ValueError):
+                max_retries = 3
+        else:
+            max_retries = 0
         query_delay = self.kwargs.get("query_delay", 0)
         feedback_history = None
+        last_submitted_score = None
 
         for attempt in range(max_retries + 1):
             if attempt > 0:
@@ -1030,7 +1071,11 @@ class Chaoxing:
                 logger.warning(f"跳过章节检测: {e}")
                 return StudyResult.SUCCESS
             except Exception as e:
-                logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
+                if attempt > 0:
+                    logger.error(f"重做轮无法获取题目(上一轮提交成绩 {last_submitted_score} 分), "
+                                 f"该课程可能仅允许作答一次: {e}")
+                else:
+                    logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
                 return StudyResult.ERROR
 
             _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
@@ -1199,18 +1244,38 @@ class Chaoxing:
                 # 无法获取成绩详情（如接口异常），按原行为返回成功，避免误判失败
                 return StudyResult.SUCCESS
 
+            score = float(result_info.get("score", 0.0) or 0.0)
+            unknown = int(result_info.get("unknown", 0) or 0)
             if result_info.get("all_correct", False):
-                logger.info(f"章节检测全部正确（成绩 {result_info.get('score', '?')} 分），通过！")
+                logger.info(f"章节检测全部正确（成绩 {score} 分），通过！")
+                return StudyResult.SUCCESS
+            if score >= 99.95:
+                # 逐题比对存在格式差异或解析失配, 但满分成绩说明实际全对, 以分数为准
+                if unknown > 0:
+                    logger.warning(f"成绩 {score} 分达到满分, 以分数为准通过"
+                                   f"（{unknown} 题答案字段未能解析, 建议人工复核）")
+                else:
+                    logger.info(f"逐题比对存在格式差异, 但成绩 {score} 分达到满分, 以分数为准, 通过！")
+                return StudyResult.SUCCESS
+            if unknown > 0:
+                # 解析失配且未达满分: 判定不可信, 不触发重做, 保留已提交成绩
+                logger.warning(f"{unknown} 题答案字段解析失败且成绩 {score} 分未达满分, 跳过重做判定")
                 return StudyResult.SUCCESS
 
             # 7. 未全对：收集错误反馈，进入下一轮重做
             feedback_history = result_info.get("feedback", [])
             wrong_count = len(feedback_history)
+            if attempt >= max_retries:
+                # 已是最后一轮(含单轮模式), 保留已提交成绩, 不再触发无意义的重做
+                logger.warning(f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
+                               f"已保留本次成绩, 请人工检查处理")
+                return StudyResult.SUCCESS
             logger.warning(
-                f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {result_info.get('score', '?')} 分），"
+                f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
                 f"已将错误反馈给AI，准备重新作答提交 (第 {attempt + 1}/{max_retries + 1} 轮)"
             )
             self.rollback_times += 1
+            last_submitted_score = score
 
         # 达到最大重试次数仍未全对
         logger.error(f"章节检测重试 {max_retries + 1} 次仍未全部正确，请人工检查处理")
@@ -1293,8 +1358,8 @@ class Chaoxing:
                 )
                 html = resp.text
                 if 'answerwqbid' in html:
-                    # 可编辑页面：说明未全部正确，可重新作答
-                    logger.warning("题目页仍可编辑，判定章节检测未全部正确")
+                    # 可编辑页面：说明未全部正确，可重新作答（该判定为页面状态推断, 未核对实际成绩）
+                    logger.warning("题目页仍可编辑, 推断章节检测未全部正确(未核对成绩)")
                     return {
                         "all_correct": False,
                         "feedback": [],
@@ -1307,10 +1372,15 @@ class Chaoxing:
                     if detail:
                         feedback = []
                         all_correct = True
+                        unknown = 0
                         for q in detail:
+                            if not q.get("parse_ok", True):
+                                unknown += 1
+                                all_correct = False
+                                continue
                             my_ans = (q.get("my_answer") or "").strip()
                             correct_ans = (q.get("correct_answer") or "").strip()
-                            if my_ans != correct_ans:
+                            if normalize_answer_text(my_ans) != normalize_answer_text(correct_ans):
                                 all_correct = False
                                 feedback.append(
                                     f"- 题目：{q.get('title', '')}\n"
@@ -1325,6 +1395,7 @@ class Chaoxing:
                             "feedback": feedback,
                             "score": score,
                             "times": 0,
+                            "unknown": unknown,
                         }
                 return None
             except Exception as e:
@@ -1365,13 +1436,18 @@ class Chaoxing:
             logger.warning("章节检测作答详情解析为空，跳过成绩检查")
             return None
 
-        # 3. 逐题判断对错，收集错误反馈
+        # 3. 逐题判断对错，收集错误反馈（解析失配的题跳过并计数, 避免误判全错）
         feedback = []
         all_correct = True
+        unknown = 0
         for q in detail:
+            if not q.get("parse_ok", True):
+                unknown += 1
+                all_correct = False
+                continue
             my_ans = (q.get("my_answer") or "").strip()
             correct_ans = (q.get("correct_answer") or "").strip()
-            if my_ans != correct_ans:
+            if normalize_answer_text(my_ans) != normalize_answer_text(correct_ans):
                 all_correct = False
                 feedback.append(
                     f"- 题目：{q.get('title', '')}\n"
@@ -1380,12 +1456,13 @@ class Chaoxing:
                     f"  正确答案：{correct_ans or '(空)'}"
                 )
 
-        logger.debug(f"章节检测成绩: {latest_score} 分, 全部正确: {all_correct}, 错题数: {len(feedback)}")
+        logger.debug(f"章节检测成绩: {latest_score} 分, 全部正确: {all_correct}, 错题数: {len(feedback)}, 未解析题数: {unknown}")
         return {
             "all_correct": all_correct,
             "feedback": feedback,
             "score": latest_score,
             "times": latest_times,
+            "unknown": unknown,
         }
 
     def study_read(self, _course, _job, _job_info) -> StudyResult:
