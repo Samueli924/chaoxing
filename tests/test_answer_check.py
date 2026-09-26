@@ -107,5 +107,56 @@ class LLMAnswerTestCase(unittest.TestCase):
         self.assertIsNone(_extract_llm_answer(""))
 
 
+class TikuCustomTestCase(unittest.TestCase):
+    """自建题库服务器（/api/search 接口约定）."""
+
+    def _tiku(self, responses):
+        from api import answer
+        tiku = answer.TikuCustom()
+        tiku.config_set({"custom_url": "http://127.0.0.1:8001/api/search", "custom_key": "k"})
+        tiku.init_tiku()
+        sent = []
+
+        class _Resp:
+            def __init__(self, payload):
+                self.payload = payload
+                self.status_code = 200
+                self.text = str(payload)
+
+            def json(self):
+                return self.payload
+
+        def fake_post(url, json=None, timeout=None):
+            sent.append((url, json))
+            return _Resp(responses.pop(0))
+
+        original = answer.requests.post
+        answer.requests.post = fake_post
+        self.addCleanup(setattr, answer.requests, "post", original)
+        return tiku, sent
+
+    def test_request_and_nested_answer(self):
+        tiku, sent = self._tiku([{"code": -1, "msg": "查询成功", "data": {"answer": "A#C", "num": "1"}}])
+        answer = tiku._query({"title": "【多选题】以下哪些是安全防护措施？", "type": "multiple",
+                              "options": "A 戴安全帽\nB 酒后作业\nC 系安全带"})
+        self.assertEqual(answer, "A#C")
+        url, payload = sent[0]
+        self.assertEqual(payload, {"question": "以下哪些是安全防护措施？", "type": "1",
+                                   "options": ["戴安全帽", "酒后作业", "系安全带"], "key": "k"})
+        self.assertEqual(ac.match_choice(answer, ["A 戴安全帽", "B 酒后作业", "C 系安全带"], multiple=True), "AC")
+
+    def test_flat_answer_and_miss(self):
+        tiku, _ = self._tiku([{"code": 1, "answer": "正确"}, {"code": 0, "msg": "未找到答案", "data": {}}])
+        self.assertEqual(tiku._query({"title": "判断", "type": "judgement", "options": ""}), "正确")
+        self.assertIsNone(tiku._query({"title": "没有的题", "type": "single", "options": "A 1\nB 2"}))
+
+    def test_disabled_without_url(self):
+        from api import answer
+        tiku = answer.TikuCustom()
+        tiku.config_set({"custom_key": "k"})
+        tiku.init_tiku()
+        self.assertTrue(tiku.DISABLE)
+
+
 if __name__ == "__main__":
     unittest.main()

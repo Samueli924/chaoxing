@@ -165,7 +165,9 @@
       <label class="choice"><input type="radio" name="work" value="save" checked>
         <span>搜索答案但只保存不提交<small>稍后可自行到学习通检查并提交</small></span></label>
       <label class="choice"><input type="radio" name="work" value="submit">
-        <span>搜索答案并自动提交<small>正确率不做保证，请谨慎选择</small></span></label>
+        <span>搜索答案并自动提交<small>题库能答出 90% 以上的题才提交，否则只保存</small></span></label>
+      <label class="choice"><input type="radio" name="work" value="best">
+        <span>自动提交并重做，争取满分<small>先提交，再按批改结果（每题对错）换答案重做，直到满分；需要该测验允许重做</small></span></label>
       <div id="tiku-wrap" hidden>
         <label for="provider">题库</label>
         <select id="provider"></select>
@@ -310,7 +312,7 @@ function applyDefaults(d) {
   $("task-count").checked = !!d.add_learning_count;
   $("target-count").value = d.target_count || 100;
   $("count-row").hidden = !$("task-count").checked;
-  const mode = d.work_mode === "submit" ? "submit" : "save";
+  const mode = ["submit", "best"].includes(d.work_mode) ? d.work_mode : "save";
   const radio = document.querySelector(`input[name=work][value=${mode}]`);
   if (radio) radio.checked = true;
   toggleTiku();

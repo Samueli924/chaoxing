@@ -8,10 +8,9 @@
 """
 import argparse
 import sys
-import traceback
-from typing import Any, Optional
+from typing import Optional
 
-from api.base import Chaoxing, SessionManager, _json_or_none
+from api.base import Chaoxing, SessionManager
 from api.config import GlobalConst as gc
 from api.decode import decode_course_card
 from api.logger import logger, setup_logging
@@ -140,14 +139,9 @@ def _check_media(chaoxing: Chaoxing, course: dict, point: dict, info: Optional[d
     video = next((j for j in jobs if j.get("type") == "video" and j.get("objectid")), None)
     if not video:
         return
-    session = SessionManager.get_session()
-    try:
-        resp = session.get(f"https://mooc1.chaoxing.com/ananas/status/{video['objectid']}",
-                           params={"k": chaoxing.get_fid(), "flag": "normal"})
-        data = _json_or_none(resp)
-    except Exception as e:
-        report.add("视频信息(ananas/status)", False, f"请求失败: {e}")
-        return
+    # 与学习时的请求一致：该接口校验播放器页面的 Referer，缺少时返回 403
+    headers = gc.AUDIO_HEADERS if video.get("audio") else gc.VIDEO_HEADERS
+    data = chaoxing._fetch_media_status(SessionManager.get_session(), video, headers)
     ok = isinstance(data, dict) and data.get("status") == "success" and bool(data.get("dtoken"))
     report.add("视频信息(ananas/status)", ok,
                f"时长 {data.get('duration')}s" if ok else f"返回: {str(data)[:80]}")

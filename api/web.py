@@ -51,7 +51,14 @@ PROVIDER_FORMS = [
         {"key": "siliconflow_model", "label": "模型名称（默认 deepseek-ai/DeepSeek-V3）"}]},
     {"id": "TikuAdapter", "name": "TikuAdapter（自建题库）", "fields": [
         {"key": "url", "label": "接口地址", "required": True}]},
+    {"id": "TikuCustom", "name": "自建题库服务器（/api/search 接口）", "fields": [
+        {"key": "custom_url", "label": "接口地址，例如 http://127.0.0.1:8001/api/search", "required": True},
+        {"key": "custom_key", "label": "密钥（可选）", "secret": True}]},
 ]
+# 章节检测的处理方式
+WORK_MODES = ("skip", "save", "submit", "best")
+# "争取满分"模式下最多重做的次数
+BEST_MODE_MAX_RETRIES = 10
 _ALLOWED_TIKU_FIELDS = {f["key"] for p in PROVIDER_FORMS for f in p["fields"]}
 _PROVIDER_IDS = {p["id"] for p in PROVIDER_FORMS}
 
@@ -122,7 +129,8 @@ class WebApp:
             "add_learning_count": bool(common.get("add_learning_count")),
             "target_count": common.get("target_count", 100),
             "provider": provider if provider in _PROVIDER_IDS else "TikuGo",
-            "work_mode": ("submit" if str(tiku.get("submit", "")).lower() == "true" else "save") if provider else "save",
+            "work_mode": (("best" if str(tiku.get("cover_rate", "")).strip() in ("0", "0.0") else "submit")
+                          if str(tiku.get("submit", "")).lower() == "true" else "save") if provider else "save",
             # 只告诉页面哪些字段已在配置文件中填写，不回传具体内容
             "configured_fields": sorted(k for k in _ALLOWED_TIKU_FIELDS if tiku.get(k)),
             "course_list": common.get("course_list", []),
@@ -218,14 +226,18 @@ class WebApp:
     @staticmethod
     def _tiku_overrides(data: dict[str, Any]) -> dict[str, Any]:
         work_mode = data.get("work_mode", "save")
-        if work_mode not in ("skip", "save", "submit"):
+        if work_mode not in WORK_MODES:
             work_mode = "save"
         if work_mode == "skip":
             return {"provider": ""}
         provider = str(data.get("provider") or "TikuGo")
         if provider not in _PROVIDER_IDS:
             provider = "TikuGo"
-        overrides: dict[str, Any] = {"provider": provider, "submit": "true" if work_mode == "submit" else "false"}
+        overrides: dict[str, Any] = {"provider": provider,
+                                     "submit": "true" if work_mode in ("submit", "best") else "false"}
+        if work_mode == "best":
+            # 不论题库搜到多少都提交，再根据批改结果（每题对错）重做，直到满分或不能再重做
+            overrides["cover_rate"] = "0"
         for key, value in (data.get("tiku") or {}).items():
             # 留空表示沿用配置文件中的值
             if key in _ALLOWED_TIKU_FIELDS and str(value).strip():
@@ -261,6 +273,9 @@ class WebApp:
             except Exception as e:
                 return {"ok": False, "msg": f"题库配置有误: {e}"}
             runner.chaoxing.tiku = runner.tiku
+            runner.chaoxing.kwargs["work_max_retries"] = (
+                BEST_MODE_MAX_RETRIES if data.get("work_mode") == "best"
+                else self.settings.common.get("work_max_retries", 3))
 
             runtime.reset()
             self.summary = None

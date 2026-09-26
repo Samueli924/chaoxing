@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import itertools
 import random
 import re
 import secrets
@@ -8,6 +9,7 @@ from enum import Enum
 from hashlib import md5
 from html import unescape as html_unescape
 from typing import Any, Literal, Optional
+from urllib.parse import urljoin
 
 import requests
 from loguru import logger
@@ -36,6 +38,8 @@ from api.decode import (
     decode_course_list,
     decode_course_point,
     decode_questions_info,
+    decode_work_record_list,
+    decode_work_result,
 )
 from api.exceptions import LoginError
 from api.runtime import interactive_lock, runtime
@@ -58,9 +62,13 @@ WORK_URL = "https://mooc1.chaoxing.com/mooc-ans/api/work"
 WORK_SUBMIT_URL = "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew"
 WORK_RECORD_LIST_URL = "https://mooc1.chaoxing.com/mooc-ans/work/record-list"
 WORK_RECORD_DETAIL_URL = "https://mooc1.chaoxing.com/mooc-ans/work/record-detail"
+# 已批阅页面"重做"按钮调用的接口，返回 {"status": true, "url": 新的作答页面}
+WORK_RETEST_URL = "https://mooc1.chaoxing.com/mooc-ans/work/retest"
 
 # 视频播放到结尾后，服务器仍未判定完成时最多再上报的次数，避免无限循环
 MAX_END_REPORTS = 10
+# 一个章节最多尝试的任务卡片标签页数量
+MAX_CARD_TABS = 7
 
 
 def get_timestamp():
@@ -73,6 +81,10 @@ class ChaoxingRequestError(Exception):
 
 class WorkAlreadySubmitted(Exception):
     """章节检测已经提交且当前不可作答."""
+
+
+class WorkRedoUnavailable(Exception):
+    """章节检测不允许重做（老师未开放重做或次数已用完）."""
 
 
 class _TimeoutSession(requests.Session):
@@ -261,85 +273,24 @@ def random_answer(options: str, q_type: str) -> str:
     return answer
 
 
-def _parse_work_record_list(html_text: str) -> list[tuple[int, float]]:
-    """
-    解析章节检测作答记录列表页面（/work/record-list）。
-
-    Args:
-        html_text: record-list 页面 HTML
-
-    Returns:
-        作答记录列表，元素为 (作答序号times, 成绩score)，例如 [(0, 80.0), (1, 100.0)]
-    """
-    records = []
-    times_list = re.findall(r'viewNum">第(\d+)次', html_text)
-    scores = re.findall(r'viewScore">([\d.]+)分', html_text)
-    for t, s in zip(times_list, scores):
-        try:
-            records.append((int(t), float(s)))
-        except ValueError:
-            continue
-    return records
-
-
-def _parse_work_record_detail(html_text: str) -> list[dict]:
-    """
-    解析章节检测单次作答详情页面（/work/record-detail）。
-
-    Args:
-        html_text: record-detail 页面 HTML
-
-    Returns:
-        每题信息列表：{id, title, type_label, my_answer, correct_answer}
-    """
-    questions = []
-    for qm in re.finditer(r'<div class="TiMu[^"]*singleQuesId" data="(\d+)"[^>]*>(.*?)(?=<div class="TiMu|$)',
-                          html_text, re.S):
-        qid = qm.group(1)
-        qb = qm.group(2)
-
-        # 题型 + 题目
-        tm = re.search(r'newZy_TItle">(.*?)</span>(.*?)</div>', qb, re.S)
-        if tm:
-            type_label = re.sub(r'<[^>]+>', '', tm.group(1)).strip()
-            title = re.sub(r'<[^>]+>', '', tm.group(2))
-        else:
-            type_label = ""
-            title = ""
-        title = re.sub(r'\s+', ' ', title).strip()
-
-        # 我的答案
-        mam = re.search(r'我的答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        my_answer = re.sub(r'<[^>]+>', '', mam.group(1)).strip() if mam else ''
-
-        # 正确答案
-        cam = re.search(r'正确答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        correct_answer = re.sub(r'<[^>]+>', '', cam.group(1)).strip() if cam else ''
-
-        questions.append({
-            "id": qid,
-            "title": title,
-            "type_label": type_label,
-            "my_answer": my_answer,
-            "correct_answer": correct_answer,
-        })
-    return questions
-
-
 def evaluate_work_detail(detail: list[dict]) -> Optional[dict]:
     """根据作答详情判断对错.
 
-    老师未公布正确答案时无法判断对错，此时返回 None，调用方不应据此重做（否则会白白消耗重做次数）。
+    优先使用页面上每道题的对错标记（marking_dui 对 / marking_cuo 错 / marking_bandui 部分正确），
+    没有标记时再与公布的正确答案比对。两者都没有时无法判断对错，返回 None，
+    调用方不应据此重做（否则会白白消耗重做次数）。
     """
     wrong = []
     known = 0
     for q in detail:
-        correct = comparable_answer(q.get("correct_answer"), q.get("type_label", ""))
-        if not correct:
-            continue
+        flag = q.get("correct")
+        if flag is None:
+            correct = comparable_answer(q.get("correct_answer"), q.get("type_label", ""))
+            if not correct:
+                continue
+            flag = comparable_answer(q.get("my_answer"), q.get("type_label", "")) == correct
         known += 1
-        mine = comparable_answer(q.get("my_answer"), q.get("type_label", ""))
-        if mine != correct:
+        if not flag:
             wrong.append(q)
     if known == 0:
         return None
@@ -547,11 +498,8 @@ class Chaoxing:
         logger.info(f"课程章节读取成功, 共 {len(course_point['points'])} 个章节")
         return course_point
 
-    def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
-        self.rate_limiter.limit_rate()
-        job_list: list[dict] = []
-        job_info: dict = {}
-        seen_jobs = set()
+    def iter_card_pages(self, course: dict, point: dict):
+        """依次请求章节的任务卡片标签页（num=0,1,2...），逐页返回 (num, 页面HTML)."""
         cards_params = {
             "clazzid": course["clazzId"],
             "courseid": course["courseId"],
@@ -561,19 +509,30 @@ class Chaoxing:
             "v": "2025-0424-1038-3",
             "mooc2": 1,
         }
-
-        # 学习界面的任务卡片(标签页)数量无法直接得知, 依次尝试 num=0..6, 对于章节解锁任务点少一个都不行
-        for possible_num in range(7):
+        for possible_num in range(MAX_CARD_TABS):
             cards_params["num"] = possible_num
             resp = self._get_with_relogin(CARDS_URL, params=cards_params)
             if resp.status_code != 200 or _is_login_page(resp):
                 raise ChaoxingRequestError(f"读取章节任务点失败: HTTP {resp.status_code}")
+            logger.trace(f"原始任务点列表内容(num={possible_num}):\n{resp.text}")
+            yield possible_num, resp.text
 
-            cards, card_info = decode_course_card(resp.text)
+    def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
+        self.rate_limiter.limit_rate()
+        job_list: list[dict] = []
+        job_info: dict = {}
+        seen_jobs = set()
+
+        # 章节的标签页数量无法直接得知，依次请求 num=0,1,2...；标签页是连续的，
+        # 请求到不存在的标签页（页面中 mArg 未被填充）即可停止，不会漏掉任务点
+        for possible_num, html in self.iter_card_pages(course, point):
+            cards, card_info = decode_course_card(html)
             if card_info.get("notOpen", False):
                 # 直接返回, 节省请求
                 logger.info(f"章节未开放: {point['title']}")
                 return [], card_info
+            if card_info.get("noCard", False):
+                break
 
             for job in cards:
                 key = (job.get("type"), job.get("jobid"), job.get("objectid"))
@@ -584,7 +543,6 @@ class Chaoxing:
             for key, value in card_info.items():
                 if value not in ("", None) and not job_info.get(key):
                     job_info[key] = value
-            logger.trace(f"原始任务点列表内容(num={possible_num}):\n{resp.text}")
 
         if not job_list:
             self.study_emptypage(course, point)
@@ -989,7 +947,8 @@ class Chaoxing:
 
     @staticmethod
     def _looks_submitted(html: str) -> bool:
-        return ("我的答案" in html and "正确答案" in html) or "待批阅" in html or "本次成绩" in html
+        return (("我的答案" in html and ("正确答案" in html or "marking_" in html))
+                or "待批阅" in html or "本次成绩" in html)
 
     def _fetch_work(self, session, _course, _job, _job_info):
         params = self._work_params(_course, _job, _job_info)
@@ -1016,6 +975,40 @@ class Chaoxing:
             raise ChaoxingRequestError("未能从页面中解析出题目")
 
         return fetch()
+
+    def _open_redo(self, session, _course, _job, _job_info):
+        """与网页"重做"按钮一致：先打开已批阅页面取参数，再调用 /work/retest，返回 (作答页面, 题目信息)."""
+        graded = session.get(WORK_URL, params=self._work_params(_course, _job, _job_info))
+        inputs = decode_work_result(graded.text)["inputs"]
+        params = {
+            "courseId": inputs.get("courseId") or _course["courseId"],
+            "classId": inputs.get("classId") or _course["clazzId"],
+            "workId": inputs.get("workId", ""),
+            "workAnswerId": inputs.get("workAnswerId", ""),
+            "knowledgeid": inputs.get("knowledgeid") or str(_job_info.get("knowledgeid", "") or ""),
+            "jobid": inputs.get("jobid") or _job["jobid"],
+            "originJobId": inputs.get("originJobId") or _job["jobid"],
+            "enc": inputs.get("enc") or _job.get("enc", ""),
+            "cpi": inputs.get("cpi") or _course.get("cpi", ""),
+            "mooc2": 1,
+            "wMicroNodeId": "0",
+        }
+        resp = session.get(WORK_RETEST_URL, params=params, headers={
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Referer": graded.url,
+        })
+        data = _json_or_none(resp)
+        if not isinstance(data, dict) or not data.get("status"):
+            reason = (data.get("msg") if isinstance(data, dict) else "") or f"HTTP {resp.status_code}"
+            raise WorkRedoUnavailable(reason)
+        if data.get("url"):
+            page = session.get(urljoin(resp.url, str(data["url"])))
+            questions = decode_questions_info(page.text)
+            if questions.get("questions"):
+                return page, questions
+        # 没有返回地址或地址中解析不出题目时，重新打开题目页（此时应为可作答状态）
+        return self._fetch_work(session, _course, _job, _job_info)
 
     @staticmethod
     def _bodies_for_letters(options: list[str], letters: str) -> list[str]:
@@ -1068,6 +1061,47 @@ class Chaoxing:
             return "true" if known else "false"
         return known if isinstance(known, str) else ""
 
+    @staticmethod
+    def _same_answer(a, b) -> bool:
+        if isinstance(a, list) and isinstance(b, list):
+            return frozenset(a) == frozenset(b)
+        return a == b
+
+    def _alternative_answer(self, q: dict, tried: list, superset_of: Optional[frozenset] = None) -> tuple[str, Any]:
+        """答错且不知道正确答案时换一个还没试过的答案：判断题取反、单选逐个排除、多选依次尝试各组合.
+
+        Args:
+            q: 当前轮次的题目
+            tried: 已判定为错误的答案（选项正文列表 / 布尔值）
+            superset_of: 多选题上次"部分正确"时所选的选项，正确答案一定包含它们
+
+        Returns:
+            (表单值, 可复用的答案)；没有可尝试的答案时为 ("", None)
+        """
+        q_type = q["type"]
+        if q_type == "judgement":
+            for value in (True, False):
+                if not any(self._same_answer(value, t) for t in tried):
+                    return ("true" if value else "false"), value
+            return "", None
+        options = split_options(q.get("options"))
+        bodies = [option_body(o) for o in options if option_letter(o)]
+        if q_type == "single":
+            for body in bodies:
+                if not any(self._same_answer([body], t) for t in tried):
+                    return self._render_known(q, [body]), [body]
+            return "", None
+        if q_type == "multiple":
+            tried_sets = {frozenset(t) for t in tried if isinstance(t, list)}
+            # 多选题正确答案至少两项，从选项多的组合开始尝试
+            for size in range(len(bodies), 1, -1):
+                for combo in itertools.combinations(bodies, size):
+                    candidate = frozenset(combo)
+                    if candidate in tried_sets or (superset_of and not superset_of < candidate):
+                        continue
+                    return self._render_known(q, list(combo)), list(combo)
+        return "", None
+
     def _known_from_record(self, q: dict, correct_answer: str):
         """把作答记录中的正确答案（通常为选项字母）转换为可复用的答案."""
         q_type = q["type"]
@@ -1101,20 +1135,28 @@ class Chaoxing:
         session = SessionManager.get_session()
         max_redo = self._work_max_retries()
         query_delay = self.kwargs.get("query_delay", 0) or 0
+        work_name = _job.get("name") or _job.get("jobid", "")
 
         known: dict[str, Any] = {}  # 题目ID -> 已确认正确的答案（重做时直接使用）
+        tried: dict[str, list] = {}  # 题目ID -> 已确认错误的答案（重做时换一个）
+        superset_hint: dict[str, frozenset] = {}  # 多选题部分正确时所选的选项
         wrong_ids: set[str] = set()
         feedback: list[str] = []
         submitted = False
+        next_page = None  # 重做时由 /work/retest 打开的作答页面
 
         for attempt in range(max_redo + 1):
             if attempt > 0:
-                logger.warning(f"章节检测重做第 {attempt}/{max_redo} 轮")
+                logger.warning(f"章节检测重做第 {attempt}/{max_redo} 轮: {work_name}")
                 runtime.sleep(2)
 
             # 1. 获取题目
             try:
-                final_resp, questions = self._fetch_work(session, _course, _job, _job_info)
+                if next_page is not None:
+                    final_resp, questions = next_page
+                    next_page = None
+                else:
+                    final_resp, questions = self._fetch_work(session, _course, _job, _job_info)
             except PermissionError as e:
                 logger.warning(f"跳过章节检测: {e}")
                 return StudyResult.SKIPPED
@@ -1131,13 +1173,16 @@ class Chaoxing:
             q_list = questions["questions"]
             total_questions = len(q_list)
 
-            # 2. 搜题：首轮查询全部题目；重做时只重新查询答错且不知道正确答案的题目
+            # 2. 搜题：首轮查询全部题目；重做时只有能参考错误反馈的题库（大模型）才重新查询答错的题目，
+            #    普通题库再查一次只会得到同样的答案，直接排除已答错的选项
             if attempt == 0:
                 to_query = q_list
-            else:
+            elif getattr(self.tiku, "supports_feedback", False):
                 to_query = [q for q in q_list if q["id"] in wrong_ids and q["id"] not in known]
                 if feedback:
                     self.tiku.set_work_feedback(feedback)
+            else:
+                to_query = []
 
             raw_answers: dict[str, Any] = {}
             if to_query:
@@ -1164,6 +1209,12 @@ class Chaoxing:
                         sources[qid], resolved[qid] = "cover", known[qid]
                 if not answer:
                     answer, sources[qid], resolved[qid] = self._resolve_answer(q, raw_answers.get(qid))
+                    # 重做时避免再次提交已判定为错误的答案
+                    if qid in tried and any(self._same_answer(resolved[qid], t) for t in tried[qid]):
+                        alt_answer, alt_resolved = self._alternative_answer(q, tried[qid], superset_hint.get(qid))
+                        if alt_answer:
+                            logger.info(f"排除已答错的选项后改为: {alt_answer}")
+                            answer, sources[qid], resolved[qid] = alt_answer, "retry", alt_resolved
                 if sources[qid] == "cover":
                     found_answers += 1
                     logger.info(f"成功获取到答案：{answer}")
@@ -1186,7 +1237,8 @@ class Chaoxing:
                 py_flag = ""
             else:
                 py_flag = "1"
-                logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE * 100:.0f}%，不予提交")
+                logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE * 100:.0f}%，不予提交"
+                            f"（如需先提交再根据批改结果重做，可将题库配置 cover_rate 设为 0）")
 
             form = {k: v for k, v in questions.items() if k != "questions"}
             form["pyFlag"] = py_flag
@@ -1230,15 +1282,14 @@ class Chaoxing:
             if py_flag == "1":
                 return StudyResult.SUCCESS
             submitted = True
-            if attempt >= max_redo:
-                return StudyResult.SUCCESS
 
-            # 6. 检查成绩：仅在确实能改进答案时才重做，避免白白消耗重做次数
+            # 6. 检查成绩：全对则结束；答错时仅在能改进答案且还有重做次数时重做
             result_info = self._check_work_result(session, _course, _job, _job_info, form)
             if result_info is None:
                 return StudyResult.SUCCESS
+            score = result_info.get("score")
             if result_info["all_correct"]:
-                logger.info(f"章节检测全部正确（成绩 {result_info.get('score', '?')} 分），通过！")
+                logger.info(f"章节检测全部正确（成绩 {score if score is not None else '?'} 分）: {work_name}")
                 return StudyResult.SUCCESS
 
             questions_by_id = {q["id"]: q for q in q_list}
@@ -1257,7 +1308,12 @@ class Chaoxing:
                     known[qid] = correct
                     cache.add_cache(cache_key, self._known_as_text(correct))
                 else:
+                    known.pop(qid, None)
                     cache.remove_cache(cache_key)  # 不再使用已知错误的缓存答案
+                    if resolved.get(qid) not in (None, "", []):
+                        tried.setdefault(qid, []).append(resolved[qid])
+                        if item.get("partial") and isinstance(resolved[qid], list):
+                            superset_hint[qid] = frozenset(resolved[qid])
                 my_text = self._known_as_text(resolved.get(qid)) if resolved.get(qid) is not None else item.get("my_answer", "")
                 feedback.append(
                     f"- 题目：{item.get('title') or q['title']}\n"
@@ -1270,55 +1326,56 @@ class Chaoxing:
                 if qid not in wrong_ids and value is not None:
                     known.setdefault(qid, value)
 
-            can_improve = any(qid in known for qid in wrong_ids) or getattr(self.tiku, "supports_feedback", False)
-            if not wrong_ids or not can_improve:
-                logger.warning(
-                    f"章节检测有 {len(result_info['wrong'])} 题回答错误（成绩 {result_info.get('score', '?')} 分），"
-                    f"当前题库无法改进答案，不再重做")
+            improvable = [
+                qid for qid in wrong_ids
+                if qid in known or getattr(self.tiku, "supports_feedback", False)
+                or questions_by_id[qid]["type"] in ("single", "multiple", "judgement")
+            ]
+            if attempt >= max_redo or not improvable:
+                reason = "已达到重做次数上限" if attempt >= max_redo else "当前题库无法改进答案"
+                logger.warning(f"章节检测有 {len(wrong_ids)}/{total_questions} 题回答错误"
+                               f"（成绩 {score if score is not None else '?'} 分），{reason}，不再重做: {work_name}")
                 return StudyResult.SUCCESS
-            logger.warning(
-                f"章节检测有 {len(wrong_ids)}/{total_questions} 题回答错误（成绩 {result_info.get('score', '?')} 分），"
-                f"准备重新作答")
+            logger.warning(f"章节检测有 {len(wrong_ids)}/{total_questions} 题回答错误"
+                           f"（成绩 {score if score is not None else '?'} 分），准备重新作答")
+            try:
+                next_page = self._open_redo(session, _course, _job, _job_info)
+            except WorkRedoUnavailable as e:
+                logger.warning(f"章节检测无法重做（{e}），保留当前成绩: {work_name}")
+                return StudyResult.SUCCESS
+            except Exception as e:
+                logger.warning(f"打开重做页面失败（{type(e).__name__}: {e}），保留当前成绩: {work_name}")
+                return StudyResult.SUCCESS
 
         return StudyResult.SUCCESS
 
+    def _work_record_params(self, _course, questions) -> dict:
+        return {
+            "courseId": str(_course.get("courseId", "")),
+            "classId": str(_course.get("clazzId", "")),
+            "workId": str(questions.get("workId", "") or questions.get("workRelationId", "")),
+            "workAnswerId": str(questions.get("workAnswerId", "") or ""),
+            "cpi": str(_course.get("cpi", "") or questions.get("cpi", "")),
+        }
+
     def _check_work_result(self, _session, _course, _job, _job_info, questions) -> Optional[dict]:
         """
-        章节检测提交后，查询最新一次作答的成绩与对错详情，供判断是否需要重做。
+        章节检测提交后，查询最新一次作答的成绩与每道题的对错，供判断是否需要重做。
 
         Returns:
-            {"all_correct": bool, "wrong": list[dict], "score": float, "times": int}
-            无法判断对错（接口异常或老师未公布答案）时返回 None
+            {"all_correct": bool, "wrong": list[dict], "score": float|None, "times": str, "detail": list[dict]}
+            无法判断对错（接口异常或页面没有对错信息）时返回 None
         """
-        work_id = str(
-            questions.get("workId", "")
-            or questions.get("workRelationId", "")
-            or _job["jobid"].replace("work-", "")
-        )
-        work_answer_id = str(questions.get("workAnswerId", "") or "")
-        course_id = str(_course.get("courseId", ""))
-        class_id = str(_course.get("clazzId", ""))
-        cpi = str(_course.get("cpi", "") or questions.get("cpi", ""))
+        base = self._work_record_params(_course, questions)
+        if not base["workId"]:
+            base["workId"] = _job["jobid"].replace("work-", "")
 
         # 1. 获取作答记录列表（提交后服务端异步生成记录，需稍作等待并多次重试）
-        records = None
+        records = []
         for attempt in range(5):
             try:
-                resp = _session.get(
-                    WORK_RECORD_LIST_URL,
-                    params={
-                        "courseId": course_id,
-                        "classId": class_id,
-                        "workId": work_id,
-                        "workAnswerId": work_answer_id,
-                        "cpi": cpi,
-                        "api": "1",
-                        "mooc2": "1",
-                        "ut": "s",
-                    },
-                    timeout=20,
-                )
-                records = _parse_work_record_list(resp.text)
+                resp = _session.get(WORK_RECORD_LIST_URL, params=dict(base, api="1", mooc2="1", ut="s"), timeout=20)
+                records = decode_work_record_list(resp.text)
                 if records:
                     break
             except Exception as e:
@@ -1326,65 +1383,38 @@ class Chaoxing:
             if attempt < 4:
                 time.sleep(1.5)
 
-        if not records:
-            # 兜底：重新访问题目页，已提交的详情页中包含对错信息
-            logger.debug("无法获取章节检测作答记录，尝试通过题目页判断")
+        result = None
+        if records:
+            # 2. 获取最新一次作答详情（times 从 0 开始，"第1次" 对应 times=0）
+            latest_times, latest_score = max(records, key=lambda r: int(r[0]) if r[0].isdigit() else -1)
+            try:
+                resp = _session.get(WORK_RECORD_DETAIL_URL, params=dict(
+                    base, times=latest_times, ut="s", isdisplaytable="0", firstHeader="2", isWork="false",
+                    workSystem="0", api="1", archive="false", mooc2="1"), timeout=20)
+                result = decode_work_result(resp.text)
+                result.setdefault("times", latest_times)
+                if result.get("score") is None:
+                    result["score"] = latest_score
+            except Exception as e:
+                logger.warning(f"获取章节检测作答详情失败: {e}")
+
+        if not result or not result.get("questions"):
+            # 兜底：重新打开题目页，提交后显示的已批阅页面中同样包含每道题的对错
+            logger.debug("无法获取章节检测作答详情，尝试通过题目页判断")
             try:
                 resp = _session.get(WORK_URL, params=self._work_params(_course, _job, _job_info), timeout=20)
+                result = decode_work_result(resp.text)
             except Exception as e:
                 logger.warning(f"兜底判断章节检测状态失败: {e}")
                 return None
-            html = resp.text
-            if '正确答案' in html and '我的答案' in html:
-                detail = _parse_work_record_detail(html)
-                evaluation = evaluate_work_detail(detail) if detail else None
-                if evaluation is None:
-                    return None
-                m = re.search(r'本次成绩<i>([\d.]+)</i>分', html)
-                evaluation.update(score=float(m.group(1)) if m else 0.0, times=0)
-                return evaluation
-            return None
 
-        latest_times = max(r[0] for r in records)
-        latest_score = dict(records).get(latest_times, 0.0)
-
-        # 2. 获取最新一次作答详情（含每道题对错与正确答案）
-        try:
-            resp = _session.get(
-                WORK_RECORD_DETAIL_URL,
-                params={
-                    "courseId": course_id,
-                    "classId": class_id,
-                    "workId": work_id,
-                    "workAnswerId": work_answer_id,
-                    "times": str(latest_times),
-                    "cpi": cpi,
-                    "ut": "s",
-                    "isdisplaytable": "0",
-                    "firstHeader": "2",
-                    "isWork": "false",
-                    "workSystem": "0",
-                    "api": "1",
-                    "archive": "false",
-                    "mooc2": "1",
-                },
-                timeout=20,
-            )
-            detail = _parse_work_record_detail(resp.text)
-        except Exception as e:
-            logger.warning(f"获取章节检测作答详情失败: {e}")
-            return None
-
-        if not detail:
-            logger.debug("章节检测作答详情解析为空，跳过成绩检查")
-            return None
-
-        evaluation = evaluate_work_detail(detail)
+        detail = result.get("questions") or []
+        evaluation = evaluate_work_detail(detail) if detail else None
         if evaluation is None:
-            logger.info("老师未公布正确答案，无法判断对错，不进行重做")
+            logger.info("页面中没有每道题的对错信息（老师可能设置了不公布），无法判断是否需要重做")
             return None
-        evaluation.update(score=latest_score, times=latest_times)
-        logger.debug(f"章节检测成绩: {latest_score} 分, 全部正确: {evaluation['all_correct']}, "
+        evaluation.update(score=result.get("score"), times=result.get("times", ""), detail=detail)
+        logger.debug(f"章节检测成绩: {evaluation['score']} 分, 全部正确: {evaluation['all_correct']}, "
                      f"错题数: {len(evaluation['wrong'])}")
         return evaluation
 

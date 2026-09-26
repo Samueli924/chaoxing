@@ -22,7 +22,7 @@ from api.logger import logger
 from api.runtime import interactive_lock
 
 __all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike", "TikuAdapter", "AI", "SiliconFlow",
-           "TikuManual", "DummyTiku", "PROVIDER_REGISTRY", "resolve_provider_name"]
+           "TikuManual", "TikuCustom", "DummyTiku", "PROVIDER_REGISTRY", "resolve_provider_name"]
 
 DEFAULT_TRUE_LIST = "正确,对,√,是"
 DEFAULT_FALSE_LIST = "错误,错,×,否,不对,不正确"
@@ -1105,6 +1105,60 @@ class TikuAdapter(Tiku):
             self._disable("未填写 url")
 
 
+
+class TikuCustom(Tiku):
+    """自建题库服务器.
+
+    接口约定与 chaoxing-toolkit 的题库服务器、以及常见油猴脚本的"自定义题库"一致：
+    POST {custom_url}，JSON 请求体 {"question": 题目, "type": "0"~"7", "options": [选项正文], "key": 密钥}；
+    成功时返回 {"code": 1 或 -1, "data": {"answer": 答案}} 或 {"code": 1, "answer": 答案}。
+    多选答案用 "#" 分隔（例如 "A#B#C"），填空题多个空用 "|" 分隔。
+    """
+    TYPE_CODES = {"single": "0", "multiple": "1", "completion": "2", "judgement": "3", "shortanswer": "4"}
+
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        """初始化自建题库服务器实例."""
+        super().__init__(config_path)
+        self.name = '自建题库服务器'
+        self.api = ''
+        self.key = ''
+
+    def _init_tiku(self):
+        self.api = str(self._conf_get('custom_url', ''))
+        self.key = str(self._conf_get('custom_key', ''))
+        if not self.api:
+            self._disable("未填写 custom_url")
+
+    def _query(self, q_info: dict):
+        options = [re.sub(r"^[A-Z]\s*[.、:：)）]?\s*", "", o).strip()
+                   for o in str(q_info.get('options') or '').split('\n') if o.strip()]
+        payload = {
+            "question": re.sub(r'^【[^】]+】\s*', '', q_info.get('title', '')).strip(),
+            "type": self.TYPE_CODES.get(q_info.get('type'), "4"),
+            "options": options,
+        }
+        if self.key:
+            payload["key"] = self.key
+        try:
+            res = requests.post(self.api, json=payload, timeout=15)
+        except requests.RequestException as e:
+            logger.error(f'{self.name}查询失败: {e}')
+            return None
+        try:
+            data = res.json()
+        except ValueError:
+            logger.error(f'{self.name}返回内容不是有效JSON: HTTP {res.status_code} {res.text[:200]}')
+            return None
+        if not isinstance(data, dict) or str(data.get('code')) not in ('1', '-1'):
+            logger.info(f"{self.name}未命中: {data.get('msg', '') if isinstance(data, dict) else data}")
+            return None
+        body = data.get('data') if isinstance(data.get('data'), dict) else {}
+        answer = body.get('answer') or data.get('answer')
+        if isinstance(answer, list):
+            answer = "\n".join(str(a) for a in answer if str(a).strip())
+        answer = str(answer or '').strip()
+        return answer or None
+
 def _extract_llm_answer(content: Optional[str]) -> Optional[str]:
     """从大模型输出中提取 {"Answer": [...]} 结构，兼容思考过程与 Markdown 代码块."""
     if not content:
@@ -1724,6 +1778,7 @@ PROVIDER_REGISTRY = {
     'TikuGo': TikuGo,
     'TikuLike': TikuLike,
     'TikuAdapter': TikuAdapter,
+    'TikuCustom': TikuCustom,
     'AI': AI,
     'SiliconFlow': SiliconFlow,
     'TikuManual': TikuManual,
@@ -1738,6 +1793,8 @@ PROVIDER_ALIASES = {
     'icodef': 'TikuGo',
     'like': 'TikuLike',
     'adapter': 'TikuAdapter',
+    'custom': 'TikuCustom',
+    '自建': 'TikuCustom',
     'openai': 'AI',
     'llm': 'AI',
     'manual': 'TikuManual',

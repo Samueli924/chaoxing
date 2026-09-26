@@ -121,14 +121,20 @@ def decode_course_point(html_text: str) -> Dict[str, Any]:
         html_text: 章节列表页面的HTML内容
 
     Returns:
-        章节信息字典，包含是否锁定状态和章节点列表
+        章节信息字典，包含是否锁定状态、章节点列表，以及页面顶部"已完成任务点: 完成数/总数"
+        （jobProgress，页面没有该信息时为 None）
     """
     logger.trace("开始解码章节列表...")
     soup = _make_soup(html_text)
     course_point = {
         "hasLocked": False,  # 用于判断该课程任务是否是需要解锁
         "points": [],
+        "jobProgress": None,
     }
+
+    progress = _JOB_PROGRESS_RE.search(html_text)
+    if progress:
+        course_point["jobProgress"] = {"done": int(progress.group(1)), "total": int(progress.group(2))}
 
     seen = set()
     chapter_units = soup.find_all("div", class_="chapter_unit") or [soup]
@@ -145,6 +151,8 @@ def decode_course_point(html_text: str) -> Dict[str, Any]:
 
 
 _POINT_ID_RE = re.compile(r"^cur(\d{1,20})$")
+# 章节列表页顶部的任务点进度，例如：已完成任务点: <span style="color:#00B368">70</span>/78
+_JOB_PROGRESS_RE = re.compile(r"已完成任务点\s*[:：]\s*(?:<[^>]*>\s*)*(\d+)\s*(?:<[^>]*>\s*)*/\s*(\d+)")
 
 
 def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
@@ -182,6 +190,7 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
 
 
 _MARG_RE = re.compile(r"mArg\s*=\s*\{")
+_NO_CARD_RE = re.compile(r"mArg\s*=\s*\$mArg\b")
 
 
 def _extract_marg(html_text: str) -> Optional[Dict[str, Any]]:
@@ -213,7 +222,7 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         html_text: 任务点列表页面的HTML内容
 
     Returns:
-        任务点列表和任务信息的元组
+        任务点列表和任务信息的元组；该序号没有对应的标签页时任务信息为 {"noCard": True}
     """
     logger.trace("开始解码任务点列表...")
 
@@ -223,6 +232,9 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     cards_data = _extract_marg(html_text)
     if not cards_data:
+        # 请求的 num 超出章节标签页数量时，页面模板中的 mArg 不会被填充
+        if _NO_CARD_RE.search(html_text):
+            return [], {"noCard": True}
         return [], {}
 
     job_info = _extract_job_info(cards_data)
@@ -260,6 +272,10 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_true(value: Any) -> bool:
+    return value is True or value == 1 or str(value).lower() == "true"
+
+
 def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     处理所有附件任务卡片
@@ -278,13 +294,21 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
         # 跳过已通过的任务
         if card.get("isPassed", False):
             continue
-        # job 为 false 的附件不是任务点，网页端会直接视为已完成（阅读任务的 job 为 null，需另外处理）
-        if card.get("job") is False:
-            continue
 
         card_type = str(card.get("type", "")).lower()
 
-        # 阅读任务：job 字段为 null，通过 type=="read" 识别
+        # 只有 job 为 true 的附件才是未完成的任务点：任务点完成后网页数据里的 job 字段会被去掉，
+        # 未设为任务点的附件（插入的图书、参考 PDF 等）也没有 job 字段，处理它们会重做已提交的
+        # 章节检测或请求失败。实测各章节 job 为 true 的附件数之和，恰好等于章节页
+        # "已完成任务点: 完成数/总数" 中的 总数 - 完成数。
+        if not _is_true(card.get("job")):
+            # 兼容旧版数据中 job 为 null 的阅读任务（需带 jobid 才能完成）
+            if card_type == "read" and card.get("jobid"):
+                read_job = _process_read_task(card)
+                if read_job:
+                    job_list.append(read_job)
+            continue
+
         if card_type == "read":
             read_job = _process_read_task(card)
             if read_job:
@@ -540,6 +564,10 @@ def _get_question_type(type_code: str) -> str:
         "2": "completion",  # 填空题
         "3": "judgement",  # 判断题
         "4": "shortanswer",  # 简答题
+        # 以下题型与简答题一样以文字作答
+        "5": "shortanswer",  # 名词解释
+        "6": "shortanswer",  # 论述题
+        "7": "shortanswer",  # 计算题
     }
 
     if type_code in type_map:
@@ -593,3 +621,147 @@ def _extract_choices(element, font_decoder=None) -> str:
         cleaned_content = cleaned_content[:-2].rstrip()
 
     return cleaned_content
+
+
+_OPTION_LETTER_RE = re.compile(r"^\s*([A-Z])\s*[、.．:：)）]?\s*")
+
+
+def _first_float(pattern: str, text: str) -> Optional[float]:
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def work_job_from_card(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """把章节检测附件（无论是否已完成）转换为任务字典，供读取成绩或重做使用."""
+    if str(card.get("type", "")).lower() != "workid" or not card.get("jobid"):
+        return None
+    return _process_work_task(card)
+
+
+def _font_decoder_for(html_text: str, soup: BeautifulSoup) -> Optional[FontDecoder]:
+    if soup.find("style", id="cxSecretStyle") is None:
+        return None
+    decoder = FontDecoder(html_text)
+    return decoder if decoder.available else None
+
+
+def decode_work_result(html_text: str) -> Dict[str, Any]:
+    """
+    解析已批阅的章节检测页面（提交后再次打开题目页 / 作答详情 record-detail）
+
+    Args:
+        html_text: 页面 HTML
+
+    Returns:
+        {
+          "score": 本次成绩（没有时为 None）,
+          "full_score": 满分（没有时为 None）,
+          "inputs": 页面中的隐藏字段（重做接口需要其中的 workId / workAnswerId / enc 等）,
+          "questions": [{"id", "type_label", "title", "options", "my_answer", "correct_answer",
+                         "correct": True 答对 / False 答错或部分正确 / None 无法判断,
+                         "partial": 是否为多选题的部分正确, "score"}]
+        }
+    """
+    soup = _make_soup(html_text)
+    decoder = _font_decoder_for(html_text, soup)
+
+    def plain(text: str) -> str:
+        text = re.sub(r"\s+", " ", text or "").strip()
+        return decoder.decode(text) if decoder and text else text
+
+    inputs: Dict[str, str] = {}
+    for tag in soup.find_all("input"):
+        if str(tag.get("type", "")).lower() != "hidden":
+            continue
+        key = tag.get("id") or tag.get("name")
+        if key and key not in inputs:
+            inputs[key] = str(tag.get("value", ""))
+
+    score = _first_float(r"本次成绩\s*(?:<[^>]*>\s*)*([\d.]+)", html_text)
+    full_score = _first_float(r"满分\s*[:：]\s*(?:<[^>]*>\s*)*([\d.]+)", html_text)
+    if full_score is None:
+        full_score = _first_float(r'id="fullScore"[^>]*value="([\d.]+)"', html_text)
+
+    questions = []
+    for div in soup.select("div.singleQuesId"):
+        qid = _attr(div, "data")
+        if not qid:
+            continue
+        label_tag = div.select_one("span.newZy_TItle")
+        type_label = _text(label_tag)
+        title_tag = div.select_one(".Zy_TItle")
+        title = ""
+        if title_tag is not None:
+            box = title_tag.find("div") or title_tag
+            parts = [str(s) for s in box.find_all(string=True) if not (label_tag and s.parent is label_tag)]
+            title = plain("".join(parts))
+
+        options = []
+        for li in div.select("ul.Zy_ulTop li, ul.qtDetail li"):
+            text = plain(li.get_text(" ", strip=True))
+            if text:
+                options.append(text)
+
+        my_answer = plain(_text(div.select_one(".myAnswer .answerCon")))
+        correct_tag = div.select_one(".correctAnswer .answerCon") or div.select_one(".correctAnswerBx .correctAnswer")
+        correct_answer = plain(_text(correct_tag))
+        if correct_answer.startswith("正确答案"):
+            correct_answer = correct_answer.split("：", 1)[-1].split(":", 1)[-1].strip()
+
+        mark = div.select_one(".CorrectOrNot span") or div.select_one("[class*=marking_]")
+        mark_class = " ".join(mark.get("class", [])) if mark is not None else ""
+        if "marking_dui" in mark_class:
+            correct = True
+        elif "marking_cuo" in mark_class or "marking_bandui" in mark_class:
+            correct = False
+        else:
+            correct = None
+        q_score = None
+        score_tag = div.select_one(".scoreNum")
+        if score_tag is not None:
+            try:
+                q_score = float(_text(score_tag))
+            except ValueError:
+                q_score = None
+
+        questions.append({
+            "id": qid,
+            "type_label": type_label,
+            "title": title,
+            "options": options,
+            "my_answer": my_answer,
+            "correct_answer": correct_answer,
+            "correct": correct,
+            "partial": "marking_bandui" in mark_class,
+            "score": q_score,
+        })
+
+    return {"score": score, "full_score": full_score, "inputs": inputs, "questions": questions}
+
+
+def decode_work_record_list(html_text: str) -> List[Tuple[str, float]]:
+    """
+    解析章节检测作答记录列表（/work/record-list）
+
+    Returns:
+        [(times 参数, 成绩)]，按作答顺序排列。times 从 0 开始（"第1次" 对应 times=0），
+        用于请求 /work/record-detail
+    """
+    records = []
+    soup = _make_soup(html_text)
+    for index, li in enumerate(soup.select("ul.viewMenuList li")):
+        match = re.search(r"showRecord\(\s*'?(\d+)'?", _attr(li, "onclick"))
+        times = match.group(1) if match else str(index)
+        score_match = re.search(r"([\d.]+)", _text(li.select_one(".viewScore")))
+        if not score_match:
+            continue
+        try:
+            records.append((times, float(score_match.group(1))))
+        except ValueError:
+            continue
+    return records

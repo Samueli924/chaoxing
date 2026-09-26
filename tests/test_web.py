@@ -115,6 +115,19 @@ class TikuOverridesTestCase(unittest.TestCase):
         self.assertEqual(ov["provider"], "TikuGo")
         self.assertEqual(ov["submit"], "true")
 
+    def test_submit_mode_keeps_cover_rate(self):
+        self.assertNotIn("cover_rate", web.WebApp._tiku_overrides({"work_mode": "submit", "provider": "TikuGo"}))
+
+    def test_best_mode_submits_regardless_of_coverage(self):
+        ov = web.WebApp._tiku_overrides({"work_mode": "best", "provider": "TikuGo"})
+        self.assertEqual((ov["submit"], ov["cover_rate"]), ("true", "0"))
+
+    def test_custom_tiku_fields(self):
+        ov = web.WebApp._tiku_overrides({"work_mode": "save", "provider": "TikuCustom",
+                                         "tiku": {"custom_url": "http://127.0.0.1:8001/api/search", "custom_key": "s"}})
+        self.assertEqual((ov["provider"], ov["custom_url"], ov["custom_key"]),
+                         ("TikuCustom", "http://127.0.0.1:8001/api/search", "s"))
+
     def test_only_known_fields(self):
         ov = web.WebApp._tiku_overrides({"work_mode": "save", "provider": "AI",
                                          "tiku": {"key": "k", "evil": "x", "endpoint": " "}})
