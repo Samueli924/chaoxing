@@ -2,45 +2,69 @@ name: CI
 
 on:
   push:
-
-  # Allows you to run this workflow manually from the Actions tab
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  test:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - os: windows-latest
-            architecture: 'x64'
-            name: 'win64'
-
+        python-version: ['3.10', '3.13']
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          architecture: ${{matrix.architecture}}
-
       - name: Install requirements
         run: |
           pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build win bin
-        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
-
+          pip install "ddddocr>=1.5.6" pyinstaller
+      - name: Locate ddddocr model
+        id: ddddocr
+        shell: python
+        run: |
+          import os, ddddocr
+          print("path=" + os.path.dirname(ddddocr.__file__), file=open(os.environ["GITHUB_OUTPUT"], "a"))
+      - name: Build exe
+        run: >
+          pyinstaller -F main.py -n chaoxing
+          --add-data "resource;resource"
+          --add-data "${{ steps.ddddocr.outputs.path }};ddddocr"
+          --collect-all ddddocr
+          --hidden-import=lxml
       - name: Create release package
+        shell: pwsh
         run: |
           mkdir release
           copy dist\chaoxing.exe release\
           copy config_template.ini release\
+          copy README.md release\
           cd release
-          7z a -tzip chaoxing.zip *
-
+          7z a -tzip chaoxing-win64.zip *
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: 'release/chaoxing.zip'
+          name: chaoxing-win64
+          path: release/chaoxing-win64.zip
+      - name: Publish release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/chaoxing-win64.zip

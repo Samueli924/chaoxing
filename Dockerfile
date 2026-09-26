@@ -2,16 +2,23 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+# 先装依赖，利用镜像层缓存
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . /app
 
-RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 数据目录（cookies / 缓存 / 日志），可挂载持久化
+ENV CHAOXING_DATA_DIR=/data
+VOLUME /data
+RUN mkdir -p /data
 
-# 创建配置文件目录并提供默认配置
-RUN mkdir -p /config && \
-    cp config_template.ini /config/config.ini
+# 网页控制台默认监听 8765
+EXPOSE 8765
+ENV CHAOXING_WEB_HOST=0.0.0.0 \
+    CHAOXING_WEB_PORT=8765
 
-# 定义卷，用户可以挂载自己的配置文件
-VOLUME /config
-
-# 使用配置文件启动应用
-ENTRYPOINT ["python3", "main.py", "-c", "/config/config.ini"]
+# 默认启动网页控制台（对外开放时会自动生成访问口令并打印到日志；
+# 也可用 docker run ... chaoxing -u 手机号 -p 密码 切换为命令行模式）
+ENTRYPOINT ["python", "main.py"]
+CMD ["--web", "--no-browser"]

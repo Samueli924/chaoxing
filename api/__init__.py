@@ -1,3 +1,2 @@
 # -*- coding: utf-8 -*-
-def formatted_output(_status, _text, _data):
-    return {"status": _status, "msg": _text, "data": _data}
+"""超星学习通自动化核心模块."""
