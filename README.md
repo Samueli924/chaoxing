@@ -1,13 +1,14 @@
 # 📚 超星学习通自动完成任务点
 
 <p align="center">
-  <a href="https://github.com/Samueli924/chaoxing"><img src="https://img.shields.io/github/stars/Samueli924/chaoxing" alt="Stars" /></a>
-  <a href="https://github.com/Samueli924/chaoxing"><img src="https://img.shields.io/github/forks/Samueli924/chaoxing" alt="Forks" /></a>
-  <a href="https://github.com/Samueli924/chaoxing/releases"><img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="Release" /></a>
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python" />
+  <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License" />
 </p>
 
 自动完成超星学习通 / 超星尔雅 / 泛雅超星 的视频、音频、文档、阅读、章节检测等任务点，支持**命令行**和**网页控制台**两种使用方式。
+
+> 最近一次真实账号实测：2026-09-26（登录 passport2.chaoxing.com，2 门课程），结果见
+> [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md) 第 4 节与 [docs/LIVE_TEST_RESULTS.md](docs/LIVE_TEST_RESULTS.md)。
 
 > ⚠️ 本项目仅用于学习与技术交流，请遵守学校与平台的相关规定，使用产生的一切后果由使用者自行承担。通过开源消灭付费刷课平台，欢迎贡献代码，觉得有用请点个 Star ⭐
 
@@ -27,42 +28,25 @@
 
 ---
 
-## 🚀 快速开始（三选一）
-
-### 方式一：网页控制台（最简单，推荐新手）
-
-1. 从 [Releases](https://github.com/Samueli924/chaoxing/releases) 下载 `chaoxing-win64.zip` 并解压
-2. **双击 `chaoxing.exe`**，会自动打开浏览器进入控制台（也可手动访问 http://127.0.0.1:8765 ）
-3. 在网页里输入手机号、密码 → 勾选要学习的课程 → 选择要完成的任务 → 点击「开始」，进度和日志实时显示
-
-> 源码运行方式：`python main.py --web`
-
-### 方式二：可执行文件（命令行）
-
-从 [Releases](https://github.com/Samueli924/chaoxing/releases) 下载解压后：
-
-```bat
-chaoxing.exe -u 手机号 -p 密码
-:: 或直接双击运行，按提示输入
-```
-
-### 方式三：源码运行（Python 3.10+）
+## 🚀 快速开始（Python 3.10+）
 
 ```bash
-git clone --depth=1 https://github.com/Samueli924/chaoxing
+git clone --depth=1 https://github.com/ieduer/chaoxing
 cd chaoxing
 pip install -r requirements.txt
 
-python main.py                      # 按提示输入手机号、密码并选择课程
+python main.py --web                # 打开网页控制台（浏览器访问 http://127.0.0.1:8765 ）
 # 或
+python main.py                      # 按提示输入手机号、密码并选择课程
 python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2
-# 或使用配置文件
-python main.py -c config.ini
-# 或打开网页控制台
-python main.py --web
+python main.py -c config.ini        # 使用配置文件
 ```
 
-> 想启用**验证码自动识别**（应对偶发的 403 拦截）：额外安装 `pip install "ddddocr>=1.5.6"`（依赖较大）。不安装也能正常使用，遇到拦截时在浏览器里手动完成一次验证即可。Releases 里的 exe 已内置该功能。
+不使用 git 时，也可以下载 [main 分支的 ZIP](https://github.com/ieduer/chaoxing/archive/refs/heads/main.zip) 解压后在该目录中执行后面几条命令。
+
+网页控制台里：输入手机号、密码 → 勾选要学习的课程 → 选择要完成的任务 → 点击「开始」，进度和日志实时显示。
+
+> 想启用**验证码自动识别**（应对偶发的 403 拦截）：额外安装 `pip install "ddddocr>=1.5.6"`（依赖较大）。不安装也能正常使用，遇到拦截时在浏览器里手动完成一次验证即可。
 
 ---
 
@@ -127,6 +111,7 @@ docker run -it -v $(pwd)/data:/data chaoxing -u 手机号 -p 密码
 | `AI` | 任意兼容 OpenAI 接口的大模型 | 需要 `endpoint` / `key` / `model` |
 | `SiliconFlow` | 硅基流动 | 需要 `siliconflow_key` |
 | `TikuAdapter` | [自建题库](https://github.com/DokiDoki1103/tikuAdapter) | 需要 `url` |
+| `TikuCustom` | 自建题库服务器（`POST /api/search`，请求 `{question, type, options, key}`） | 需要 `custom_url`，可选 `custom_key` |
 | `TikuManual` | 手动输入（命令行交互）| 无 |
 
 - `submit = false`（默认）：只保存搜到的答案，不提交，可自行到学习通检查修改后提交。
@@ -144,6 +129,12 @@ python main.py --check
 ```
 
 会在数据目录生成 `selfcheck_report.md`。
+
+逐章节核对任务点解析结果与章节页"已完成任务点"服务端计数是否一致（只读）：
+
+```bash
+python scripts/live_verify.py
+```
 
 ---
 
@@ -177,7 +168,7 @@ python main.py --check
 
 ## 🙏 致谢
 
-感谢 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) 及所有[贡献者](https://github.com/Samueli924/chaoxing/graphs/contributors)。字体解密参考 [SocialSisterYi](https://github.com/SocialSisterYi)。
+本仓库 fork 自 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing)，感谢原项目及所有[贡献者](https://github.com/Samueli924/chaoxing/graphs/contributors)。字体解密参考 [SocialSisterYi](https://github.com/SocialSisterYi)。
 
 <a href="https://github.com/Samueli924/chaoxing/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=Samueli924/chaoxing" />
