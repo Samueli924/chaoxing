@@ -273,7 +273,8 @@ def render_report(data: dict, scrub: Scrubber) -> str:
             parsed = sum(ch["parsed_pending"] for ch in c["chapters"])
             flag_mismatch = [ch for ch in c["chapters"]
                              if ch["tabs"] and ch["pending_truth"] > 0 and ch["has_finished"]]
-            lines.append(f"| {c['title']} | {'运行前' if phase == 'before' else '运行后'} | "
+            label = ("运行前" if phase == "before" else "运行后") if data.get("run") else "只读核对"
+            lines.append(f"| {c['title']} | {label} | "
                          f"{c.get('site_done')}/{c.get('site_total')} | {site_pending} | {parsed} | "
                          f"{'✅' if site_pending == parsed else '❌'} | {'✅' if not flag_mismatch else '❌ ' + str(len(flag_mismatch))} |")
     lines.append("")
@@ -338,6 +339,7 @@ def main(argv=None) -> int:
     parser.add_argument("--run", action="store_true", help="只读核对后实际完成所选课程")
     parser.add_argument("--scores", action="store_true", help="只读模式下也逐个读取章节检测成绩")
     parser.add_argument("--report-only", action="store_true", help="用上次保存的统计与抓包重新生成报告")
+    parser.add_argument("-o", "--output", default=REPORT_PATH, help="报告输出路径（默认 docs/LIVE_TEST_RESULTS.md）")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     setup_logging(verbose=args.verbose)
@@ -348,7 +350,7 @@ def main(argv=None) -> int:
         scrub = Scrubber()
         scrub.add(*data.get("_scrub", []))
         data["trace"] = summarize_trace(TRACE_PATH, scrub)
-        _write_report(data, scrub)
+        _write_report(data, scrub, args.output)
         return 0
 
     settings = load_settings(args.config)
@@ -415,7 +417,7 @@ def main(argv=None) -> int:
         runtime.request_stop()
 
     data["trace"] = summarize_trace(TRACE_PATH, scrub)
-    _write_report(data, scrub)
+    _write_report(data, scrub, args.output)
     return 0
 
 
@@ -426,12 +428,12 @@ def _save(data: dict, scrub: Scrubber) -> None:
         json.dump(payload, f, ensure_ascii=False, indent=1, default=str)
 
 
-def _write_report(data: dict, scrub: Scrubber) -> None:
+def _write_report(data: dict, scrub: Scrubber, path: str = REPORT_PATH) -> None:
     text = scrub(render_report(data, scrub))
-    os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         f.write(text)
-    logger.info(f"报告已写入 {REPORT_PATH}")
+    logger.info(f"报告已写入 {path}")
     logger.info(f"抓包记录: {TRACE_PATH}")
 
 
