@@ -15,16 +15,16 @@ class VideoEfficiencyTest(unittest.TestCase):
         cx = Chaoxing()
         clock = [0.0]
         job = {'playTime': resume, 'doublespeed': restriction}
-        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': duration, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=replies) as report, patch('api.base.runtime.should_stop', side_effect=lambda: clock[0] >= 120), patch('api.base.runtime.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': duration, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=replies) as report, patch('api.base.runtime.should_stop', side_effect=lambda: clock[0] >= 300), patch('api.base.runtime.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
             result = cx.study_video({}, job, info or {}, _speed=speed)
         return result, report.call_args_list, clock[0]
 
     def test_end_confirmation_is_bounded_and_not_success(self):
         result, calls, elapsed = self.simulate(lambda *a, **k: (False, 200))
         self.assertEqual(result, StudyResult.TIMEOUT)
-        self.assertEqual(len(calls), MAX_END_REPORTS + 1)
-        self.assertEqual([c.kwargs['_isdrag'] for c in calls], [3, 4, 4, 4])
-        self.assertLess(elapsed, 10)
+        self.assertEqual(len(calls), MAX_END_REPORTS + 4)
+        self.assertEqual([c.kwargs['_isdrag'] for c in calls], [3, 4, 4, 4, 3, 0, 0])
+        self.assertLess(elapsed, 190)
 
     def test_success_returns_without_an_extra_sleep(self):
         result, calls, elapsed = self.simulate([(False, 200), (True, 200)])
@@ -134,3 +134,15 @@ class VideoEfficiencyTest(unittest.TestCase):
         processor._handle_result(task, ChapterResult.BLOCKED)
         self.assertEqual(len(processor.failed_tasks), 1)
         self.assertEqual(len(processor.cancelled_tasks), 0)
+
+    def test_short_replay_fills_deficit_without_replaying_whole_long_video(self):
+        result, calls, elapsed = self.simulate([(False, 200)] * 6 + [(True, 200)], resume=1060000, duration=1061)
+        self.assertEqual(result, StudyResult.SUCCESS)
+        self.assertEqual([c.args[6] for c in calls], [1060, 1061, 1061, 1061, 0, 60, 120])
+        self.assertEqual(elapsed, 124)
+
+    def test_short_media_cannot_start_a_third_playback_cycle(self):
+        result, calls, elapsed = self.simulate(lambda *a, **k: (False, 200), resume=9000, duration=10)
+        self.assertEqual(result, StudyResult.TIMEOUT)
+        self.assertEqual(sum(c.kwargs['_isdrag'] == 3 for c in calls), 2)
+        self.assertLess(elapsed, 30)

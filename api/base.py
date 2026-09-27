@@ -67,6 +67,7 @@ WORK_RETEST_URL = "https://mooc1.chaoxing.com/mooc-ans/work/retest"
 
 # 视频播放到结尾后，服务器仍未判定完成时最多再上报的次数，避免无限循环
 MAX_END_REPORTS = 3
+MAX_VIDEO_REPAIR_SECONDS = 180
 VIDEO_REQUEST_TIMEOUT = (5, 10)
 MAX_VIDEO_REQUEST_ATTEMPTS = 3
 # 一个章节最多尝试的任务卡片标签页数量
@@ -797,6 +798,7 @@ class Chaoxing:
         forbidden_retry = 0
         max_forbidden_retry = 2
         end_reports = 0
+        repair_deadline = None
         progress_key = f"{_course.get('courseId')}-{_job.get('jobid')}"
 
         def report(position, event):
@@ -839,6 +841,9 @@ class Chaoxing:
 
                 # Read the current position before reporting; avoid a one-tick stale bookmark.
                 now = time.monotonic()
+                if repair_deadline is not None and now >= repair_deadline:
+                    logger.error("补播确认达到时间上限，保留未完成状态: {}", job_name)
+                    return StudyResult.TIMEOUT
                 play_time = min(duration, play_time + (now - last_iter) * _speed)
                 last_iter = now
 
@@ -847,8 +852,27 @@ class Chaoxing:
                     if play_time >= duration:
                         end_reports += 1
                         if end_reports > MAX_END_REPORTS:
-                            logger.error(f"结尾确认达到上限，保留未完成状态且不自动重播: {job_name}")
-                            return StudyResult.TIMEOUT
+                            if repair_deadline is not None:
+                                logger.error("补播仍未确认，结束本次任务: {}", job_name)
+                                return StudyResult.TIMEOUT
+                            # An end bookmark is not proof of credited viewing time. A single
+                            # short replay can fill the deficit; never repeat the full long clip.
+                            repair_deadline = time.monotonic() + MAX_VIDEO_REPAIR_SECONDS
+                            play_time = 0
+                            end_reports = 0
+                            job_name += "（补播确认）"
+                            logger.warning("开始一次补播确认，播放预算 {} 秒: {}", MAX_VIDEO_REPAIR_SECONDS, job_name)
+                            last_report_at = time.monotonic()
+                            passed, state = report(0, 3)
+                            last_iter = time.monotonic()
+                            if passed:
+                                return StudyResult.SUCCESS
+                            if runtime.should_stop():
+                                return StudyResult.CANCELLED
+                            if state != 200:
+                                return StudyResult.FORBIDDEN if state == 403 else StudyResult.TIMEOUT
+                            pbar = self._close_pbar_safe(pbar)
+                            continue
 
                     report_started = time.monotonic()
                     passed, state = report(play_time, 4 if play_time >= duration else 0)
