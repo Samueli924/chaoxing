@@ -603,7 +603,7 @@ class Chaoxing:
             _duration,
             _playingTime,
             _type: str = "Video",
-            _isdrag: int = 3,
+            _isdrag: int = 0,
             headers: Optional[dict] = None,
     ) -> tuple[bool, int]:
         if headers is None:
@@ -769,6 +769,10 @@ class Chaoxing:
         # 现实时间: last_iter, gc.THRESHOLD
         # 视频时间(随倍速缩放): duration, play_time, last_log_time, wait_time
         play_time = min(duration, int(_job.get("playTime") or 0) // 1000)
+        # A last position at the end is not proof of the required watched duration.
+        # The browser replays unfinished media; do not repeatedly claim its end.
+        if play_time >= duration:
+            play_time = 0
         last_log_time = play_time
         last_iter = time.monotonic()
         wait_time = 30
@@ -781,7 +785,7 @@ class Chaoxing:
         progress_key = f"{_course.get('courseId')}-{_job.get('jobid')}"
 
         passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time,
-                                                _type, headers=headers, _isdrag=0)
+                                                _type, headers=headers, _isdrag=3)
         if passed:
             logger.info("服务器确认任务已完成: {}", job_name)
             return StudyResult.SUCCESS
@@ -803,7 +807,8 @@ class Chaoxing:
                             return StudyResult.ERROR
 
                     passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
-                                                            int(play_time), _type, headers=headers)
+                                                            int(play_time), _type, headers=headers,
+                                                            _isdrag=4 if play_time >= duration else 0)
 
                     if state == 403:
                         if forbidden_retry >= max_forbidden_retry:

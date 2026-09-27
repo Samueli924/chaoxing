@@ -16,3 +16,13 @@ Verified on 2026-09-27 UTC:
 - Full selected-course inventory: 69 chapters; 60 video tasks; 58 chapter tests; 3 document and 1 reading attachments without task flags. Initially only one task was complete. No inventory errors.
 
 **Full course acceptance has not passed.** Every remaining task must complete and be checked against both server cards and 118/118 aggregate progress. A pre-completed other course is not evidence that this run completed the target. Non-task attachments must also be checked. Scores and actual task completion are separate checks.
+
+## Full-course test found a second video defect
+
+Normal Brave traffic and its current public player script identify events as playing=0, drag=1, pause=2, play=3, ended=4. The legacy runner repeatedly sent play=3 as a heartbeat, so HTTP 200 and an end-position bookmark did not establish completion. The runner now sends play=3 once, periodic playing=0, and ended=4 only after reaching the end through elapsed playback. An unfinished end-position bookmark restarts from zero instead of repeatedly asserting completion.
+
+Evidence source: the course-loaded `https://mooc1.chaoxing.com/ananas/videojs-ext/videojs-ext.min.js?v=2026-0902-1207` (static inspection only) plus actual normal play/pause/heartbeat requests in the authorized Brave tab. The browser also states that at least 90% viewing duration is required.
+
+A previously unplayed 220-second video was then run at 1x. Its progress response changed to isPassed=true, and a fresh task card independently confirmed isPassed=true with no pending job flag. This confirms one complete video transaction, not full-course acceptance.
+
+All 112 regression tests passed after the event repair. Course tests are being submitted from a local curated bank; every result is checked against the actual server task flag and score. Wrong answers are recorded separately for correction; submission success alone is not a correctness claim. Three non-task PDF files returned HTTP 200, valid PDF signatures and page counts 2, 13 and 16.

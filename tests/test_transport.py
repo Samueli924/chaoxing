@@ -149,7 +149,7 @@ class VideoResumeTest(unittest.TestCase):
             result = cx.study_video({'courseId': 'test'}, {'jobid': 'test', 'playTime': 12000}, {})
         self.assertEqual(result, StudyResult.CANCELLED)
         self.assertEqual(report.call_args.args[5:7], (600, 12))
-        self.assertEqual(report.call_args.kwargs['_isdrag'], 0)
+        self.assertEqual(report.call_args.kwargs['_isdrag'], 3)
 
     def test_resumed_video_reports_progress_before_time_limit(self):
         from api.base import Chaoxing, StudyResult
@@ -162,6 +162,7 @@ class VideoResumeTest(unittest.TestCase):
         self.assertEqual(result, StudyResult.CANCELLED)
         positions = [call.args[6] for call in report.call_args_list]
         self.assertEqual(positions, [822, 852, 882])
+        self.assertEqual([call.kwargs['_isdrag'] for call in report.call_args_list], [3, 0, 0])
 
     def test_initial_forbidden_does_not_start_playback(self):
         from api.base import Chaoxing, StudyResult
@@ -171,3 +172,21 @@ class VideoResumeTest(unittest.TestCase):
         self.assertEqual(result, StudyResult.FORBIDDEN)
         report.assert_called_once()
         sleep.assert_not_called()
+
+    def test_reached_end_sends_completion_event(self):
+        from api.base import Chaoxing, StudyResult
+        cx = Chaoxing()
+        clock = [0.0]
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=[(False, 200), (True, 200)]) as report, patch('api.base.runtime.should_stop', return_value=False), patch('api.base.runtime.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
+            result = cx.study_video({}, {'playTime': 599000}, {})
+        self.assertEqual(result, StudyResult.SUCCESS)
+        self.assertEqual([call.kwargs['_isdrag'] for call in report.call_args_list], [3, 4])
+        self.assertEqual(report.call_args.args[6], 600)
+
+    def test_end_bookmark_does_not_claim_watched_completion(self):
+        from api.base import Chaoxing, StudyResult
+        cx = Chaoxing()
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', return_value=(False, 200)) as report, patch('api.base.runtime.should_stop', return_value=True), patch('api.base.SessionManager.get_session'):
+            result = cx.study_video({}, {'playTime': 600000}, {})
+        self.assertEqual(result, StudyResult.CANCELLED)
+        self.assertEqual(report.call_args.args[6], 0)
