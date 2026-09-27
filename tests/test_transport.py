@@ -145,7 +145,7 @@ class VideoResumeTest(unittest.TestCase):
     def test_start_reports_resume_position_not_duration(self):
         from api.base import Chaoxing, StudyResult
         cx = Chaoxing()
-        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', return_value=(False, 200)) as report, patch('api.base.runtime.should_stop', return_value=True), patch('api.base.SessionManager.get_session'):
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', return_value=(False, 200)) as report, patch('api.base.runtime.should_stop', side_effect=[False, False, True]), patch('api.base.SessionManager.get_session'):
             result = cx.study_video({'courseId': 'test'}, {'jobid': 'test', 'playTime': 12000}, {})
         self.assertEqual(result, StudyResult.CANCELLED)
         self.assertEqual(report.call_args.args[5:7], (600, 12))
@@ -186,7 +186,7 @@ class VideoResumeTest(unittest.TestCase):
     def test_end_bookmark_does_not_claim_watched_completion(self):
         from api.base import Chaoxing, StudyResult
         cx = Chaoxing()
-        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', return_value=(False, 200)) as report, patch('api.base.runtime.should_stop', return_value=True), patch('api.base.SessionManager.get_session'):
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 600, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', return_value=(False, 200)) as report, patch('api.base.runtime.should_stop', side_effect=[False, False, True]), patch('api.base.SessionManager.get_session'):
             result = cx.study_video({}, {'playTime': 600000}, {})
         self.assertEqual(result, StudyResult.CANCELLED)
         self.assertEqual(report.call_args.args[6], 0)

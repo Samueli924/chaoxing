@@ -12,7 +12,6 @@ import itertools
 import sys
 import threading
 import time
-import traceback
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -23,6 +22,7 @@ from api.live_process import LiveProcessor
 from api.logger import logger
 from api.runtime import interactive_lock, runtime
 from api.verification import confirm_video
+from api.settings import normalize_common
 
 
 class ChapterResult(enum.Enum):
@@ -39,7 +39,12 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
     job_type = job.get("type")
     if job_type == "video":
         media_type = "Audio" if job.get("audio") else "Video"
-        result = chaoxing.study_video(course, job, job_info, _speed=speed, _type=media_type)
+        try:
+            result = chaoxing.study_video(course, job, job_info, _speed=speed, _type=media_type)
+        except Exception as exc:
+            # Do not let a malformed media response trigger whole-chapter replay.
+            logger.error("媒体处理异常: {}；保留服务端进度，不自动重播", type(exc).__name__)
+            return StudyResult.ERROR
         if result.is_failure() and result != StudyResult.CANCELLED:
             logger.warning("媒体任务未完成，保留服务端进度并结束本次尝试")
         return result
@@ -117,6 +122,7 @@ class ChapterTask:
     course: dict[str, Any]
     result: ChapterResult = ChapterResult.PENDING
     tries: int = 0
+    last_error: str = ""
 
     def __lt__(self, other):
         """比较两个任务的索引大小，用于优先级队列排序."""
@@ -146,6 +152,7 @@ class JobProcessor:
         """
         self.chaoxing = chaoxing
         self.tasks = list(tasks)
+        config = {**config, **normalize_common(config)}
         self.config = config
         self.speed = float(config.get("speed") or 1.0)
         try:
@@ -157,6 +164,9 @@ class JobProcessor:
             self.retry_interval = max(0.0, float(config.get("retry_interval", 1.0)))
         except (TypeError, ValueError):
             self.retry_interval = 1.0
+        self.concurrency_limit = self.worker_num
+        self.concurrency_changes = []
+        self._active = 0
         self.max_tries = 5
         interactive = config.get("interactive")
         self.interactive = _stdin_is_tty() if interactive is None else bool(interactive)
@@ -210,12 +220,15 @@ class JobProcessor:
 
     def summary(self) -> dict[str, Any]:
         return {
+            "concurrency": self.concurrency_limit,
+            "concurrency_changes": list(self.concurrency_changes),
             "total": len(self.tasks),
             "done": len(self.done_tasks),
             "failed": [t.label for t in self.failed_tasks],
             "skipped": [t.label for t in self.skipped_tasks],
             "cancelled": len(self.cancelled_tasks),
             "skipped_works": self.skipped_works,
+            "failure_details": [{"chapter": t.label, "attempts": t.tries, "reason": t.last_error or t.result.name} for t in self.failed_tasks],
         }
 
     # ------------------------------------------------------------------
@@ -227,6 +240,8 @@ class JobProcessor:
 
     def _report_progress(self) -> None:
         runtime.update_counts(
+            concurrency=self.concurrency_limit,
+            active=self._active,
             total=len(self.tasks),
             done=len(self.done_tasks),
             failed=len(self.failed_tasks),
@@ -280,6 +295,9 @@ class JobProcessor:
                         return None
                     self._cond.wait(0.5)
                     continue
+                if self._active >= self.concurrency_limit:
+                    self._cond.wait(0.5)
+                    continue
                 if self._heap:
                     ready_at, _, _, task = self._heap[0]
                     now = time.monotonic()
@@ -288,6 +306,7 @@ class JobProcessor:
                         if task.course_key in self._stopped_courses:
                             self._finalize(task, self.skipped_tasks)
                             continue
+                        self._active += 1
                         return task
                     self._cond.wait(min(ready_at - now, 1.0))
                 else:
@@ -307,9 +326,19 @@ class JobProcessor:
                 result = process_chapter(self.chaoxing, task.course, task.point, self.speed,
                                          on_job_result=self._on_job_result)
             except Exception as e:
-                logger.error(f"处理章节出错: {task.label}: {type(e).__name__}: {e}")
-                logger.debug(traceback.format_exc())
+                task.last_error = type(e).__name__
+                logger.error("处理章节出错: {}: {}", task.label, task.last_error)
                 result = ChapterResult.ERROR
+            with self._cond:
+                self._active -= 1
+                if result in (ChapterResult.ERROR, ChapterResult.BLOCKED):
+                    previous = self.concurrency_limit
+                    self.concurrency_limit = max((n for n in (1, 2, 4, 8, 12, 16) if n < previous), default=1)
+                    if self.concurrency_limit != previous:
+                        self.concurrency_changes.append({"from": previous, "to": self.concurrency_limit, "reason": task.last_error or result.name})
+                        logger.warning("任务出错，自动降低并发 {} → {}；在途任务正常收尾，后续任务按新上限继续", previous, self.concurrency_limit)
+                    self._report_progress()
+                self._cond.notify_all()
             task.result = result
             self._handle_result(task, result)
 

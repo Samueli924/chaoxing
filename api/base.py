@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
+import math
 import random
 import re
 import secrets
@@ -109,6 +110,7 @@ def _build_session() -> requests.Session:
         status_forcelist=(500, 502, 503, 504),
         allowed_methods=frozenset({"GET", "HEAD", "OPTIONS"}),
         raise_on_status=False,
+        respect_retry_after_header=False,  # Server headers must not create an unbounded sleep.
     )
     adapter = CompatibleHTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=32)
     session.mount("https://", adapter)
@@ -692,15 +694,14 @@ class Chaoxing:
                 logger.debug("rt={} 返回403, 尝试切换rt", rt_candidate)
 
         if resp.status_code == 200:
-            logger.trace(resp.text)
             passed = parse_passed(resp)
             if passed is None:
-                logger.warning(f"视频进度上报返回了非预期内容: {resp.text[:200]}")
-                return False, -1
+                logger.warning("视频上报 HTTP 200 但缺少有效完成字段；可能登录失效或页面格式变化")
+                return False, -2
             return passed, 200
 
         if resp.status_code == 403:
-            logger.debug("视频进度上报返回403, jobid={}, 摘要={}", _job.get("jobid"), resp.text[:200])
+            logger.warning("视频上报 HTTP 403：访问受限或需要验证，未确认完成")
             return False, 403
 
         logger.error("视频进度上报失败: HTTP {}", resp.status_code)
@@ -753,11 +754,20 @@ class Chaoxing:
                 logger.trace(f"关闭进度条失败: {e}")
         return None
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
+    def study_video(self, _course, _job, _job_info, _speed: float = 2.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
-        # Honour task-card restrictions even when the caller requests a faster rate.
-        if str(_job.get("doublespeed", "")).lower() in ("0", "false"):
-            _speed = min(_speed, 1.0)
+        # Native player menu maximum is 2x. Unknown permission is not permission.
+        try:
+            _speed = float(_speed)
+            if not math.isfinite(_speed) or _speed <= 0:
+                raise ValueError()
+        except (ValueError, TypeError, OverflowError):
+            logger.error("媒体倍速无效，任务未启动")
+            return StudyResult.ERROR
+        allowed = str(_job.get("doublespeed", "")).strip().lower() in ("1", "true")
+        _speed = min(max(1.0, _speed), 2.0 if allowed else 1.0)
+        if runtime.should_stop():
+            return StudyResult.CANCELLED
         _session = SessionManager.get_session()
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         job_name = _job.get("name") or _job.get("objectid", "")
@@ -772,7 +782,7 @@ class Chaoxing:
         _dtoken = _video_info.get("dtoken")
         try:
             duration = int(float(_video_info.get("duration") or 0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             duration = 0
         if not _dtoken or duration <= 0:
             logger.error(f"媒体信息缺少 dtoken 或时长 ({job_name})")
@@ -780,7 +790,11 @@ class Chaoxing:
 
         # 现实时间: last_iter, gc.THRESHOLD
         # 媒体位置随倍速变化；上报间隔遵循平台配置的现实时间。
-        play_time = min(duration, int(_job.get("playTime") or 0) // 1000)
+        try:
+            play_time = max(0, min(duration, int(float(_job.get("playTime") or 0)) // 1000))
+        except (TypeError, ValueError, OverflowError):
+            logger.error("媒体书签格式无效，保留原进度，任务未启动")
+            return StudyResult.ERROR
         # A last position at the end is not proof of the required watched duration.
         # The browser replays unfinished media; do not repeatedly claim its end.
         if play_time >= duration:
@@ -795,6 +809,17 @@ class Chaoxing:
 
         logger.info(f"开始任务: {job_name}, 总时长: {duration}s, 已进行: {play_time}s")
 
+        logger.info("实际倍速: {}x（平台{}倍速）", _speed, "允许" if allowed else "禁止或未明确允许")
+        # Fixed wall-clock budget includes request delays and the one supplemental cycle.
+        media_deadline = time.monotonic() + (duration - play_time) / _speed + 300 + MAX_VIDEO_REPAIR_SECONDS
+
+        def failure(state):
+            reason = {401: "登录失效", 403: "访问受限或需要验证", -2: "响应格式异常"}.get(state, "请求失败或重试耗尽")
+            logger.error("媒体任务未完成: {}; 状态={}; 原因={}", job_name, state, reason)
+            if state == 403:
+                return StudyResult.FORBIDDEN
+            return StudyResult.TIMEOUT if state in (-1, 408, 429, 500, 502, 503, 504) else StudyResult.ERROR
+
         forbidden_retry = 0
         max_forbidden_retry = 2
         end_reports = 0
@@ -805,12 +830,14 @@ class Chaoxing:
             # Retry the same position, never restart an entire video after a network error.
             nonlocal last_iter
             for attempt in range(MAX_VIDEO_REQUEST_ATTEMPTS):
+                if runtime.should_stop() or time.monotonic() >= media_deadline:
+                    return False, -1
                 try:
                     result = self.video_progress_log(
                         _session, _course, _job, _job_info, _dtoken, duration,
                         int(position), _type, headers=headers, _isdrag=event)
                 except RequestException as exc:
-                    logger.warning("视频请求失败: {}", type(exc).__name__)
+                    logger.warning("视频请求失败: {}；第 {}/{} 次，事件={}，位置={}s", type(exc).__name__, attempt + 1, MAX_VIDEO_REQUEST_ATTEMPTS, event, int(position))
                     result = (False, -1)
                 if result[0] or result[1] not in (-1, 408, 429, 500, 502, 503, 504):
                     return result
@@ -831,7 +858,7 @@ class Chaoxing:
             return StudyResult.SUCCESS
         if state != 200:
             return StudyResult.CANCELLED if runtime.should_stop() else (
-                StudyResult.FORBIDDEN if state == 403 else StudyResult.TIMEOUT)
+                failure(state))
 
         pbar = None
         try:
@@ -841,6 +868,9 @@ class Chaoxing:
 
                 # Read the current position before reporting; avoid a one-tick stale bookmark.
                 now = time.monotonic()
+                if now >= media_deadline:
+                    logger.error("媒体任务超过总时间预算，保留进度并结束: {}", job_name)
+                    return StudyResult.TIMEOUT
                 if repair_deadline is not None and now >= repair_deadline:
                     logger.error("补播确认达到时间上限，保留未完成状态: {}", job_name)
                     return StudyResult.TIMEOUT
@@ -870,7 +900,7 @@ class Chaoxing:
                             if runtime.should_stop():
                                 return StudyResult.CANCELLED
                             if state != 200:
-                                return StudyResult.FORBIDDEN if state == 403 else StudyResult.TIMEOUT
+                                return failure(state)
                             pbar = self._close_pbar_safe(pbar)
                             continue
 
@@ -894,7 +924,13 @@ class Chaoxing:
                         last_iter = time.monotonic()
                         if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get("duration"):
                             _dtoken = refreshed_meta["dtoken"]
-                            duration = int(float(refreshed_meta["duration"]))
+                            try:
+                                refreshed_duration = int(float(refreshed_meta["duration"]))
+                            except (ValueError, TypeError, OverflowError):
+                                refreshed_duration = 0
+                            if refreshed_duration != duration:
+                                logger.error("刷新后媒体时长发生变化或无效，停止当前任务")
+                                return StudyResult.ERROR
                             logger.debug("媒体状态已刷新，保留播放位置: {}", play_time)
                             pbar = self._close_pbar_safe(pbar)
                             continue
@@ -902,7 +938,7 @@ class Chaoxing:
                         return StudyResult.ERROR
 
                     if not passed and state != 200:
-                        return StudyResult.TIMEOUT
+                        return failure(state)
 
                     # Keep the native wall-clock cadence; response/queue delay must not accumulate.
                     last_report_at = report_started

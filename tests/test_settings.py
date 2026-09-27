@@ -27,8 +27,8 @@ class SettingsTestCase(unittest.TestCase):
 
     def test_defaults_when_no_file(self):
         s = st.load_settings(cli_common={}, environ={})
-        self.assertEqual(s.common["speed"], 1.0)
-        self.assertEqual(s.common["jobs"], 4)
+        self.assertEqual(s.common["speed"], 2.0)
+        self.assertEqual(s.common["jobs"], 12)
         self.assertEqual(s.common["notopen_action"], "retry")
         self.assertEqual(s.common["course_list"], [])
 

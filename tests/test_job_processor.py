@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -71,6 +72,58 @@ class JobProcessorTestCase(unittest.TestCase):
     @staticmethod
     def _empty():
         return {"jobs": [], "job_info": {}}
+
+    def test_nonfinite_scheduler_config_is_normalized(self):
+        processor, _ = self._make_processor(self._not_open(), max_tries=1)
+        processor = JobProcessor(processor.chaoxing, processor.tasks,
+                                 {'retry_interval': float('nan'), 'jobs': float('inf'), 'speed': float('nan')})
+        processor.max_tries = 1
+        self._run_with_timeout(processor)
+        self.assertEqual(processor.pending_count, 0)
+
+    def test_errors_step_down_all_tiers_and_exhaust_retry_budget(self):
+        p, task = self._make_processor(self._error(), max_tries=5)
+        p.worker_num = p.concurrency_limit = 12
+        self._run_with_timeout(p)
+        self.assertEqual([(r['from'], r['to']) for r in p.concurrency_changes], [(12, 8), (8, 4), (4, 2), (2, 1)])
+        self.assertEqual(p.pending_count, 0)
+        self.assertEqual(p._active, 0)
+        self.assertIn(task, p.failed_tasks)
+
+    def test_downshift_waits_for_inflight_tasks_then_continues(self):
+        import time
+        course = {'courseId': 'c', 'clazzId': 'z', 'title': 'course'}
+        tasks = [ChapterTask(i, {'title': str(i)}, course) for i in range(3)]
+        p = JobProcessor(DummyChaoxing(self._empty()), tasks, {'jobs': 2})
+        second_started, release_second, third_started = threading.Event(), threading.Event(), threading.Event()
+        def process(cx, course, point, speed, **kwargs):
+            if point['title'] == '0':
+                if not second_started.wait(2): raise AssertionError('second task not started')
+                return ChapterResult.BLOCKED
+            if point['title'] == '1':
+                second_started.set()
+                if not release_second.wait(3): raise AssertionError('release missing')
+            else:
+                third_started.set()
+            return ChapterResult.SUCCESS
+        with patch.object(scheduler, 'process_chapter', side_effect=process):
+            thread = threading.Thread(target=p.run, daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(second_started.wait(2))
+                deadline = time.monotonic() + 2
+                while p.concurrency_limit != 1 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(p.concurrency_limit, 1)
+                self.assertFalse(third_started.is_set())
+            finally:
+                release_second.set()
+                thread.join(3)
+            self.assertFalse(thread.is_alive())
+        self.assertTrue(third_started.is_set())
+        self.assertEqual(p.pending_count, 0)
+        self.assertEqual(len(p.failed_tasks), 1)
+        self.assertEqual(len(p.done_tasks), 2)
 
     def test_not_open_does_not_retry_forever(self):
         processor, _ = self._make_processor(self._not_open(), max_tries=3)

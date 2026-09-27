@@ -47,9 +47,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("-p", "--password", type=str, default=None, help="登录密码")
     parser.add_argument("-l", "--list", dest="course_list", type=str, default=None,
                         help="要学习的课程ID列表, 以 , 分隔 (默认运行后选择)")
-    parser.add_argument("-s", "--speed", type=float, default=None, help="视频播放倍速 (默认1, 最大2)")
+    parser.add_argument("-s", "--speed", type=float, default=None, help="视频播放倍速 (默认平台最高2，禁用或限制不明时1)")
     parser.add_argument("--max-duration", type=int, default=None, help="本次任务运行时限（秒），0 为不限；当前请求结束后停止")
-    parser.add_argument("-j", "--jobs", type=int, default=None, help="同时进行的章节数 (默认4)")
+    parser.add_argument("-j", "--jobs", type=int, default=None, help="同时进行的章节数 (默认12，错误时自动逐档降至1)")
     parser.add_argument("-a", "--notopen-action", type=str, default=None, choices=["retry", "ask", "continue"],
                         help="遇到未开放章节时的行为: retry-重试(默认), ask-询问, continue-跳过")
     parser.add_argument("--retry-interval", type=float, default=None, help="重试等待时间, 单位秒 (默认1.0)")

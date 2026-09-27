@@ -19,6 +19,60 @@ class VideoEfficiencyTest(unittest.TestCase):
             result = cx.study_video({}, job, info or {}, _speed=speed)
         return result, report.call_args_list, clock[0]
 
+    def test_invalid_speed_fails_before_any_request(self):
+        for speed in (0, -1, float('nan'), float('inf'), 'invalid'):
+            result, calls, _ = self.simulate([], speed=speed)
+            self.assertEqual(result, StudyResult.ERROR)
+            self.assertEqual(calls, [])
+
+    def test_invalid_duration_or_bookmark_is_terminal(self):
+        for duration in ('bad', float('inf'), float('nan'), -1):
+            result, calls, _ = self.simulate([], duration=duration)
+            self.assertEqual(result, StudyResult.ERROR)
+            self.assertEqual(calls, [])
+        for resume in ('bad', float('inf'), float('nan')):
+            result, calls, _ = self.simulate([], resume=resume)
+            self.assertEqual(result, StudyResult.ERROR)
+            self.assertEqual(calls, [])
+
+    def test_unknown_speed_permission_is_conservative(self):
+        for permission in (None, '', 'unexpected', False, 0):
+            _, _, elapsed = self.simulate([(False, 200), (True, 200)], resume=590000, speed=2, restriction=permission)
+            self.assertEqual(elapsed, 10)
+        _, _, elapsed = self.simulate([(False, 200), (True, 200)], resume=590000, speed=99, restriction=True)
+        self.assertEqual(elapsed, 5)
+
+    def test_error_classification_does_not_label_everything_timeout(self):
+        for status, expected in ((401, StudyResult.ERROR), (404, StudyResult.ERROR), (-2, StudyResult.ERROR), (403, StudyResult.FORBIDDEN)):
+            result, calls, _ = self.simulate([(False, status)])
+            self.assertEqual(result, expected)
+            self.assertEqual(len(calls), 1)
+
+    def test_media_exception_cannot_trigger_whole_chapter_retry(self):
+        cx = Mock()
+        cx.get_job_list.return_value = ([{'type': 'video'}], {})
+        cx.study_video.side_effect = ValueError('private response')
+        self.assertEqual(process_chapter(cx, {}, {'title': 'test'}, 2), ChapterResult.BLOCKED)
+        cx.study_video.assert_called_once()
+
+    def test_retry_after_cannot_override_finite_backoff(self):
+        session = _build_session()
+        self.addCleanup(session.close)
+        retry = session.get_adapter('https://').max_retries
+        self.assertEqual(retry.get_retry_after(Mock(headers={'Retry-After': '86400'})), 86400)
+        self.assertFalse(retry.respect_retry_after_header)
+
+    def test_slow_successful_requests_cannot_keep_media_alive_forever(self):
+        cx, clock = Chaoxing(), [0.0]
+        def report(*args, **kwargs):
+            clock[0] += 100
+            return False, 200
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 1, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=report) as calls, patch('api.base.runtime.should_stop', return_value=False), patch('api.base.runtime.sleep', side_effect=lambda n: clock.__setitem__(0, clock[0] + n)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
+            result = cx.study_video({}, {}, {}, 1)
+        self.assertEqual(result, StudyResult.TIMEOUT)
+        self.assertLess(clock[0], 600)
+        self.assertLessEqual(calls.call_count, 5)
+
     def test_end_confirmation_is_bounded_and_not_success(self):
         result, calls, elapsed = self.simulate(lambda *a, **k: (False, 200))
         self.assertEqual(result, StudyResult.TIMEOUT)

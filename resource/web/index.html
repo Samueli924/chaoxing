@@ -182,11 +182,11 @@
     <details>
       <summary>更多设置</summary>
       <div class="grid2">
-        <div><label for="speed">视频倍速（1–2）</label>
-          <input id="speed" type="number" min="1" max="2" step="0.1" value="1"></div>
+        <div><label for="speed">视频倍速（默认最高2，遵守课程限制）</label>
+          <input id="speed" type="number" min="1" max="2" step="0.1" value="2"></div>
         <div><label for="max-duration">运行时限（秒，0 为不限）</label><input id="max-duration" type="number" min="0" max="86400" value="0"></div>
-        <div><label for="jobs">同时进行的章节数</label>
-          <input id="jobs" type="number" min="1" max="16" value="4"></div>
+        <div><label for="jobs">同时进行的章节数（错误时自动降档）</label>
+          <input id="jobs" type="number" min="1" max="16" value="12"></div>
         <div><label for="notopen">遇到未开放章节</label>
           <select id="notopen">
             <option value="retry">稍后自动重试（默认）</option>
@@ -314,10 +314,10 @@ function selectedCourses() {
 
 function applyDefaults(d) {
   if (d.username && !$("username").value) $("username").value = d.username;
-  $("speed").value = d.speed || 1;
+  $("speed").value = d.speed || 2;
   $("max-duration").value = d.max_duration || 0;
   $("provider-chain").value = (d.provider_chain || "").includes(",") ? d.provider_chain : "";
-  $("jobs").value = d.jobs || 4;
+  $("jobs").value = d.jobs || 12;
   $("notopen").value = d.notopen_action === "continue" ? "continue" : "retry";
   $("task-count").checked = !!d.add_learning_count;
   $("target-count").value = d.target_count || 100;
@@ -370,6 +370,7 @@ async function refreshState() {
 function renderProgress(s) {
   $("stage").textContent = s.stage || "";
   const c = s.counts || {};
+  $("jobs").title = `当前并发上限：${c.concurrency || Number($("jobs").value)}`;
   $("c-done").textContent = c.done || 0;
   $("c-total").textContent = c.total || 0;
   $("c-failed").textContent = c.failed || 0;
@@ -492,8 +493,8 @@ $("start-btn").addEventListener("click", async () => {
     study: $("task-study").checked,
     add_learning_count: $("task-count").checked,
     target_count: Number($("target-count").value) || 100,
-    speed: Number($("speed").value) || 1,
-    jobs: Number($("jobs").value) || 4,
+    speed: Number($("speed").value) || 2,
+    jobs: Number($("jobs").value) || 12,
     notopen_action: $("notopen").value,
     work_mode: document.querySelector("input[name=work]:checked").value,
     provider: $("provider").value,
