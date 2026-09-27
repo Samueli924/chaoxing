@@ -321,6 +321,10 @@ class JobProcessor:
                 logger.debug("Task success: {}", task.label)
                 self._auto_skip.discard(course_key)
                 self._finalize(task, self.done_tasks)
+            elif result == ChapterResult.BLOCKED:
+                self._auto_skip.discard(course_key)
+                logger.error("媒体任务未获完成确认，不自动重播: {}", task.label)
+                self._finalize(task, self.failed_tasks)
             elif result == ChapterResult.CANCELLED or runtime.should_stop():
                 self._finalize(task, self.cancelled_tasks)
             elif result == ChapterResult.NOT_OPEN:
@@ -346,10 +350,6 @@ class JobProcessor:
                         logger.info("章节未开放: {}, {:.0f} 秒后重新检查 ({}/{})", task.label, delay, task.tries,
                                     self.max_tries)
                         self._push(task, delay)
-            elif result == ChapterResult.BLOCKED:
-                self._auto_skip.discard(course_key)
-                logger.error("媒体任务未获完成确认，不自动重播: {}", task.label)
-                self._finalize(task, self.failed_tasks)
             elif result == ChapterResult.ERROR:
                 self._auto_skip.discard(course_key)
                 task.tries += 1

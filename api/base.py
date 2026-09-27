@@ -821,9 +821,9 @@ class Chaoxing:
                     last_iter = time.monotonic()
             return result
 
+        last_report_at = time.monotonic()
         passed, state = report(play_time, 3)
         last_iter = time.monotonic()
-        last_report_at = last_iter
         if passed:
             logger.info("服务器确认任务已完成: {}", job_name)
             return StudyResult.SUCCESS
@@ -850,6 +850,7 @@ class Chaoxing:
                             logger.error(f"结尾确认达到上限，保留未完成状态且不自动重播: {job_name}")
                             return StudyResult.TIMEOUT
 
+                    report_started = time.monotonic()
                     passed, state = report(play_time, 4 if play_time >= duration else 0)
                     if passed:
                         logger.info("服务器确认任务已完成: {}", job_name)
@@ -879,7 +880,8 @@ class Chaoxing:
                     if not passed and state != 200:
                         return StudyResult.TIMEOUT
 
-                    last_report_at = time.monotonic()
+                    # Keep the native wall-clock cadence; response/queue delay must not accumulate.
+                    last_report_at = report_started
                     logger.trace("Progress logged")
 
                 runtime.update_item(progress_key, job_name, play_time, duration, kind=_type.lower())

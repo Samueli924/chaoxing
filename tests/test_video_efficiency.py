@@ -114,3 +114,23 @@ class VideoEfficiencyTest(unittest.TestCase):
         html = 'mArg = {"defaults": {"knowledgeid": "c"}, "attachments": [{"type": "video", "jobid": "v", "mid": "m", "job": true, "isPassed": "false", "property": {}}]};'
         jobs, _ = decode_course_card(html)
         self.assertEqual([job['jobid'] for job in jobs], ['v'])
+
+    def test_response_delay_does_not_accumulate_between_heartbeats(self):
+        cx = Chaoxing()
+        clock, sent = [0.0], []
+        def report(*args, **kwargs):
+            sent.append(clock[0])
+            clock[0] += 5
+            return len(sent) == 2, 200
+        with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': 1000, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=report), patch('api.base.runtime.should_stop', side_effect=lambda: clock[0] >= 180), patch('api.base.runtime.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
+            self.assertEqual(cx.study_video({}, {'playTime': 0}, {'reportTimeInterval': 60}), StudyResult.SUCCESS)
+        self.assertEqual(sent, [0, 60])
+        self.assertEqual(clock[0], 65)
+
+    def test_known_failure_is_not_hidden_as_cancelled_after_stop(self):
+        task = ChapterTask(index=0, point={'title': 'test'}, course={'title': 'test', 'courseId': 'test'})
+        processor = JobProcessor(Mock(), [task], {'jobs': 1})
+        runtime.request_stop()
+        processor._handle_result(task, ChapterResult.BLOCKED)
+        self.assertEqual(len(processor.failed_tasks), 1)
+        self.assertEqual(len(processor.cancelled_tasks), 0)
