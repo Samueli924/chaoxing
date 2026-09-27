@@ -1,6 +1,6 @@
 # Video efficiency: acceptance before throughput
 
-As of 2026-09-27, the course is still in progress. No globally optimal speed or completed-course acceptance is claimed.
+As of 2026-09-27, independent full-course acceptance passed at 118/118. The sections below retain the experiment history; the final result supersedes pending checkpoints. No globally optimal speed is claimed.
 
 ## Measured constraint
 
@@ -39,3 +39,7 @@ The corrected 12-worker run exposed one more useful distinction: a saved end pos
 Production playback now handles this case automatically: after three unsuccessful end confirmations, it starts at most one supplemental playback cycle with a 180-second budget and exits as soon as the server confirms completion. A second unsuccessful end or budget exhaustion is terminal for that media task. Network/auth failures do not trigger this replay. The independent card and final-course gates remain mandatory. 150 offline tests passed, including recovery after 124 seconds, exhaustion without success, and prevention of a third cycle. The supplemental method was live-tested separately; its automatic transition after the end-report limit is covered by regression tests.
 
 The 12-worker run has independently confirmed 21 videos at its 1170-second checkpoint, with one isolated failure subsequently repaired as above and four videos still running. All 58 submitted tests were independently read: 55 scores of 100, two of 80 and one of 75. Full video reconciliation is still pending.
+
+## Final result
+
+The 12-worker batch ended with 25 confirmed videos plus the separately repaired video, bringing progress from 92/118 to 118/118. Its exit 1 retains the historical failed attempt. Subsequent independent 69-chapter reconciliation and formal CLI verification both passed: 60 completed videos, 58 tests, zero pending/errors. Mandatory speed remained 1x. This establishes a practical profile, not universal optimality. See the [authoritative final acceptance](NETWORK_ACCEPTANCE_20260927.md#final-independent-acceptance--2026-09-27-utc) for grades, resources and source evidence.

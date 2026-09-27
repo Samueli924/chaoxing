@@ -3,34 +3,20 @@
 Last updated: 2026-09-27 UTC
 Canonical source: https://github.com/ieduer/chaoxing main; checkout /Users/ylsuen/chaoxing/chaoxing.
 
-## Objective and acceptance
+## Objective
 
-Complete and independently reconcile every element of one initially incomplete course: 69 chapters, 118 task points (60 videos and 58 chapter tests), plus 3 non-task PDFs and 1 reading resource. The initial target baseline was 1/118. The other, already-complete course is not acceptance evidence. **Full-course acceptance remains pending.**
+Completed and independently reconciled one initially incomplete course from baseline 1/118: 69 chapters, 60 videos, 58 tests and four non-task resources. The other pre-completed course is not acceptance evidence.
 
-## Published implementation and checks
+## Accepted result
 
-- Consolidation: `6ae9936`; connection/resume repair: `cb7054a`; actual player event repair: `0368d511b74a0798cc6ebbfa0652f24b7f760b85`.
-- All 112 offline regression tests passed on the event repair. Its GitHub CI run [36292698195](https://github.com/ieduer/chaoxing/actions/runs/36292698195) also passed.
-- Local env password login, authenticated course listing and task-card reads succeeded. The formal local launcher selfcheck passed 8/8 using the default auto transport.
-- Auto transport only falls back for a proven pre-send EBADF connection failure. The OS cause remains unproven. Video events now match the observed platform player: play=3, playing=0, ended=4; progress advances through elapsed monotonic time.
+Independent reconciliation and the formal `scripts/local.py --verify --use-cookies` entry point both passed: stable 118/118, 60 completed videos, 58 graded tests, zero pending/errors. Grades: 55 × 100, 2 × 80, 1 × 75; no normal redo entry exists for the three non-perfect tests. Three PDFs and the book reader were also verified.
 
-## Efficiency revision
+Verified runtime: `6d14f8bb5ee3ef618e617285607594d26841a085`; 150 offline tests and [CI 36298930480](https://github.com/ieduer/chaoxing/actions/runs/36298930480) passed. The course enforces 1x. Twelve workers with native 60-second reporting are a tested practical profile, not a universal optimum. Preserve the historical batch failure despite successful bounded repair and final independent gates.
 
-150 offline regressions passed for bounded media requests/end confirmation, preserved bookmarks, no automatic whole-media replay, platform speed restrictions, independent per-video card confirmation and final course verification. `--verify` is read-only and returns nonzero on incomplete or unverifiable progress. The original process exited before a recorded serial handover. Revision `08af3f5` passed CI 36296106139 and resumed at 77/118 through the canonical Runner with eight workers. A distinct native-cadence probe independently completed a previously unstarted 382-second video with seven reports in 381.36 seconds. The native 60-second cadence now follows the actual task-card setting; the 16-worker comparison confirmed six additional videos but encountered one unconfirmed end and stopped. Fresh progress is 92/118. That profile is not accepted as stable. A revised request-start cadence and bounded 12-worker comparison follow; ordinary media failures are isolated. One 1061-second video was repaired in 124.04 seconds with positive response and fresh-card confirmation. Production now permits one supplemental playback cycle with a 180-second budget, never an unbounded or repeated full-length replay. Its control flow has regression coverage; the supplemental method was independently live-tested. [Video comparison and measurement plan](docs/VIDEO_EFFICIENCY.md).
+The authoritative final evidence and limits are in [network acceptance](docs/NETWORK_ACCEPTANCE_20260927.md#final-independent-acceptance--2026-09-27-utc); experiment history is in [video efficiency](docs/VIDEO_EFFICIENCY.md).
 
-## Live evidence and limits
+## Retention and rollback
 
-- 57 previously pending tests were submitted and independently confirmed; 54 scored 100, two scored 80 and one scored 75. One test was already complete. A fresh inventory of all 69 chapters found no pending test jobs.
-- The three non-perfect results were independently reread as 80, 80 and 75. Their result pages expose no redo control; the attempted normal retake returned `WorkRedoUnavailable`. Corrections are retained only in the private local bank, and are not claimed as successful resubmissions.
-- One previously unplayed 220-second video completed through the runner and a fresh card confirmed completion. The excluded browser video reached its actual 994.645-second end at 1x and displayed the completed-task indicator.
-- The original four-worker batch was stopped only after preserving its checkpoint and verifying process exit. The eight-worker continuation has independently confirmed eight additional videos with no failed tasks at its recorded 930-second checkpoint. Preserve current server progress during any serial handover; never start overlapping copies of the same job. See the private handoff for current process ownership.
-- All 3 PDFs returned HTTP 200 with valid signatures and page counts of 2, 13 and 16. The reading resource opened from the course and loaded a substantive chapter in the normal Brave reader.
-- The final gate is a stable, fresh 118/118 aggregate, all 60 completed video cards, all 58 submitted-result pages, zero pending jobs and the four non-task resource checks. A running snapshot is not a final reconciliation.
+Private evidence is retained under `/Users/ylsuen/CF/reports/private/chaoxing-acceptance-20260927/`; local banks remain Git-ignored under `data/acceptance-20260927`. Private evidence and scripts were retained with SHA-256 readback; disposable caches and the exact temporary root were removed, and manifest closeout passed. No playback workers remain.
 
-## Privacy, ownership and rollback
-
-Private evidence and handoff: `/Users/ylsuen/CF/reports/private/chaoxing-acceptance-20260927/`. Runtime: `/private/tmp/cf-task-chaoxing-live-acceptance-20260927`; its manifest is under CF private runtime-artifact-manifests. Preserve runtime files while the existing worker is active. Retained local banks are in Git-ignored `data/acceptance-20260927`; do not publish questions, account identifiers, credentials, cookies or raw network evidence.
-
-Notifications and paid providers remain disabled. Multi-account operation, OCR, notifications, native packages and optional browser userscript installation have not received live acceptance. Details: [network acceptance](docs/NETWORK_ACCEPTANCE_20260927.md) and [integration record](docs/INTEGRATION.md).
-
-Rollback code with a normal reviewed revert; `6ae9936` is the pre-transport anchor. Original source/history remains under `.git/chaoxing-recovery-20260927`, `master` and `legacy-closty`. Git rollback cannot undo already-submitted learning activity.
+Multi-account operation, OCR, notifications, native packages and optional userscript installation have not received live acceptance. See [integration](docs/INTEGRATION.md) and [network acceptance](docs/NETWORK_ACCEPTANCE_20260927.md). Roll back code through a normal reviewed revert; `6ae9936` is the pre-transport anchor. Preserve `.git/chaoxing-recovery-20260927`, `master` and `legacy-closty`. Git rollback cannot undo submitted learning activity.
