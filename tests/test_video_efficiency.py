@@ -59,8 +59,9 @@ class VideoEfficiencyTest(unittest.TestCase):
         session = _build_session()
         self.addCleanup(session.close)
         retry = session.get_adapter('https://').max_retries
-        self.assertEqual(retry.get_retry_after(Mock(headers={'Retry-After': '86400'})), 86400)
-        self.assertFalse(retry.respect_retry_after_header)
+        with patch('urllib3.util.retry.time.sleep') as sleep:
+            retry.sleep(Mock(headers={'Retry-After': '86400'}))
+        sleep.assert_not_called()
 
     def test_slow_successful_requests_cannot_keep_media_alive_forever(self):
         cx, clock = Chaoxing(), [0.0]
