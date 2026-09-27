@@ -11,12 +11,12 @@ class VideoEfficiencyTest(unittest.TestCase):
     def tearDown(self):
         runtime.reset()
 
-    def simulate(self, replies, resume=599000, duration=600, speed=1, restriction=None):
+    def simulate(self, replies, resume=599000, duration=600, speed=1, restriction=None, info=None):
         cx = Chaoxing()
         clock = [0.0]
         job = {'playTime': resume, 'doublespeed': restriction}
         with patch.object(cx, '_fetch_media_status', return_value={'status': 'success', 'duration': duration, 'dtoken': 'test'}), patch.object(cx, 'video_progress_log', side_effect=replies) as report, patch('api.base.runtime.should_stop', side_effect=lambda: clock[0] >= 120), patch('api.base.runtime.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), patch('api.base.time.monotonic', side_effect=lambda: clock[0]), patch('api.base.SessionManager.get_session'), patch('api.base.tqdm'):
-            result = cx.study_video({}, job, {}, _speed=speed)
+            result = cx.study_video({}, job, info or {}, _speed=speed)
         return result, report.call_args_list, clock[0]
 
     def test_end_confirmation_is_bounded_and_not_success(self):
@@ -29,7 +29,7 @@ class VideoEfficiencyTest(unittest.TestCase):
     def test_success_returns_without_an_extra_sleep(self):
         result, calls, elapsed = self.simulate([(False, 200), (True, 200)])
         self.assertEqual(result, StudyResult.SUCCESS)
-        self.assertEqual(elapsed, 2)
+        self.assertEqual(elapsed, 1)
 
     def test_transient_error_retries_same_resume_position(self):
         result, calls, elapsed = self.simulate([requests.ReadTimeout('private'), (False, 200), (True, 200)])
@@ -91,3 +91,26 @@ class VideoEfficiencyTest(unittest.TestCase):
         cx.study_video.return_value = StudyResult.SUCCESS
         cx.iter_card_pages.return_value = iter([(0, 'mArg = {"attachments": [{"jobid": "v", "isPassed": false}]};')])
         self.assertEqual(process_chapter(cx, {}, {'title': 'test'}, 1), ChapterResult.BLOCKED)
+
+    def test_native_interval_uses_wall_time_even_at_double_speed(self):
+        result, calls, elapsed = self.simulate([(False, 200), (True, 200)], resume=0, duration=1000, speed=2, restriction='1')
+        self.assertEqual(result, StudyResult.SUCCESS)
+        self.assertEqual(elapsed, 60)
+        self.assertGreaterEqual(calls[-1].args[6], 118)
+        self.assertEqual(calls[-1].kwargs['_isdrag'], 0)
+
+    def test_explicit_platform_interval_is_honoured(self):
+        result, calls, elapsed = self.simulate([(False, 200), (True, 200)], resume=0, duration=1000, info={'reportTimeInterval': 30})
+        self.assertEqual(result, StudyResult.SUCCESS)
+        self.assertEqual(elapsed, 30)
+
+    def test_invalid_interval_uses_native_default(self):
+        for interval in ('bad', -1, float('inf'), 999999):
+            _, _, elapsed = self.simulate([(False, 200), (True, 200)], resume=0, duration=1000, info={'reportTimeInterval': interval})
+            self.assertEqual(elapsed, 60)
+
+    def test_false_string_completion_does_not_skip_pending_video(self):
+        from api.decode import decode_course_card
+        html = 'mArg = {"defaults": {"knowledgeid": "c"}, "attachments": [{"type": "video", "jobid": "v", "mid": "m", "job": true, "isPassed": "false", "property": {}}]};'
+        jobs, _ = decode_course_card(html)
+        self.assertEqual([job['jobid'] for job in jobs], ['v'])

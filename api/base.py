@@ -778,15 +778,19 @@ class Chaoxing:
             return StudyResult.ERROR
 
         # 现实时间: last_iter, gc.THRESHOLD
-        # 视频时间(随倍速缩放): duration, play_time, last_log_time, wait_time
+        # 媒体位置随倍速变化；上报间隔遵循平台配置的现实时间。
         play_time = min(duration, int(_job.get("playTime") or 0) // 1000)
         # A last position at the end is not proof of the required watched duration.
         # The browser replays unfinished media; do not repeatedly claim its end.
         if play_time >= duration:
             play_time = 0
-        last_log_time = play_time
         last_iter = time.monotonic()
-        wait_time = 30
+        try:
+            report_interval = int((_job_info or {}).get("reportTimeInterval") or 60)
+        except (TypeError, ValueError, OverflowError):
+            report_interval = 60
+        if not 1 <= report_interval <= 300:
+            report_interval = 60
 
         logger.info(f"开始任务: {job_name}, 总时长: {duration}s, 已进行: {play_time}s")
 
@@ -819,6 +823,7 @@ class Chaoxing:
 
         passed, state = report(play_time, 3)
         last_iter = time.monotonic()
+        last_report_at = last_iter
         if passed:
             logger.info("服务器确认任务已完成: {}", job_name)
             return StudyResult.SUCCESS
@@ -832,8 +837,13 @@ class Chaoxing:
                 if runtime.should_stop():
                     return StudyResult.CANCELLED
 
+                # Read the current position before reporting; avoid a one-tick stale bookmark.
+                now = time.monotonic()
+                play_time = min(duration, play_time + (now - last_iter) * _speed)
+                last_iter = now
+
                 # 播放到结尾后有时需要多次上报才会被判定完成
-                if play_time - last_log_time >= wait_time or play_time >= duration:
+                if time.monotonic() - last_report_at >= report_interval or play_time >= duration:
                     if play_time >= duration:
                         end_reports += 1
                         if end_reports > MAX_END_REPORTS:
@@ -869,14 +879,8 @@ class Chaoxing:
                     if not passed and state != 200:
                         return StudyResult.TIMEOUT
 
-                    wait_time = 30
-                    last_log_time = play_time
+                    last_report_at = time.monotonic()
                     logger.trace("Progress logged")
-
-                # 上报进度需要时间, 假设视频在后台持续播放, 手动计算经过的时间
-                now = time.monotonic()
-                play_time = min(duration, play_time + (now - last_iter) * _speed)
-                last_iter = now
 
                 runtime.update_item(progress_key, job_name, play_time, duration, kind=_type.lower())
                 if interactive_lock.locked():

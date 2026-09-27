@@ -161,8 +161,8 @@ class VideoResumeTest(unittest.TestCase):
             result = cx.study_video({'courseId': 'test'}, {'jobid': 'test', 'playTime': 822000}, {})
         self.assertEqual(result, StudyResult.CANCELLED)
         positions = [call.args[6] for call in report.call_args_list]
-        self.assertEqual(positions, [822, 852, 882])
-        self.assertEqual([call.kwargs['_isdrag'] for call in report.call_args_list], [3, 0, 0])
+        self.assertEqual(positions, [822, 882])
+        self.assertEqual([call.kwargs['_isdrag'] for call in report.call_args_list], [3, 0])
 
     def test_initial_forbidden_does_not_start_playback(self):
         from api.base import Chaoxing, StudyResult

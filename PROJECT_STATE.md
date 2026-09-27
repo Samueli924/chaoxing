@@ -16,14 +16,14 @@ Complete and independently reconcile every element of one initially incomplete c
 
 ## Efficiency revision
 
-142 offline regressions passed for bounded media requests/end confirmation, preserved bookmarks, no automatic whole-media replay, platform speed restrictions, independent per-video card confirmation and final course verification. `--verify` is read-only and returns nonzero on incomplete or unverifiable progress. The original process remains separate until a verified serial handover. [Video comparison and measurement plan](docs/VIDEO_EFFICIENCY.md).
+146 offline regressions passed for bounded media requests/end confirmation, preserved bookmarks, no automatic whole-media replay, platform speed restrictions, independent per-video card confirmation and final course verification. `--verify` is read-only and returns nonzero on incomplete or unverifiable progress. The original process exited before a recorded serial handover. Revision `08af3f5` passed CI 36296106139 and resumed at 77/118 through the canonical Runner with eight workers. A distinct native-cadence probe independently completed a previously unstarted 382-second video with seven reports in 381.36 seconds. The native 60-second cadence now follows the actual task-card setting; a bounded 16-worker comparison is next. [Video comparison and measurement plan](docs/VIDEO_EFFICIENCY.md).
 
 ## Live evidence and limits
 
 - 57 previously pending tests were submitted and independently confirmed; 54 scored 100, two scored 80 and one scored 75. One test was already complete. A fresh inventory of all 69 chapters found no pending test jobs.
 - The three non-perfect results were independently reread as 80, 80 and 75. Their result pages expose no redo control; the attempted normal retake returned `WorkRedoUnavailable`. Corrections are retained only in the private local bank, and are not claimed as successful resubmissions.
 - One previously unplayed 220-second video completed through the runner and a fresh card confirmed completion. The excluded browser video reached its actual 994.645-second end at 1x and displayed the completed-task indicator.
-- The original video batch runs at 1x with four workers and a 12-hour deadline. It refreshes each queued task before execution, independently checks completion afterward, and stops on a mismatch, challenge or failure. Do not start a duplicate batch. See the private handoff for the owned process and current status file.
+- The original four-worker batch was stopped only after preserving its checkpoint and verifying process exit. The eight-worker continuation has independently confirmed eight additional videos with no failed tasks at its recorded 930-second checkpoint. Preserve current server progress during any serial handover; never start overlapping copies of the same job. See the private handoff for current process ownership.
 - All 3 PDFs returned HTTP 200 with valid signatures and page counts of 2, 13 and 16. The reading resource opened from the course and loaded a substantive chapter in the normal Brave reader.
 - The final gate is a stable, fresh 118/118 aggregate, all 60 completed video cards, all 58 submitted-result pages, zero pending jobs and the four non-task resource checks. A running snapshot is not a final reconciliation.
 

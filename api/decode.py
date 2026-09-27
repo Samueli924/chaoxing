@@ -292,7 +292,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
         if not isinstance(card, dict):
             continue
         # 跳过已通过的任务
-        if card.get("isPassed", False):
+        if _is_true(card.get("isPassed")):
             continue
 
         card_type = str(card.get("type", "")).lower()
