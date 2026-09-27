@@ -154,3 +154,16 @@ config*.ini
 .idea/
 .vscode/
 cache.json
+docs/live_trace.log
+
+# 运行数据目录（CHAOXING_DATA_DIR）：cookies、缓存、日志、实测抓包，含登录凭据与令牌，不提交
+data/
+test-data/
+live_trace.jsonl*
+live_result.json
+selfcheck_report.md
+
+# Local curated bank and credential files
+question_bank.sqlite3*
+.env.*
+!.env.example

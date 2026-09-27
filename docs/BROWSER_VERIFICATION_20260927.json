@@ -1,0 +1,54 @@
+{
+  "verified_at": "2026-09-27",
+  "channel": "existing authenticated Brave tab",
+  "capture": "bounded CDP response observation; event buffer truncated",
+  "contains_credentials": false,
+  "raw_response_retained": false,
+  "actions": [
+    "read course outline",
+    "open chapter",
+    "read task card and player structure",
+    "return to course"
+  ],
+  "responses": [
+    {
+      "path": "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse",
+      "status": 200,
+      "chapter_nodes": 69
+    },
+    {
+      "path": "https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
+      "status": 200
+    },
+    {
+      "path": "https://mooc1.chaoxing.com/mooc-ans/knowledge/cards",
+      "status": 200,
+      "structure": "mArg.attachments",
+      "attachment_types": [
+        "video"
+      ],
+      "property_keys": [
+        "switchwindow",
+        "hsize",
+        "module",
+        "mid",
+        "type",
+        "jobid",
+        "size",
+        "fastforward",
+        "retract",
+        "name",
+        "doublespeed",
+        "objectid",
+        "_jobid"
+      ]
+    },
+    {
+      "path": "https://mooc1.chaoxing.com/ananas/modules/video/index.html",
+      "status": 200
+    }
+  ],
+  "playback_started": false,
+  "answers_submitted": false,
+  "backend_live_verification": "not passed; Python outbound socket error"
+}

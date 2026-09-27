@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>学习通助手</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1f2328; --muted: #5f6873; --border: #d9dee4;
+    --field: #ffffff; --primary: #2457d6; --primary-hover: #1d47b0; --on-primary: #ffffff;
+    --danger: #c9252d; --ok: #1a7f37; --warn: #9a6700; --track: #e8ecf0; --code-bg: #f6f8fa;
+    --shadow: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.08); --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --card: #161b22; --text: #e6edf3; --muted: #9aa4af; --border: #2d333b;
+      --field: #0e1116; --primary: #5b8def; --primary-hover: #7aa3f2; --on-primary: #0e1116;
+      --danger: #f47067; --ok: #57ab5a; --warn: #c69026; --track: #262c34; --code-bg: #0e1116; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.ok::before { background: var(--ok); }
+  .pill.busy::before { background: var(--primary); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px; }
+  section h2 { margin: 0 0 4px; font-size: 16px; }
+  .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  label { display: block; font-size: 14px; margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=tel], input[type=number], select {
+    width: 100%; padding: 9px 11px; font: inherit; color: var(--text);
+    background: var(--field); border: 1px solid var(--border); border-radius: 8px; }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 2px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 9px 16px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+  button.primary:hover { background: var(--primary-hover); }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button.link { border: 0; background: none; color: var(--primary); padding: 4px 6px; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .row.end { justify-content: flex-end; }
+  .grow { flex: 1 1 200px; }
+  .msg { margin-top: 10px; font-size: 14px; min-height: 1.2em; }
+  .msg.err { color: var(--danger); }
+  .msg.ok { color: var(--ok); }
+  .hint { color: var(--muted); font-size: 13px; }
+  .courses { list-style: none; margin: 10px 0 0; padding: 0; max-height: 360px; overflow: auto;
+    border: 1px solid var(--border); border-radius: 8px; }
+  .courses li { border-bottom: 1px solid var(--border); }
+  .courses li:last-child { border-bottom: 0; }
+  .courses label { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 10px 12px; cursor: pointer; }
+  .courses input { margin-top: 5px; }
+  .course-title { font-weight: 500; }
+  .course-meta { color: var(--muted); font-size: 12px; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px 12px; margin: 12px 0 0; }
+  legend { padding: 0 6px; font-weight: 600; font-size: 14px; }
+  .choice { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; font-size: 14px; }
+  .choice input { margin-top: 5px; }
+  .choice small { display: block; color: var(--muted); }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 14px; }
+  .bar { height: 8px; background: var(--track); border-radius: 999px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--primary); transition: width .4s ease; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+  .stat { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .items { display: grid; gap: 10px; margin-top: 8px; }
+  .item-head { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .item-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-head span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  pre.log { margin: 10px 0 0; height: 320px; overflow: auto; padding: 10px 12px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+  .lv-WARNING { color: var(--warn); }
+  .lv-ERROR, .lv-CRITICAL { color: var(--danger); }
+  .lv-SUCCESS { color: var(--ok); }
+  .summary { white-space: pre-wrap; font-size: 14px; background: var(--code-bg); border-radius: 8px;
+    padding: 10px 12px; border: 1px solid var(--border); }
+  footer { max-width: 860px; margin: 0 auto; padding: 4px 16px 28px; color: var(--muted); font-size: 12px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } section { padding: 14px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>学习通助手</h1>
+  <a href="/bank">本机题库</a>
+  <span id="status" class="pill">加载中…</span>
+</header>
+
+<main>
+  <section id="token-card" hidden>
+    <h2>访问口令</h2>
+    <p class="sub">该控制台已开放网络访问，请输入启动时终端里显示的访问口令。</p>
+    <form id="token-form" class="row">
+      <input id="token-input" class="grow" type="password" autocomplete="off" required aria-label="访问口令">
+      <button class="primary" type="submit">确定</button>
+    </form>
+    <div id="token-msg" class="msg err" role="alert"></div>
+  </section>
+
+  <section id="login-card" hidden>
+    <h2>登录</h2>
+    <p class="sub">账号密码仅用于登录学习通，不会保存在本工具之外的任何地方。</p>
+    <form id="login-form">
+      <label for="username">手机号</label>
+      <input id="username" type="tel" autocomplete="username" inputmode="numeric" placeholder="登录学习通的手机号">
+      <label for="password">密码</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="登录密码">
+      <label id="saved-login-row" class="choice" hidden>
+        <input id="use-saved-login" type="checkbox"> <span>使用上次保存的登录状态（无需重新输入账号密码）</span>
+      </label>
+      <div class="row end" style="margin-top:14px">
+        <button id="login-btn" class="primary" type="submit">登录</button>
+      </div>
+    </form>
+    <div id="login-msg" class="msg" role="alert"></div>
+  </section>
+
+  <section id="run-card" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">选择课程与任务</h2>
+      <div class="row">
+        <span id="user-name" class="hint"></span>
+        <button id="logout-btn" class="link" type="button">退出登录</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="select-all" class="link" type="button">全选</button>
+      <button id="select-none" class="link" type="button">全不选</button>
+      <button id="reload-courses" class="link" type="button">刷新课程</button>
+    </div>
+    <ul id="courses" class="courses" aria-label="课程列表"></ul>
+
+    <fieldset>
+      <legend>要完成的任务</legend>
+      <label class="choice"><input id="task-study" type="checkbox" checked>
+        <span>完成任务点<small>视频、音频、文档、阅读、章节检测等</small></span></label>
+      <label class="choice"><input id="task-count" type="checkbox">
+        <span>增加章节学习次数<small>反复访问章节以提升学习次数统计</small></span></label>
+      <div id="count-row" hidden>
+        <label for="target-count">目标学习次数</label>
+        <input id="target-count" type="number" min="1" value="100" style="max-width:160px">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>章节检测（答题）</legend>
+      <label class="choice"><input type="radio" name="work" value="skip">
+        <span>跳过章节检测<small>不自动答题（需要答题才能解锁的章节将无法继续）</small></span></label>
+      <label class="choice"><input type="radio" name="work" value="save" checked>
+        <span>搜索答案但只保存不提交<small>稍后可自行到学习通检查并提交</small></span></label>
+      <label class="choice"><input type="radio" name="work" value="submit">
+        <span>搜索答案并自动提交<small>题库能答出 90% 以上的题才提交，否则只保存</small></span></label>
+      <label class="choice"><input type="radio" name="work" value="best">
+        <span>自动提交并重做，争取满分<small>先提交，再按批改结果（每题对错）换答案重做，直到满分；需要该测验允许重做</small></span></label>
+      <div id="tiku-wrap" hidden>
+        <label for="provider">题库</label>
+        <select id="provider"></select>
+        <label for="provider-chain">题库回退顺序（可选，英文逗号分隔）</label>
+        <input id="provider-chain" placeholder="TikuLocal,TikuCustom,AI">
+        <p class="hint">留空只用所选题库。填写顺序后，在下拉框中逐一配置各题库。<a href="/bank" target="_blank" rel="noopener">管理本机题库</a></p>
+        <div id="tiku-fields"></div>
+      </div>
+    </fieldset>
+
+    <details>
+      <summary>更多设置</summary>
+      <div class="grid2">
+        <div><label for="speed">视频倍速（默认最高2，遵守课程限制）</label>
+          <input id="speed" type="number" min="1" max="2" step="0.1" value="2"></div>
+        <div><label for="max-duration">运行时限（秒，0 为不限）</label><input id="max-duration" type="number" min="0" max="86400" value="0"></div>
+        <div><label for="jobs">同时进行的章节数（错误时自动降档）</label>
+          <input id="jobs" type="number" min="1" max="16" value="12"></div>
+        <div><label for="notopen">遇到未开放章节</label>
+          <select id="notopen">
+            <option value="retry">稍后自动重试（默认）</option>
+            <option value="continue">直接跳过</option>
+          </select></div>
+      </div>
+    </details>
+
+    <div class="row end" style="margin-top:16px">
+      <button id="start-btn" class="primary" type="button">开始</button>
+    </div>
+    <div id="run-msg" class="msg" role="alert"></div>
+  </section>
+
+  <section id="progress-card" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">运行进度</h2>
+      <button id="stop-btn" class="danger" type="button">停止</button>
+    </div>
+    <p id="stage" class="sub" style="margin-top:10px"></p>
+    <div class="stats">
+      <div class="stat"><b id="c-done">0</b><span>已完成章节</span></div>
+      <div class="stat"><b id="c-total">0</b><span>章节总数</span></div>
+      <div class="stat"><b id="c-failed">0</b><span>失败</span></div>
+      <div class="stat"><b id="c-skipped">0</b><span>跳过</span></div>
+    </div>
+    <div class="bar"><span id="overall-bar"></span></div>
+    <div id="items" class="items"></div>
+    <div id="summary" class="summary" hidden></div>
+    <pre id="log" class="log" aria-live="polite"></pre>
+  </section>
+</main>
+
+<footer>本工具仅供学习交流，请遵守相关规定，风险自负。</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const k of kids) node.append(k);
+  return node;
+};
+let token = localStorage.getItem("cx_token") || "";
+let providers = [];
+const tikuDraft = {};
+let logCursor = 0;
+let polling = null;
+let lastRunning = false;
+
+async function api(path, { method = "GET", body } = {}) {
+  const headers = { "X-Requested-With": "chaoxing-web" };
+  if (token) headers["X-Token"] = token;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (res.status === 401) { showToken(data.msg || "需要访问口令"); throw new Error("unauthorized"); }
+  return data;
+}
+
+function showToken(msg) {
+  $("token-card").hidden = false;
+  $("login-card").hidden = true;
+  $("run-card").hidden = true;
+  $("progress-card").hidden = true;
+  if (msg) $("token-msg").textContent = msg;
+}
+
+function setStatus(text, cls = "") { const p = $("status"); p.textContent = text; p.className = "pill " + cls; }
+
+function fillProviders(defaults) {
+  const sel = $("provider");
+  sel.innerHTML = "";
+  for (const p of providers) sel.append(el("option", { value: p.id, textContent: p.name }));
+  sel.value = providers.some(p => p.id === defaults.provider) ? defaults.provider : (providers[0] && providers[0].id);
+  renderTikuFields(defaults);
+  sel.onchange = () => renderTikuFields(defaults);
+}
+
+function renderTikuFields(defaults) {
+  Object.assign(tikuDraft, collectTiku());
+  const wrap = $("tiku-fields");
+  wrap.innerHTML = "";
+  const p = providers.find(x => x.id === $("provider").value);
+  if (!p) return;
+  for (const f of p.fields) {
+    const configured = (defaults.configured_fields || []).includes(f.key);
+    const input = el("input", {
+      type: f.secret ? "password" : "text",
+      id: "tiku-" + f.key,
+      autocomplete: "off",
+      placeholder: configured ? "已在配置文件中填写，留空即沿用" : (f.label || f.key),
+    });
+    input.dataset.key = f.key;
+    input.value = tikuDraft[f.key] || "";
+    wrap.append(el("label", { htmlFor: input.id, textContent: f.label || f.key }), input);
+  }
+}
+
+function collectTiku() {
+  const tiku = {...tikuDraft};
+  document.querySelectorAll("#tiku-fields input").forEach(i => { tiku[i.dataset.key] = i.value.trim(); });
+  return tiku;
+}
+
+function renderCourses(courses) {
+  const ul = $("courses");
+  ul.innerHTML = "";
+  if (!courses.length) { ul.append(el("li", { style: "padding:12px", className: "hint", textContent: "没有找到课程" })); return; }
+  for (const c of courses) {
+    const cb = el("input", { type: "checkbox", value: c.key, className: "course-cb" });
+    const meta = `课程ID ${c.courseId} · 班级ID ${c.clazzId}${c.teacher ? " · " + c.teacher : ""}`;
+    ul.append(el("li", {}, el("label", {},
+      cb,
+      el("span", {}, el("span", { className: "course-title", textContent: c.title || ("课程 " + c.courseId) }),
+        el("span", { className: "course-meta", textContent: " " }),
+        el("br"), el("span", { className: "course-meta", textContent: meta })))));
+  }
+}
+
+function selectedCourses() {
+  return [...document.querySelectorAll(".course-cb:checked")].map(c => c.value);
+}
+
+function applyDefaults(d) {
+  if (d.username && !$("username").value) $("username").value = d.username;
+  $("speed").value = d.speed || 2;
+  $("max-duration").value = d.max_duration || 0;
+  $("provider-chain").value = (d.provider_chain || "").includes(",") ? d.provider_chain : "";
+  $("jobs").value = d.jobs || 12;
+  $("notopen").value = d.notopen_action === "continue" ? "continue" : "retry";
+  $("task-count").checked = !!d.add_learning_count;
+  $("target-count").value = d.target_count || 100;
+  $("count-row").hidden = !$("task-count").checked;
+  const mode = ["submit", "best"].includes(d.work_mode) ? d.work_mode : "save";
+  const radio = document.querySelector(`input[name=work][value=${mode}]`);
+  if (radio) radio.checked = true;
+  toggleTiku();
+  fillProviders(d);
+  $("saved-login-row").hidden = !d.has_saved_login;
+  $("use-saved-login").checked = false;
+}
+
+function toggleTiku() {
+  const mode = document.querySelector("input[name=work]:checked").value;
+  $("tiku-wrap").hidden = mode === "skip";
+}
+
+async function refreshState() {
+  let s;
+  try { s = await api("/api/state"); } catch (_) { return; }
+  providers = s.providers || providers;
+
+  if (s.running) {
+    setStatus("运行中", "busy");
+    $("progress-card").hidden = false;
+    $("run-card").hidden = true;
+    $("login-card").hidden = true;
+    $("token-card").hidden = true;
+    renderProgress(s);
+  } else {
+    setStatus(s.logged_in ? "已登录 " + (s.user || "") : "未登录", s.logged_in ? "ok" : "");
+    if (s.logged_in) {
+      if ($("run-card").hidden && !$("courses").children.length) loadCourses();
+      $("run-card").hidden = false;
+      $("login-card").hidden = true;
+      $("user-name").textContent = s.user || "";
+      if (s.summary || s.error) { $("progress-card").hidden = false; renderProgress(s); }
+    } else {
+      $("login-card").hidden = false;
+      $("run-card").hidden = true;
+      $("progress-card").hidden = true;
+      applyDefaults(s.defaults || {});
+    }
+  }
+  if (lastRunning && !s.running) { $("start-btn").disabled = false; await pollLogs(); }
+  lastRunning = s.running;
+}
+
+function renderProgress(s) {
+  $("stage").textContent = s.stage || "";
+  const c = s.counts || {};
+  $("jobs").title = `当前并发上限：${c.concurrency || Number($("jobs").value)}`;
+  $("c-done").textContent = c.done || 0;
+  $("c-total").textContent = c.total || 0;
+  $("c-failed").textContent = c.failed || 0;
+  $("c-skipped").textContent = c.skipped || 0;
+  const total = c.total || 0, done = (c.done || 0) + (c.skipped || 0) + (c.failed || 0);
+  $("overall-bar").style.width = total ? Math.min(100, done / total * 100) + "%" : "0%";
+  $("stop-btn").disabled = !s.running || s.stopping;
+  $("stop-btn").textContent = s.stopping ? "停止中…" : "停止";
+
+  const items = $("items");
+  items.innerHTML = "";
+  for (const it of (s.items || [])) {
+    const pct = it.total ? Math.min(100, it.current / it.total * 100) : 0;
+    const fmt = it.kind === "count" || it.kind === "live"
+      ? `${Math.round(it.current)}/${Math.round(it.total)}`
+      : `${sec(it.current)}/${sec(it.total)}`;
+    items.append(el("div", {},
+      el("div", { className: "item-head" }, el("span", { textContent: it.name || "" }), el("span", { textContent: fmt })),
+      el("div", { className: "bar" }, el("span", { style: `width:${pct}%` }))));
+  }
+  const box = $("summary");
+  if (s.error) { box.hidden = false; box.textContent = "运行出错：" + s.error; }
+  else if (s.summary) { box.hidden = false; box.textContent = summaryText(s.summary); }
+  else box.hidden = true;
+}
+
+function summaryText(s) {
+  const lines = [`共 ${s.courses} 门课程，${s.total} 个章节：完成 ${s.done}，失败 ${(s.failed || []).length}，未开放跳过 ${(s.skipped || []).length}`];
+  if (s.complete != null) lines.push("服务端任务校验：" + (s.complete ? "通过" : "未通过"));
+  for (const row of (s.verification?.courses || [])) {
+    const progress = row.progress ? `${row.progress.done}/${row.progress.total}` : "未知";
+    lines.push(`${row.course}: 任务点 ${progress}，待完成 ${Object.values(row.pending).reduce((a, b) => a + b, 0)}`);
+    lines.push(...row.errors.map(e => "  " + e));
+  }
+  if (s.skipped_works) lines.push(`因未配置题库跳过的章节检测：${s.skipped_works} 个`);
+  if ((s.failed || []).length) lines.push("失败的章节：" + s.failed.slice(0, 20).join("；"));
+  if (s.stopped) lines.push(s.stop_reason === "time_limit" ? "（已达到运行时限）" : "（运行被手动停止）");
+  return lines.join("\n");
+}
+
+function sec(v) {
+  v = Math.round(v || 0);
+  const h = Math.floor(v / 3600), m = Math.floor(v % 3600 / 60), s = v % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
+}
+
+async function pollLogs() {
+  let data;
+  try { data = await api("/api/logs?after=" + logCursor); } catch (_) { return; }
+  if (!data.lines) return;
+  const box = $("log");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  for (const [seq, level, text] of data.lines) {
+    logCursor = Math.max(logCursor, seq);
+    box.append(el("div", { className: "lv-" + level, textContent: text }));
+  }
+  while (box.childElementCount > 1500) box.removeChild(box.firstChild);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function loadCourses() {
+  const data = await api("/api/courses");
+  if (data.ok) renderCourses(data.courses || []);
+}
+
+// ---- events ----
+$("token-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  token = $("token-input").value.trim();
+  localStorage.setItem("cx_token", token);
+  try {
+    await api("/api/state");
+    $("token-card").hidden = true;
+    await refreshState();
+  } catch (_) { $("token-msg").textContent = "口令错误，请重试"; }
+});
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("login-msg"); msg.className = "msg"; msg.textContent = "正在登录…";
+  $("login-btn").disabled = true;
+  try {
+    const data = await api("/api/login", { method: "POST", body: {
+      username: $("username").value.trim(),
+      password: $("password").value,
+      use_saved_login: $("use-saved-login").checked,
+    }});
+    if (data.ok) {
+      msg.className = "msg ok"; msg.textContent = "登录成功";
+      $("password").value = "";
+      renderCourses(data.courses || []);
+      await refreshState();
+    } else { msg.className = "msg err"; msg.textContent = data.msg || "登录失败"; }
+  } catch (err) { if (err.message !== "unauthorized") { msg.className = "msg err"; msg.textContent = "登录出错"; } }
+  finally { $("login-btn").disabled = false; }
+});
+
+$("logout-btn").addEventListener("click", async () => {
+  const data = await api("/api/logout", { method: "POST", body: {} });
+  if (!data.ok) { $("run-msg").className = "msg err"; $("run-msg").textContent = data.msg || ""; return; }
+  $("courses").innerHTML = ""; $("summary").hidden = true;
+  Object.keys(tikuDraft).forEach(k => delete tikuDraft[k]);
+  document.querySelectorAll("#tiku-fields input").forEach(i => i.value = "");
+  await refreshState();
+});
+
+$("select-all").addEventListener("click", () => document.querySelectorAll(".course-cb").forEach(c => c.checked = true));
+$("select-none").addEventListener("click", () => document.querySelectorAll(".course-cb").forEach(c => c.checked = false));
+$("reload-courses").addEventListener("click", loadCourses);
+$("task-count").addEventListener("change", () => $("count-row").hidden = !$("task-count").checked);
+document.querySelectorAll("input[name=work]").forEach(r => r.addEventListener("change", toggleTiku));
+
+$("start-btn").addEventListener("click", async () => {
+  const msg = $("run-msg"); msg.className = "msg"; msg.textContent = "";
+  const courses = selectedCourses();
+  if (!courses.length) { msg.className = "msg err"; msg.textContent = "请至少选择一门课程"; return; }
+  const body = {
+    courses,
+    study: $("task-study").checked,
+    add_learning_count: $("task-count").checked,
+    target_count: Number($("target-count").value) || 100,
+    speed: Number($("speed").value) || 2,
+    jobs: Number($("jobs").value) || 12,
+    notopen_action: $("notopen").value,
+    work_mode: document.querySelector("input[name=work]:checked").value,
+    provider: $("provider").value,
+    provider_chain: $("provider-chain").value,
+    max_duration: Number($("max-duration").value),
+    tiku: collectTiku(),
+  };
+  $("start-btn").disabled = true;
+  const data = await api("/api/start", { method: "POST", body });
+  if (data.ok) { $("log").innerHTML = ""; $("summary").hidden = true; await refreshState(); }
+  else { msg.className = "msg err"; msg.textContent = data.msg || "无法开始"; $("start-btn").disabled = false; }
+});
+
+$("stop-btn").addEventListener("click", async () => {
+  $("stop-btn").disabled = true;
+  await api("/api/stop", { method: "POST", body: {} });
+  await refreshState();
+});
+
+async function boot() {
+  let ping;
+  try { ping = await (await fetch("/api/ping")).json(); } catch (_) { setStatus("无法连接服务", "err"); return; }
+  if (ping.token_required && !token) { showToken(""); return; }
+  await refreshState();
+  await pollLogs();
+  polling = setInterval(async () => { await refreshState(); await pollLogs(); }, 1500);
+}
+boot();
+</script>
+</body>
+</html>

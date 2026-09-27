@@ -4,12 +4,20 @@
 """
 
 import configparser
+import html
+import re
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
 import requests
 
 from api.logger import logger
+
+
+def _mask_url(url: str) -> str:
+    """只显示推送地址的域名，避免把 SendKey / Bot Token 写入日志."""
+    match = re.match(r"^(https?://[^/]+)", url or "")
+    return f"{match.group(1)}/***" if match else "***"
 
 
 class NotificationService(ABC):
@@ -19,6 +27,7 @@ class NotificationService(ABC):
     """
 
     CONFIG_PATH = "config.ini"
+    TIMEOUT = 15
 
     def __init__(self):
         """初始化通知服务"""
@@ -146,10 +155,10 @@ class DefaultNotification(NotificationService):
             if not provider_name:
                 raise KeyError("未指定通知服务提供商")
 
-            # 获取对应的通知服务类
-            provider_class = globals().get(provider_name)
+            # 获取对应的通知服务类（不区分大小写）
+            provider_class = NOTIFICATION_PROVIDERS.get(str(provider_name).strip().lower())
             if not provider_class:
-                logger.error(f"未找到名为 {provider_name} 的通知服务提供商")
+                logger.error(f"未找到名为 {provider_name} 的通知服务提供商，可选值: ServerChan, Qmsg, Bark, Telegram")
                 self.disabled = True
                 return self
 
@@ -177,7 +186,7 @@ class ServerChan(NotificationService):
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Server酱通知服务，URL: {self.url}")
+        logger.info(f"已初始化Server酱通知服务，URL: {_mask_url(self.url)}")
 
     def _send(self, message: str) -> None:
         """
@@ -195,7 +204,7 @@ class ServerChan(NotificationService):
         }
 
         try:
-            response = requests.post(self.url, json=params, headers=headers)
+            response = requests.post(self.url, json=params, headers=headers, timeout=self.TIMEOUT)
             response.raise_for_status()
             result = response.json()
             logger.info(f"Server酱通知发送成功: {result}")
@@ -218,7 +227,7 @@ class Qmsg(NotificationService):
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Qmsg酱通知服务，URL: {self.url}")
+        logger.info(f"已初始化Qmsg酱通知服务，URL: {_mask_url(self.url)}")
 
     def _send(self, message: str) -> None:
         """
@@ -231,7 +240,7 @@ class Qmsg(NotificationService):
         headers = {'Content-Type': 'application/json;charset=utf-8'}
 
         try:
-            response = requests.post(self.url, params=params, headers=headers)
+            response = requests.post(self.url, params=params, headers=headers, timeout=self.TIMEOUT)
             response.raise_for_status()
             result = response.json()
             logger.info(f"Qmsg酱通知发送成功: {result}")
@@ -254,7 +263,7 @@ class Bark(NotificationService):
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Bark通知服务，URL: {self.url}")
+        logger.info(f"已初始化Bark通知服务，URL: {_mask_url(self.url)}")
 
     def _send(self, message: str) -> None:
         """
@@ -266,7 +275,7 @@ class Bark(NotificationService):
         params = {'body': message}
 
         try:
-            response = requests.post(self.url, params=params)
+            response = requests.post(self.url, params=params, timeout=self.TIMEOUT)
             response.raise_for_status()
             result = response.json()
             logger.info(f"Bark通知发送成功: {result}")
@@ -289,7 +298,7 @@ class Telegram(NotificationService):
             return
         self.tg_chat_id = self._conf['tg_chat_id']
         self.url = self._conf['url']
-        logger.info(f"已初始化Telegram通知服务，Chat_id: {self.tg_chat_id} URL: {self.url}")
+        logger.info(f"已初始化Telegram通知服务，Chat_id: {self.tg_chat_id} URL: {_mask_url(self.url)}")
 
     def _send(self, message: str) -> None:
         """
@@ -300,12 +309,13 @@ class Telegram(NotificationService):
         """
         params = {
             'chat_id': self.tg_chat_id,
-            'text': message,
+            # 使用 HTML 解析模式时必须转义消息内容，否则报错信息中的 "<" 会导致发送失败
+            'text': html.escape(message),
             'parse_mode': 'HTML'
         }
 
         try:
-            response = requests.post(self.url, data=params)
+            response = requests.post(self.url, data=params, timeout=self.TIMEOUT)
             response.raise_for_status()
             result = response.json()
             if result.get('ok'):
@@ -317,6 +327,13 @@ class Telegram(NotificationService):
         except ValueError as e:
             logger.error(f"Telegram返回数据解析失败: {e}")
 
+
+NOTIFICATION_PROVIDERS = {
+    "serverchan": ServerChan,
+    "qmsg": Qmsg,
+    "bark": Bark,
+    "telegram": Telegram,
+}
 
 # 为了向后兼容，保留原来的Notification类
 Notification = DefaultNotification

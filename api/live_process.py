@@ -1,14 +1,14 @@
-import time
+import math
 
 from api.live import Live
 from api.logger import logger
+from api.runtime import runtime
 
 
 class LiveProcessor:
     @staticmethod
-    def run_live(live: Live, speed: float = 1.0):
-        """循环提交直播时长，直到达到总时长"""
-        # 获取直播状态（包含总时长）
+    def run_live(live: Live, speed: float = 1.0) -> bool:
+        """循环提交直播观看时长，直到达到直播总时长。每次提交记录约 1 分钟观看时长。"""
         live_status = live.get_status()
         if not live_status:
             logger.error("直播状态获取失败，无法继续")
@@ -16,32 +16,42 @@ class LiveProcessor:
 
         # 解析直播总时长（单位：秒）
         try:
-            duration = live_status.get("temp", {}).get("data", {}).get("duration", 0)
-            if not duration:
-                logger.warning("无法获取直播总时长，默认按30分钟处理")
-                duration = 30 * 60  # 默认30分钟
-        except Exception as e:
-            logger.error(f"解析直播时长失败: {str(e)}")
+            duration = float(((live_status.get("temp") or {}).get("data") or {}).get("duration") or 0)
+        except (AttributeError, TypeError, ValueError):
+            duration = 0
+        if duration <= 0:
+            logger.warning("无法获取直播总时长，默认按30分钟处理")
+            duration = 30 * 60
+
+        # 提交次数由直播总时长决定；倍速只缩短两次提交之间的等待时间
+        total_minutes = max(1, math.ceil(duration / 60))
+        interval = 59 / max(1.0, speed)
+        logger.info(f"开始观看直播'{live.name}'，共需提交 {total_minutes} 次观看记录，"
+                    f"预计耗时约 {math.ceil(total_minutes * interval / 60)} 分钟")
+
+        progress_key = f"live-{live.course_id}-{live.attachment.get('jobid', '')}"
+        failures = 0
+        try:
+            for i in range(total_minutes):
+                if runtime.should_stop():
+                    return False
+                success = live.do_finish()
+                if not success:
+                    logger.warning(f"第{i + 1}分钟时长提交失败，将重试")
+                    if runtime.sleep(5):
+                        return False
+                    success = live.do_finish()
+                if not success:
+                    failures += 1
+                runtime.update_item(progress_key, f"直播 · {live.name}", i + 1, total_minutes, kind="live")
+                logger.info(f"直播'{live.name}'已观看{i + 1}/{total_minutes}分钟")
+                if runtime.sleep(interval):
+                    return False
+        finally:
+            runtime.remove_item(progress_key)
+
+        if failures * 2 > total_minutes:
+            logger.error(f"直播'{live.name}'有 {failures}/{total_minutes} 次时长提交失败")
             return False
-
-        # 根据播放速度调整所需时间
-        adjusted_duration = duration / speed
-        total_minutes = (int(adjusted_duration) + 59) // 60  # 转换为分钟（向上取整）
-        logger.info(f"开始刷取直播'{live.name}'，总时长{total_minutes}分钟（已根据倍速调整）")
-
-        # 循环提交时长（每59秒一次，模拟持续观看）
-        for i in range(total_minutes):
-            logger.info(f"直播'{live.name}'已观看{i + 1}/{total_minutes}分钟")
-            success = live.do_finish()  # 提交当前时长
-            if not success:
-                logger.warning(f"第{i + 1}分钟时长提交失败，将重试")
-                # 失败重试一次
-                time.sleep(5)
-                live.do_finish()
-
-            # 根据倍速调整间隔时间
-            sleep_time = 59 / speed
-            time.sleep(sleep_time)
-
         logger.success(f"直播'{live.name}'时长刷取完成")
         return True

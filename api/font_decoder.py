@@ -15,7 +15,8 @@ class FontDecoder:
     """
 
     # 正则表达式常量
-    FONT_BASE64_PATTERN = r"base64,([\w\W]+?)\'"
+    # 兼容 url('data:...base64,xxx')、url("...") 以及不带引号的写法
+    FONT_BASE64_PATTERN = r"base64,([A-Za-z0-9+/=]+)"
     FONT_DATA_URL_PREFIX = "data:application/font-ttf;charset=utf-8;base64,"
 
     def __init__(self, html_content: Optional[str] = None):
@@ -57,6 +58,11 @@ class FontDecoder:
         except Exception as e:
             logger.warning(f"初始化字体映射失败: {e}")
             self.__font_map = None
+
+    @property
+    def available(self) -> bool:
+        """字体映射是否初始化成功."""
+        return bool(self.__font_map)
 
     def decode(self, target_str: str) -> str:
         """解码加密字符串。

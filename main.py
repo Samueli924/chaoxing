@@ -1,629 +1,238 @@
 # -*- coding: utf-8 -*-
+"""超星学习通自动完成任务点.
+
+最简单的用法：
+    python main.py            # 按提示输入手机号和密码
+    python main.py --web      # 打开网页控制台，在浏览器里操作
+"""
 import argparse
-import configparser
-import enum
+from copy import deepcopy
+import getpass
 import sys
-import threading
-import time
 import traceback
-from dataclasses import dataclass
-from typing import Any
-from tqdm import tqdm
-from api.answer import Tiku
-from api.base import Chaoxing, Account, StudyResult
-from api.exceptions import LoginError, InputFormatError
-from api.logger import logger
-from api.notification import Notification
-from api.live import Live
-from api.live_process import LiveProcessor
-from api.process import increase_learning_count_for_course
+from typing import Any, Optional
 
-try:
-    from queue import PriorityQueue, ShutDown
-except ImportError:
-    from queue import PriorityQueue
+from api.exceptions import InputFormatError, LoginError
+from api.logger import logger, setup_logging
+from api.runtime import runtime
+from api.settings import Settings, load_settings, split_course_list
 
+# 以下名称保持从 main 导出，兼容已有的调用方式与测试
+from api.runner import Runner, format_summary, format_time, has_saved_cookies  # noqa: F401
+from api.scheduler import ChapterResult, ChapterTask, JobProcessor, process_chapter, process_job  # noqa: F401
 
-    class ShutDown(Exception):
-        pass
+EPILOG = """示例:
+  python main.py                              按提示输入手机号、密码并选择课程
+  python main.py -u 手机号 -p 密码             直接登录并选择课程
+  python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2
+  python main.py -c config.ini                使用配置文件（不指定时自动查找 config.ini）
+  python main.py --web                        打开网页控制台
+  python main.py --check                      只读自检：检查登录与各页面解析是否正常
+  python main.py --verify -l 课程ID            只读校验：逐章核对全部任务是否完成
 
-
-class ChapterResult(enum.Enum):
-    SUCCESS = 0,
-    ERROR = 1,
-    NOT_OPEN = 2,
-    PENDING = 3
+也可以使用环境变量 CHAOXING_USERNAME / CHAOXING_PASSWORD / CHAOXING_COURSE_LIST 等提供配置。
+"""
 
 
-def log_error(func):
-    def wrapper(*args, **kwargs):
-        try:
-            func(*args, **kwargs)
-        except BaseException as e:
-            logger.error(f"Error in thread {threading.current_thread().name}: {e}")
-            traceback.print_exception(type(e), e, e.__traceback__)
-            raise
-
-    return wrapper
-
-
-def str_to_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def parse_args():
-    """解析命令行参数"""
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """解析命令行参数（未填写的参数不会覆盖配置文件中的值）"""
     parser = argparse.ArgumentParser(
-        description="Samueli924/chaoxing",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="超星学习通自动完成任务点 (Samueli924/chaoxing)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
     )
-
-    parser.add_argument("--use-cookies", action="store_true", help="使用cookies登录")
-
-    parser.add_argument(
-        "-c", "--config", type=str, default=None, help="使用配置文件运行程序"
-    )
+    parser.add_argument("-c", "--config", type=str, default=None,
+                        help="配置文件路径 (默认自动查找当前目录或程序目录下的 config.ini)")
     parser.add_argument("-u", "--username", type=str, default=None, help="手机号账号")
     parser.add_argument("-p", "--password", type=str, default=None, help="登录密码")
-    parser.add_argument(
-        "-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔"
-    )
-    parser.add_argument(
-        "-s", "--speed", type=float, default=1.0, help="视频播放倍速 (默认1, 最大2)"
-    )
-    parser.add_argument(
-        "-j", "--jobs", type=int, default=4, help="同时进行的章节数 (默认4, 如果一个章节有多个任务点，不会限制同时处理任务点的数量)"
-    )
+    parser.add_argument("-l", "--list", dest="course_list", type=str, default=None,
+                        help="要学习的课程ID列表, 以 , 分隔 (默认运行后选择)")
+    parser.add_argument("-s", "--speed", type=float, default=None, help="视频播放倍速 (默认平台最高2，禁用或限制不明时1)")
+    parser.add_argument("--max-duration", type=int, default=None, help="本次任务运行时限（秒），0 为不限；当前请求结束后停止")
+    parser.add_argument("-j", "--jobs", type=int, default=None, help="同时进行的章节数 (默认12，错误时自动逐档降至1)")
+    parser.add_argument("-a", "--notopen-action", type=str, default=None, choices=["retry", "ask", "continue"],
+                        help="遇到未开放章节时的行为: retry-重试(默认), ask-询问, continue-跳过")
+    parser.add_argument("--retry-interval", type=float, default=None, help="重试等待时间, 单位秒 (默认1.0)")
+    parser.add_argument("--use-cookies", action="store_true", default=None, help="使用 cookies.txt 登录")
+    parser.add_argument("-lc", "--add-learning-count", action="store_true", default=None,
+                        help="完成任务点后增加章节学习次数")
+    parser.add_argument("-tc", "--target-count", type=int, default=None, help="章节学习次数目标总次数 (默认100)")
+    parser.add_argument("-v", "--verbose", "--debug", action="store_true", help="输出调试日志")
 
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        "--debug",
-        action="store_true",
-        help="启用调试模式, 输出DEBUG级别日志",
-    )
-    parser.add_argument(
-        "-a", "--notopen-action", type=str, default="retry",
-        choices=["retry", "ask", "continue"],
-        help="遇到关闭任务点时的行为: retry-重试, ask-询问, continue-继续"
-    )
-
-    parser.add_argument("--auto-sign", action="store_true", help="自动签到")
-    parser.add_argument(
-        "--retry-interval", type=float, default=1.0, help="重试等待时间, 单位秒 (默认1.0)"
-    )
-
-    parser.add_argument(
-        "-lc",
-        "--add-learning-count",
-        action="store_true",
-        help="开启章节学习次数增加模式",
-    )
-    parser.add_argument(
-        "-tc",
-        "--target-count",
-        type=int,
-        default=100,
-        help="章节学习次数目标总次数 (默认100)",
-    )
-
-    # 在解析之前捕获 -h 的行为
-    if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
-        parser.print_help()
-        sys.exit(0)
-
-    return parser.parse_args()
+    parser.add_argument("--web", action="store_true", help="启动网页控制台, 在浏览器中登录并选择要完成的任务")
+    parser.add_argument("--host", type=str, default=None, help="网页控制台监听地址 (默认 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="网页控制台端口 (默认 8765)")
+    parser.add_argument("--no-browser", action="store_true", help="启动网页控制台时不自动打开浏览器")
+    parser.add_argument("--check", action="store_true",
+                        help="只读自检: 登录后检查课程/章节/任务点/题目页面能否正常解析, 不学习也不提交任何内容")
+    parser.add_argument("--verify", action="store_true", help="只读校验所选课程的全部任务完成状态，不播放、不答题、不发送通知")
+    # 旧版本遗留参数，从未实现，保留以免旧脚本报错
+    parser.add_argument("--auto-sign", action="store_true", help=argparse.SUPPRESS)
+    return parser.parse_args(argv)
 
 
-def load_config_from_file(config_path):
-    """从配置文件加载设置"""
-    config = configparser.ConfigParser()
-    config.read(config_path, encoding="utf8")
-
-    common_config: dict[str, Any] = {}
-    tiku_config: dict[str, Any] = {}
-    notification_config: dict[str, Any] = {}
-
-    # 检查并读取common节
-    if config.has_section("common"):
-        common_config = dict(config.items("common"))
-        # 处理course_list，将字符串转换为列表
-        if "course_list" in common_config and common_config["course_list"]:
-            common_config["course_list"] = [item.strip() for item in common_config["course_list"].split(",") if
-                                            item.strip()]
-        # 处理speed，将字符串转换为浮点数
-        if "speed" in common_config:
-            common_config["speed"] = float(common_config["speed"])
-        if "jobs" in common_config:
-            common_config["jobs"] = int(common_config["jobs"])
-        # 处理notopen_action，设置默认值为retry
-        if "notopen_action" not in common_config:
-            common_config["notopen_action"] = "retry"
-        if "retry_interval" in common_config:
-            common_config["retry_interval"] = float(common_config["retry_interval"])
-        else:
-            common_config["retry_interval"] = 1.0
-        if "work_max_retries" in common_config:
-            try:
-                common_config["work_max_retries"] = int(common_config["work_max_retries"])
-            except ValueError:
-                common_config["work_max_retries"] = 3
-        else:
-            common_config["work_max_retries"] = 3
-        if "use_cookies" in common_config:
-            common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
-        if "add_learning_count" in common_config:
-            common_config["add_learning_count"] = str_to_bool(common_config["add_learning_count"])
-        if "target_count" in common_config:
-            common_config["target_count"] = int(common_config["target_count"])
-        if "username" in common_config and common_config["username"] is not None:
-            common_config["username"] = common_config["username"].strip()
-        if "password" in common_config and common_config["password"] is not None:
-            common_config["password"] = common_config["password"].strip()
-
-    # 检查并读取tiku节
-    if config.has_section("tiku"):
-        tiku_config = dict(config.items("tiku"))
-        # 处理数值类型转换
-        for key in ["delay", "cover_rate"]:
-            if key in tiku_config:
-                tiku_config[key] = float(tiku_config[key])
-
-    # 检查并读取notification节
-    if config.has_section("notification"):
-        notification_config = dict(config.items("notification"))
-
-    return common_config, tiku_config, notification_config
-
-
-def build_config_from_args(args):
-    """从命令行参数构建配置"""
-    common_config = {
-        "use_cookies": args.use_cookies,
+def cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    return {
         "username": args.username,
         "password": args.password,
-        "course_list": [item.strip() for item in args.list.split(",") if item.strip()] if args.list else None,
-        "speed": args.speed or 1.0,
+        "course_list": args.course_list,
+        "speed": args.speed,
         "jobs": args.jobs,
-        "notopen_action": args.notopen_action or "retry",
-        "retry_interval": args.retry_interval or 1.0,
+        "max_duration": args.max_duration,
+        "notopen_action": args.notopen_action,
+        "retry_interval": args.retry_interval,
+        "use_cookies": args.use_cookies,
         "add_learning_count": args.add_learning_count,
         "target_count": args.target_count,
     }
-    return common_config, {}, {}
 
 
-def init_config():
-    """初始化配置"""
-    args = parse_args()
-
-    if args.config:
-        common_config, tiku_config, notification_config = load_config_from_file(args.config)
-    else:
-        common_config, tiku_config, notification_config = build_config_from_args(args)
-    return common_config, tiku_config, notification_config, args.config
-
-
-def init_chaoxing(common_config, tiku_config, config_path=None):
-    """初始化超星实例"""
-    username = common_config.get("username", "")
-    password = common_config.get("password", "")
-    use_cookies = common_config.get("use_cookies", False)
-
-    # 如果没有提供用户名密码，从命令行获取
-    if (not username or not password) and not use_cookies:
-        username = input("请输入你的手机号, 按回车确认\n手机号:")
-        password = input("请输入你的密码, 按回车确认\n密码:")
-
-    account = Account(username, password)
-
-    # 设置题库
-    tiku = Tiku.get_tiku_from_config(tiku_config, config_path=config_path)  # 载入题库
-    tiku.init_tiku()  # 初始化题库
-
-    # 获取查询延迟设置
-
-    # 检查大模型连接（如果使用的是大模型题库）
-    # 根据配置文件中的 provider 判断是否为大模型题库
-    provider = tiku_config.get('provider', '')
-    provider_list = [name.strip() for name in provider.split(',') if name.strip()]
-    if any(name in ['AI', 'SiliconFlow'] for name in provider_list):
-        check_connection = tiku_config.get('check_llm_connection', 'true').lower() == 'true'
-        if check_connection:
-            logger.info(f'正在验证大模型配置 (provider={provider})...')
-            if not tiku.check_llm_connection():
-                logger.error('大模型连接检查失败')
-                choice = input('大模型连接检查失败，无法准确答题，是否继续运行？(Y/n): ').strip().lower()
-                # 直接回车默认继续运行
-                if choice not in ('', 'y', 'yes'):
-                    raise RuntimeError('用户取消运行')
-                logger.info('用户选择继续运行...')
-
-    query_delay = tiku_config.get("delay", 0)
-
-    # 章节检测答错后允许的最大重做次数（答错时反馈给AI并重新提交，直到全部正确）
-    work_max_retries = common_config.get("work_max_retries", 3)
-
-    # 实例化超星API
-    chaoxing = Chaoxing(
-        account=account,
-        tiku=tiku,
-        query_delay=query_delay,
-        work_max_retries=work_max_retries,
-    )
-
-    return chaoxing
-
-
-def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float) -> StudyResult:
-    """处理单个任务点"""
-    # 视频任务
-    if job["type"] == "video":
-        logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        # 超星的接口没有返回当前任务是否为Audio音频任务
-        video_result = chaoxing.study_video(
-            course, job, job_info, _speed=speed, _type="Video"
-        )
-        if video_result.is_failure():
-            logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
-            video_result = chaoxing.study_video(
-                course, job, job_info, _speed=speed, _type="Audio")
-        if video_result.is_failure():
-            logger.warning(
-                f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
-            )
-        return video_result
-    # 文档任务
-    elif job["type"] == "document":
-        logger.trace(f"识别到文档任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        return chaoxing.study_document(course, job)
-    # 测验任务
-    elif job["type"] == "workid":
-        logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-        return chaoxing.study_work(course, job, job_info)
-    # 阅读任务
-    elif job["type"] == "read":
-        logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
-        return chaoxing.study_read(course, job, job_info)
-    # 直播任务
-    elif job["type"] == "live":
-        logger.trace(f"识别到直播任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        try:
-            # 准备直播所需参数
-            defaults = {
-                "userid": chaoxing.get_uid(),
-                "clazzId": course.get("clazzId"),
-                "knowledgeid": job_info.get("knowledgeid")
-            }
-
-            # 创建直播对象
-            live = Live(
-                attachment=job,
-                defaults=defaults,
-                course_id=course.get("courseId")
-            )
-
-            # 启动直播处理线程
-            thread = threading.Thread(
-                target=LiveProcessor.run_live,
-                args=(live, speed),
-                daemon=True
-            )
-            thread.start()
-            thread.join()  # 等待直播处理完成
-            return StudyResult.SUCCESS
-        except Exception as e:
-            logger.error(f"处理直播任务时出错: {str(e)}")
-            return StudyResult.ERROR
-
-    logger.error(f"未知任务类型: {job['type']}")
-    return StudyResult.ERROR
-
-
-@dataclass
-class ChapterTask:
-    index: int
-    point: dict[str, Any]
-    course: dict[str, Any]
-    result: ChapterResult = ChapterResult.PENDING
-    tries: int = 0
-
-    def __lt__(self, other):
-        """比较两个任务的索引大小，用于优先级队列排序."""
-        if not isinstance(other, ChapterTask):
-            return NotImplemented
-        return self.index < other.index
-
-
-class JobProcessor:
-    def __init__(self, chaoxing: Chaoxing, tasks: list[ChapterTask], config: dict[str, Any]):
-        """初始化任务处理器."""
-        if "jobs" not in config or not config["jobs"]:
-            config["jobs"] = 4
-
-        self.chaoxing = chaoxing
-        self.speed = config["speed"]
-        self.max_tries = 5
-        self.tasks = tasks
-        self.failed_tasks: list[ChapterTask] = []
-        self.task_queue: PriorityQueue[ChapterTask] = PriorityQueue()
-        self.retry_queue: PriorityQueue[ChapterTask] = PriorityQueue()
-        self.wait_queue: PriorityQueue[ChapterTask] = PriorityQueue()
-        self.threads: list[threading.Thread] = []
-        self.worker_num = config["jobs"]
-        self.config = config
-        self.retry_interval = config.get("retry_interval", 1.0)
-
-    def run(self):
-        for task in self.tasks:
-            self.task_queue.put(task)
-
-        for i in range(self.worker_num):
-            thread = threading.Thread(target=self.worker_thread, daemon=True)
-            self.threads.append(thread)
-            thread.start()
-
-        threading.Thread(target=self.retry_thread, daemon=True).start()
-
-        self.task_queue.join()
-        time.sleep(0.5)
-        if hasattr(self.task_queue, "shutdown"):
-            self.task_queue.shutdown()
-
-    @log_error
-    def worker_thread(self):
-        while True:
-            try:
-                task = self.task_queue.get()
-            except ShutDown:
-                logger.info("Queue shut down")
-                return
-
-            task.result = process_chapter(self.chaoxing, task.course, task.point, self.speed)
-
-            match task.result:
-                case ChapterResult.SUCCESS:
-                    logger.debug("Task success: {} - {}", task.course["title"], task.point["title"])
-                    self.task_queue.task_done()
-                    logger.debug(f"unfinished task: {self.task_queue.unfinished_tasks}")
-
-                case ChapterResult.NOT_OPEN:
-                    if self.config["notopen_action"] == "continue":
-                        logger.warning("章节未开启: {} - {}, 正在跳过", task.course["title"], task.point["title"])
-                        self.task_queue.task_done()
-                        continue
-
-                    task.tries += 1
-                    if task.tries >= self.max_tries:
-                        logger.error(
-                            "章节未开启: {} - {} 可能由于上一章节的章节检测未完成, 也可能由于该章节因为时效已关闭，"
-                            "请手动检查完成并提交再重试。或者在配置中配置(自动跳过关闭章节/开启题库并启用提交)"
-                            , task.course["title"], task.point["title"])
-                        self.task_queue.task_done()
-                        continue
-
-                    # self.wait_queue.put(task)
-                    self.retry_queue.put(task)
-
-                case ChapterResult.ERROR:
-                    task.tries += 1
-                    logger.warning("重试任务 {} - {} ({}/{} 次尝试)", task.course["title"], task.point["title"],
-                                   task.tries,
-                                   self.max_tries)
-                    if task.tries >= self.max_tries:
-                        logger.error("任务重试次数达到上限: {} - {}", task.course["title"], task.point["title"])
-                        self.failed_tasks.append(task)
-                        self.task_queue.task_done()
-                        continue
-                    self.retry_queue.put(task)
-
-                case _:
-                    logger.error("任务 {} 的状态无效 {}", task.result, task.point["title"])
-                    self.failed_tasks.append(task)
-                    self.task_queue.task_done()
-
-    @log_error
-    def retry_thread(self):
-        try:
-            while True:
-                task = self.retry_queue.get()
-                self.task_queue.put(task)
-                # task_done is not called when a task failed and needs to be retried so if is reinserted into the queue,
-                # the task num will increase by one and become more than the real task number
-                self.task_queue.task_done()
-                time.sleep(self.retry_interval)
-        except ShutDown:
-            pass
-
-
-def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float) -> ChapterResult:
-    """处理单个章节"""
-    logger.info(f'当前章节: {point["title"]}')
-    if point["has_finished"]:
-        logger.info(f'章节：{point["title"]} 已完成所有任务点')
-        return ChapterResult.SUCCESS
-
-    # 随机等待，避免请求过快
-    chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
-
-    # 获取当前章节的所有任务点
-    job_info = None
-    jobs, job_info = chaoxing.get_job_list(course, point)
-
-    # 发现未开放章节, 根据配置处理
-    if job_info.get("notOpen", False):
-        return ChapterResult.NOT_OPEN
-
-    # 已经默认处理空任务，此处不需要判断
-    if not jobs:
-        pass
-
-    job_results: list[StudyResult] = []
-    for job in jobs:
-        result = process_job(chaoxing, course, job, job_info, speed)
-        job_results.append(result)
-
-    for result in job_results:
-        if result.is_failure():
-            return ChapterResult.ERROR
-
-    return ChapterResult.SUCCESS
-
-
-def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
-    """处理单个课程"""
-    logger.info(f"开始学习课程: {course['title']}")
-
-    # 获取当前课程的所有章节
-    point_list = chaoxing.get_course_point(
-        course["courseId"], course["clazzId"], course["cpi"]
-    )
-
-    # 为了支持课程任务回滚, 采用下标方式遍历任务点
-
-    _old_format_sizeof = tqdm.format_sizeof
-    tqdm.format_sizeof = format_time
-
-    tasks = []
-
-    for i, point in enumerate(point_list["points"]):
-        task = ChapterTask(point=point, index=i, course=course)
-        tasks.append(task)
-    p = JobProcessor(chaoxing, tasks, config)
-    p.run()
-
-    tqdm.format_sizeof = _old_format_sizeof
-
-
-def filter_courses(all_course, course_list):
-    """过滤要学习的课程"""
-    if not course_list:
-        # 手动输入要学习的课程ID列表
-        print("*" * 10 + "课程列表" + "*" * 10)
-        for course in all_course:
-            print(f"ID: {course['courseId']} 班级ID: {course['clazzId']} 课程名: {course['title']}")
-        print("*" * 28)
-        print("提示: 同一 courseId 下若存在多个班级, 将分别完成。")
-        try:
-            course_list = input(
-                "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
-            ).split(",")
-        except Exception as e:
-            raise InputFormatError("输入格式错误") from e
-
-    # 筛选需要学习的课程
-    course_task = []
-    seen_keys = set()
-    for course in all_course:
-        key = (course["courseId"], course["clazzId"])
-        if course["courseId"] in course_list and key not in seen_keys:
-            course_task.append(course)
-            seen_keys.add(key)
-    
-    # 如果没有指定课程，则学习所有课程
-    if not course_task:
-        course_task = all_course
-
-    return course_task
-
-
-def format_time(num, suffix='', divisor=''):
-    total_time = round(num)
-    sec = total_time % 60
-    mins = (total_time % 3600) // 60
-    hrs = total_time // 3600
-
-    if hrs > 0:
-        return f"{hrs:02d}:{mins:02d}:{sec:02d}"
-
-    return f"{mins:02d}:{sec:02d}"
-
-
-def main():
-    """主程序入口"""
+def stdin_is_interactive() -> bool:
     try:
-        # 初始化配置
-        common_config, tiku_config, notification_config, config_path = init_config()
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
 
-        # 强制播放按照配置文件调节
-        common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
-        common_config["notopen_action"] = common_config.get("notopen_action", "retry")
-        
-        # 初始化增加章节学习次数配置
-        add_learning_count = str_to_bool(common_config.get("add_learning_count", False))
-        target_count = int(common_config.get("target_count", 100))
-        
-        # 初始化超星实例
-        chaoxing = init_chaoxing(common_config, tiku_config, config_path=config_path)
 
-        # 设置外部通知
-        notification = Notification()
-        notification.config_set(notification_config)
-        notification = notification.get_notification_from_config()
-        notification.init_notification()
+def prompt_credentials(settings: Settings) -> None:
+    common = settings.common
+    if not common.get("username"):
+        common["username"] = input("请输入你的手机号, 按回车确认\n手机号: ").strip()
+    if not common.get("password"):
+        common["password"] = getpass.getpass("密码(输入时不会显示): ")
 
-        # 检查当前登录状态
-        _login_state = chaoxing.login(login_with_cookies=common_config.get("use_cookies", False))
-        if not _login_state["status"]:
-            raise LoginError(_login_state["msg"])
 
-        # 获取所有的课程列表
-        all_course = chaoxing.get_course_list()
+def select_courses(all_course: list[dict], course_list: list[str], interactive: bool) -> list[dict]:
+    """根据课程ID/班级ID筛选课程；未指定时在终端中选择，非交互环境下学习全部课程"""
+    if course_list:
+        wanted = set(course_list)
+        selected = [c for c in all_course if c["courseId"] in wanted or c["clazzId"] in wanted]
+        matched = {c["courseId"] for c in selected} | {c["clazzId"] for c in selected}
+        missing = wanted - matched
+        if missing:
+            logger.warning(f"以下课程ID不在你的课程列表中: {', '.join(sorted(missing))}")
+        if not selected:
+            raise InputFormatError("配置的课程ID都不在课程列表中，请检查 course_list（运行时不指定课程即可查看全部课程ID）")
+        return selected
 
-        # 过滤要学习的课程
-        course_task = filter_courses(all_course, common_config.get("course_list"))
+    if not interactive:
+        logger.info("未指定课程，将学习全部课程")
+        return all_course
 
-        # 开始学习
-        logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+    print("*" * 10 + "课程列表" + "*" * 10)
+    for index, course in enumerate(all_course, start=1):
+        print(f"[{index}] ID: {course['courseId']} 班级ID: {course['clazzId']} 课程名: {course['title']}")
+    print("*" * 28)
+    print("提示: 同一 courseId 下若存在多个班级, 将分别完成。")
+    while True:
+        raw = input("请输入要学习的课程序号或课程ID, 多个用逗号分隔, 直接回车学习全部课程:\n").strip()
+        if not raw:
+            return all_course
+        selected, unknown = [], []
+        for token in split_course_list(raw):
+            matches = [c for c in all_course if token in (c["courseId"], c["clazzId"])]
+            if not matches and token.isdigit() and 1 <= int(token) <= len(all_course):
+                matches = [all_course[int(token) - 1]]
+            if not matches:
+                unknown.append(token)
+            for course in matches:
+                if course not in selected:
+                    selected.append(course)
+        if unknown:
+            print(f"无法识别: {', '.join(unknown)}，请重新输入")
+            continue
+        if selected:
+            return selected
 
-        _old_format_sizeof = tqdm.format_sizeof
-        tqdm.format_sizeof = format_time
 
-        tasks = []
-        for course in course_task:
-            logger.info(f"正在读取课程章节: {course['title']}")
-            point_list = chaoxing.get_course_point(
-                course["courseId"], course["clazzId"], course["cpi"]
-            )
-            for i, point in enumerate(point_list["points"]):
-                task = ChapterTask(point=point, index=i, course=course)
-                tasks.append(task)
+def run_cli(settings: Settings, verify_only: bool = False) -> int:
+    interactive = stdin_is_interactive()
+    runner = None
+    try:
+        if verify_only:
+            settings = deepcopy(settings)
+            settings.tiku = {"provider": ""}
+            settings.notification = {"provider": ""}
+        runner = Runner(settings, interactive=interactive)
+        common = settings.common
+        need_password = not (common.get("username") and common.get("password"))
+        if need_password and not common.get("use_cookies") and not has_saved_cookies():
+            if not interactive:
+                raise LoginError("未提供手机号和密码。请通过 -u/-p 参数、config.ini 或环境变量 "
+                                 "CHAOXING_USERNAME/CHAOXING_PASSWORD 提供")
+            prompt_credentials(settings)
 
-        # 全局并发执行所有课程的任务点
-        p = JobProcessor(chaoxing, tasks, common_config)
-        p.run()
+        result = runner.login()
+        if not result["status"] and need_password and interactive and not common.get("password"):
+            # 上次保存的登录状态已失效，改为输入账号密码
+            logger.warning(result["msg"])
+            prompt_credentials(settings)
+            result = runner.login()
+        if not result["status"]:
+            raise LoginError(result["msg"])
 
-        tqdm.format_sizeof = _old_format_sizeof
-
-        logger.info("所有课程学习任务已完成")
-        notification.send("chaoxing : 所有课程学习任务已完成")
-
-        # 刷课完成后，如果开启了增加章节学习次数，则执行
-        if add_learning_count:
-            logger.info("刷课完成，开始增加章节学习次数...")
-            common_config["target_count"] = target_count
-            for course in course_task:
-                increase_learning_count_for_course(chaoxing, course, common_config)
-            logger.info("所有课程章节学习次数增加完成")
-            notification.send("chaoxing : 所有课程章节学习次数增加完成")
-        
-    except SystemExit as e:
-        if e.code != 0:
-            logger.error(f"错误: 程序异常退出, 返回码: {e.code}")
-        sys.exit(e.code)
-    except KeyboardInterrupt as e:
-        logger.error(f"错误: 程序被用户手动中断, {e}")
-    except BaseException as e:
+        all_course = runner.list_courses()
+        if not all_course:
+            logger.warning("没有找到任何课程")
+            return 1 if verify_only else 0
+        courses = select_courses(all_course, common.get("course_list") or [], interactive)
+        if verify_only:
+            runtime.set_time_limit(float(common.get("max_duration") or 0))
+            verification = runner.verify_courses(courses)
+            summary = {"courses": len(courses), "verification_only": True, "complete": verification["complete"],
+                       "verification": verification, "stopped": runtime.should_stop(),
+                       "stop_reason": runtime.stop_reason}
+        else:
+            summary = runner.run(courses)
+        report = format_summary(summary)
+        logger.info("\n" + report)
+        if not verify_only:
+            runner.notify(f"chaoxing : 任务结束\n{report}")
+        return 1 if summary.get("failed") or summary.get("stopped") or summary.get("complete") is False else 0
+    except KeyboardInterrupt:
+        runtime.request_stop()
+        logger.warning("程序已被用户手动中断")
+        return 130
+    except (LoginError, InputFormatError) as e:
+        logger.error(f"错误: {e}")
+        if runner and not verify_only:
+            runner.notify(f"chaoxing : 出现错误 {e}")
+        return 1
+    except Exception as e:
         logger.error(f"错误: {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
-        try:
-            notification.send(f"chaoxing : 出现错误 {type(e).__name__}: {e}\n{traceback.format_exc()}")
-        except Exception:
-            pass  # 如果通知发送失败，忽略异常
-        raise e
+        logger.debug(traceback.format_exc())
+        if runner and not verify_only:
+            runner.notify(f"chaoxing : 出现错误 {type(e).__name__}: {e}")
+        return 1
+
+
+def should_start_web(args: argparse.Namespace, argv: list[str]) -> bool:
+    """双击打包好的 exe（没有任何参数）时默认打开网页控制台，方便不熟悉命令行的用户."""
+    return args.web or (bool(getattr(sys, "frozen", False)) and not argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """主程序入口"""
+    argv = sys.argv[1:] if argv is None else argv
+    args = parse_args(argv)
+    setup_logging(verbose=args.verbose)
+    if args.auto_sign:
+        logger.warning("--auto-sign 参数从未实现, 已忽略")
+
+    try:
+        settings = load_settings(args.config, cli_overrides(args))
+    except (OSError, ValueError) as e:
+        logger.error(f"读取配置失败: {e}")
+        return 2
+
+    if should_start_web(args, argv):
+        from api.web import serve
+        return serve(settings, host=args.host, port=args.port, open_browser=not args.no_browser)
+    if args.check:
+        from api.selfcheck import run_selfcheck
+        return run_selfcheck(settings, interactive=stdin_is_interactive())
+    return run_cli(settings, verify_only=args.verify)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

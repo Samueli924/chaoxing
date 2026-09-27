@@ -1,29 +1,10 @@
-try:
-    from requests.exceptions import JSONDecodeError
-except ImportError:
-    from json import JSONDecodeError
-
-
 class LoginError(Exception):
-    def __init__(self, *args: object):
-        super().__init__(*args)
+    """登录失败或登录状态失效."""
 
 
 class InputFormatError(Exception):
-    def __init__(self, *args: object):
-        super().__init__(*args)
-
-
-class MaxRollBackExceeded(Exception):
-    def __init__(self, *args: object):
-        super().__init__(*args)
-
-
-class MaxRetryExceeded(Exception):
-    def __init__(self, *args: object):
-        super().__init__(*args)
+    """用户输入格式错误."""
 
 
 class FontDecodeError(Exception):
-    def __init__(self, *args: object):
-        super().__init__(*args)
+    """加密字体解析失败."""

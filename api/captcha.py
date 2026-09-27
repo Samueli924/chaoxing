@@ -86,7 +86,6 @@ class CxCaptcha:
             'Cookie': self.cookies,
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
         })
-        self.s.verify = False
 
         self.ocr = ocr_init() if ocr is _MISSING else ocr
 
@@ -100,12 +99,11 @@ class CxCaptcha:
         api = self.host + self.api['get']
         random_t = randint(0, 2147483647)
 
-        res = self.s.get(api, params={'t': random_t})
-        if res.status_code == 200 and res.headers['Content-Type'] == 'image/png':
+        res = self.s.get(api, params={'t': random_t}, timeout=15)
+        if res.status_code == 200 and res.headers.get('Content-Type', '').startswith('image/'):
             return res.content
-        else:
-            # 提供的Cookies或UA存在问题，导致未能正常获取验证码内容
-            return None
+        # 提供的Cookies或UA存在问题，导致未能正常获取验证码内容
+        return None
 
     def submitCaptcha(self, cap_token: str) -> bool:
         """
@@ -122,11 +120,9 @@ class CxCaptcha:
             'ucode': cap_token,
             'app': 0
         }
-        res = self.s.get(api, params=params)
-        if res.status_code == 302:
-            return True
-        else:
-            return False
+        # 验证成功时服务器返回 302 跳转；必须关闭自动跳转，否则永远拿到的是跳转后的 200
+        res = self.s.get(api, params=params, allow_redirects=False, timeout=15)
+        return res.status_code in (301, 302, 303)
 
     def recognition(self, img: bytes) -> str:
         """
