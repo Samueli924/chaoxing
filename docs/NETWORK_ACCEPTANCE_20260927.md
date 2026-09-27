@@ -26,3 +26,13 @@ Evidence source: the course-loaded `https://mooc1.chaoxing.com/ananas/videojs-ex
 A previously unplayed 220-second video was then run at 1x. Its progress response changed to isPassed=true, and a fresh task card independently confirmed isPassed=true with no pending job flag. This confirms one complete video transaction, not full-course acceptance.
 
 All 112 regression tests passed after the event repair. Course tests are being submitted from a local curated bank; every result is checked against the actual server task flag and score. Wrong answers are recorded separately for correction; submission success alone is not a correctness claim. Three non-task PDF files returned HTTP 200, valid PDF signatures and page counts 2, 13 and 16.
+
+## Serial continuation evidence
+
+The event repair is published as `0368d511b74a0798cc6ebbfa0652f24b7f760b85`; its [CI run 36292698195](https://github.com/ieduer/chaoxing/actions/runs/36292698195) passed. The existing batch remains the sole video worker batch, with four workers at 1x and a finite 12-hour deadline.
+
+A fresh independent inventory read all 69 chapters without error and reconciled 60 video, 58 test, 3 document and 1 reading attachments. No tests remained in the pending-job list. Of 57 new submissions, 54 were full marks; three independently reread grades remain 80, 80 and 75. Their result pages have no normal redo control, and the attempted retake returned `WorkRedoUnavailable`. Corrected local bank entries do not constitute corrected submissions.
+
+The browser video excluded from the batch reached 994.645/994.645 seconds at normal speed and displayed its completed-task indicator. The non-task book opened through the course UI and loaded an actual substantive chapter. The task-created reader tab was closed and earlier network-event capture disabled; the user's original course tab remains open.
+
+Completed test attachments omit the pending `job` flag and do not necessarily carry `isPassed`; the final audit therefore must verify each graded result page as well as the card and aggregate progress. Video completion uses its positive `isPassed` evidence. The in-flight inventory is non-atomic because the batch continues to finish tasks. Final acceptance requires a fresh stable read after the batch ends, with 118/118, 60 confirmed videos, 58 submitted results and no pending jobs. This gate has not yet passed.

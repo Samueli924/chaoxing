@@ -2,13 +2,31 @@
 
 Last updated: 2026-09-27 UTC
 Canonical source: https://github.com/ieduer/chaoxing main; checkout /Users/ylsuen/chaoxing/chaoxing.
-Current objective: Real end-to-end acceptance of every element in one initially incomplete course. User requires all tasks completed and server-side reconciliation; sampling/selfcheck alone is not acceptance.
-Completed work: Canonical consolidation published at 6ae9936. New connection adapter and video resume fixes are being validated. Actual playback event repair uses play=3, playing=0, ended=4; all 112 regression tests passed. Local env password login succeeded; 2 courses read; formal scripts/local.py --check passed 8/8 in auto transport mode. Regression suite passed 108 tests before two additional resume tests; all 13 focused transport/resume tests now pass.
-Current live baseline: Selected initially incomplete course has 69 chapters, 118 task points (60 videos and 58 chapter tests), initially 1/118 complete. Full inventory also found 3 non-task documents and 1 non-task reading attachment; no inventory errors. Other course is already 78/78 and is not the acceptance target.
-Live verification: 70-second 1x run stopped on time; reports at 822/852/883 seconds returned HTTP 200; immediate fresh card readback advanced from 822000 to 852000 ms. No task completion claimed. No CAPTCHA encountered. Initial diagnostic media 403 was caused by a probe omitting Referer; normal implementation works.
-Pending work: Complete every remaining selected-course task; verify each attachment plus aggregate 118/118; test full answer submission/readback. User explicitly authorized reading questions/options in this conversation, curating a local bank and submitting. Third-party answers may be used only after confirming accuracy. No third-party query was sent.
-Known problems: Python socket connect intermittently fails with EBADF in this host. curl works. New auto fallback only handles confirmed pre-send NewConnectionError/EBADF and retains TLS/cookies/redirects. Exact OS root cause unproven. Video start previously submitted full duration; corrected to resume position, monotonic timing and 30-second progress intervals.
-Ownership/runtime: This task owns dirty api/base.py, api/transport.py and tests/test_transport.py. Private temporary root /private/tmp/cf-task-chaoxing-live-acceptance-20260927; manifest /Users/ylsuen/CF/reports/private/runtime-artifact-manifests/chaoxing-live-acceptance-20260927/manifest.json. Contains disposable session data and test scripts; never commit secrets. Live course-test worker active; video batch stopped on an observed failure and its event defect was repaired. One previously unplayed 220-second video now has genuine completion plus fresh card confirmation. Brave is normally playing chapter 3; do not run that same video concurrently. Retained local bank: data/acceptance-20260927 (Git ignored).
-Deployment status: main 6ae9936 remains remote baseline; connection/resume fixes published as cb7054a; event repair in progress. No claim of full acceptance. Notifications disabled. No paid provider enabled.
-Rollback: Previous main 6ae9936f7c52264e64092ccbe63f65f17f6e3b53. Original source/history preserved under .git/chaoxing-recovery-20260927 and legacy-closty/master.
-Next action: Curate local question bank, run full selected course using actual allowed progress, reconcile all task cards and non-task attachments; repair further errors and push main directly (already authorized).
+
+## Objective and acceptance
+
+Complete and independently reconcile every element of one initially incomplete course: 69 chapters, 118 task points (60 videos and 58 chapter tests), plus 3 non-task PDFs and 1 reading resource. The initial target baseline was 1/118. The other, already-complete course is not acceptance evidence. **Full-course acceptance remains pending while the original video batch runs.**
+
+## Published implementation and checks
+
+- Consolidation: `6ae9936`; connection/resume repair: `cb7054a`; actual player event repair: `0368d511b74a0798cc6ebbfa0652f24b7f760b85`.
+- All 112 offline regression tests passed on the event repair. Its GitHub CI run [36292698195](https://github.com/ieduer/chaoxing/actions/runs/36292698195) also passed.
+- Local env password login, authenticated course listing and task-card reads succeeded. The formal local launcher selfcheck passed 8/8 using the default auto transport.
+- Auto transport only falls back for a proven pre-send EBADF connection failure. The OS cause remains unproven. Video events now match the observed platform player: play=3, playing=0, ended=4; progress advances through elapsed monotonic time.
+
+## Live evidence and limits
+
+- 57 previously pending tests were submitted and independently confirmed; 54 scored 100, two scored 80 and one scored 75. One test was already complete. A fresh inventory of all 69 chapters found no pending test jobs.
+- The three non-perfect results were independently reread as 80, 80 and 75. Their result pages expose no redo control; the attempted normal retake returned `WorkRedoUnavailable`. Corrections are retained only in the private local bank, and are not claimed as successful resubmissions.
+- One previously unplayed 220-second video completed through the runner and a fresh card confirmed completion. The excluded browser video reached its actual 994.645-second end at 1x and displayed the completed-task indicator.
+- The existing video batch runs at 1x with four workers and a 12-hour deadline. It refreshes each queued task before execution, independently checks completion afterward, and stops on a mismatch, challenge or failure. Do not start a duplicate batch. See the private handoff for the owned process and current status file.
+- All 3 PDFs returned HTTP 200 with valid signatures and page counts of 2, 13 and 16. The reading resource opened from the course and loaded a substantive chapter in the normal Brave reader.
+- The final gate is a stable, fresh 118/118 aggregate, all 60 completed video cards, all 58 submitted-result pages, zero pending jobs and the four non-task resource checks. A running snapshot is not a final reconciliation.
+
+## Privacy, ownership and rollback
+
+Private evidence and handoff: `/Users/ylsuen/CF/reports/private/chaoxing-acceptance-20260927/`. Runtime: `/private/tmp/cf-task-chaoxing-live-acceptance-20260927`; its manifest is under CF private runtime-artifact-manifests. Preserve runtime files while the existing worker is active. Retained local banks are in Git-ignored `data/acceptance-20260927`; do not publish questions, account identifiers, credentials, cookies or raw network evidence.
+
+Notifications and paid providers remain disabled. Multi-account operation, OCR, notifications, native packages and optional browser userscript installation have not received live acceptance. Details: [network acceptance](docs/NETWORK_ACCEPTANCE_20260927.md) and [integration record](docs/INTEGRATION.md).
+
+Rollback code with a normal reviewed revert; `6ae9936` is the pre-transport anchor. Original source/history remains under `.git/chaoxing-recovery-20260927`, `master` and `legacy-closty`. Git rollback cannot undo already-submitted learning activity.
