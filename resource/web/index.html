@@ -398,6 +398,12 @@ function renderProgress(s) {
 
 function summaryText(s) {
   const lines = [`共 ${s.courses} 门课程，${s.total} 个章节：完成 ${s.done}，失败 ${(s.failed || []).length}，未开放跳过 ${(s.skipped || []).length}`];
+  if (s.complete != null) lines.push("服务端任务校验：" + (s.complete ? "通过" : "未通过"));
+  for (const row of (s.verification?.courses || [])) {
+    const progress = row.progress ? `${row.progress.done}/${row.progress.total}` : "未知";
+    lines.push(`${row.course}: 任务点 ${progress}，待完成 ${Object.values(row.pending).reduce((a, b) => a + b, 0)}`);
+    lines.push(...row.errors.map(e => "  " + e));
+  }
   if (s.skipped_works) lines.push(`因未配置题库跳过的章节检测：${s.skipped_works} 个`);
   if ((s.failed || []).length) lines.push("失败的章节：" + s.failed.slice(0, 20).join("；"));
   if (s.stopped) lines.push(s.stop_reason === "time_limit" ? "（已达到运行时限）" : "（运行被手动停止）");

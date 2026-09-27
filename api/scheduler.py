@@ -22,6 +22,7 @@ from api.live import Live
 from api.live_process import LiveProcessor
 from api.logger import logger
 from api.runtime import interactive_lock, runtime
+from api.verification import confirm_video
 
 
 class ChapterResult(enum.Enum):
@@ -30,21 +31,17 @@ class ChapterResult(enum.Enum):
     NOT_OPEN = 2
     PENDING = 3
     CANCELLED = 4
+    BLOCKED = 5  # A bounded media attempt failed; do not replay it automatically.
 
 
 def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float) -> StudyResult:
     """处理单个任务点"""
     job_type = job.get("type")
     if job_type == "video":
-        # 音频任务点同样以 video 类型返回，优先按识别出的类型处理，失败后再尝试另一种
-        first, second = ("Audio", "Video") if job.get("audio") else ("Video", "Audio")
-        logger.trace(f"识别到{first}任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        result = chaoxing.study_video(course, job, job_info, _speed=speed, _type=first)
-        if result in (StudyResult.ERROR, StudyResult.FORBIDDEN) and not runtime.should_stop():
-            logger.warning(f"按{first}任务处理失败, 正在尝试按{second}任务处理")
-            result = chaoxing.study_video(course, job, job_info, _speed=speed, _type=second)
+        media_type = "Audio" if job.get("audio") else "Video"
+        result = chaoxing.study_video(course, job, job_info, _speed=speed, _type=media_type)
         if result.is_failure() and result != StudyResult.CANCELLED:
-            logger.warning(f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 稍后重试")
+            logger.warning("媒体任务未完成，保留服务端进度并结束本次尝试")
         return result
     if job_type == "document":
         logger.trace(f"识别到文档任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
@@ -91,17 +88,25 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
         return ChapterResult.NOT_OPEN
 
     failed = False
+    media_blocked = False
     for job in jobs:
         if runtime.should_stop():
             return ChapterResult.CANCELLED
         result = process_job(chaoxing, course, job, job_info, speed)
+        if job.get("type") == "video" and result == StudyResult.SUCCESS:
+            if not confirm_video(chaoxing, course, point, job):
+                logger.error("上报完成但独立任务卡未确认，保留未完成状态")
+                result = StudyResult.TIMEOUT
         if on_job_result:
             on_job_result(job, result)
         if result == StudyResult.CANCELLED:
             return ChapterResult.CANCELLED
         if result.is_failure():
             failed = True
+            media_blocked = media_blocked or job.get("type") == "video"
 
+    if media_blocked:
+        return ChapterResult.BLOCKED
     return ChapterResult.ERROR if failed else ChapterResult.SUCCESS
 
 
@@ -341,6 +346,10 @@ class JobProcessor:
                         logger.info("章节未开放: {}, {:.0f} 秒后重新检查 ({}/{})", task.label, delay, task.tries,
                                     self.max_tries)
                         self._push(task, delay)
+            elif result == ChapterResult.BLOCKED:
+                self._auto_skip.discard(course_key)
+                logger.error("媒体任务未获完成确认，不自动重播: {}", task.label)
+                self._finalize(task, self.failed_tasks)
             elif result == ChapterResult.ERROR:
                 self._auto_skip.discard(course_key)
                 task.tries += 1

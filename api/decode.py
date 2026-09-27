@@ -410,6 +410,7 @@ def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "objectid": card.get("objectId", "") or property_data.get("objectid", ""),
         "aid": card.get("aid", ""),
         "playTime": card.get("playTime", 0),
+        "doublespeed": property_data.get("doublespeed"),
         "rt": property_data.get("rt", ""),
         "attDuration": card.get("attDuration", ""),
         "attDurationEnc": card.get("attDurationEnc", ""),

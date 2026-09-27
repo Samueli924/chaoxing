@@ -66,7 +66,9 @@ WORK_RECORD_DETAIL_URL = "https://mooc1.chaoxing.com/mooc-ans/work/record-detail
 WORK_RETEST_URL = "https://mooc1.chaoxing.com/mooc-ans/work/retest"
 
 # 视频播放到结尾后，服务器仍未判定完成时最多再上报的次数，避免无限循环
-MAX_END_REPORTS = 10
+MAX_END_REPORTS = 3
+VIDEO_REQUEST_TIMEOUT = (5, 10)
+MAX_VIDEO_REQUEST_ATTEMPTS = 3
 # 一个章节最多尝试的任务卡片标签页数量
 MAX_CARD_TABS = 7
 
@@ -110,6 +112,12 @@ def _build_session() -> requests.Session:
     adapter = CompatibleHTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=32)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
+    # Playback owns its bounded retries; never multiply them in the HTTP adapter.
+    media_adapter = CompatibleHTTPAdapter(max_retries=0, pool_connections=10, pool_maxsize=32)
+    for prefix in ("https://mooc1.chaoxing.com/ananas/status/",
+                   "https://mooc1.chaoxing.com/mooc-ans/multimedia/log/",
+                   "https://mooc1.chaoxing.com/multimedia/log/"):
+        session.mount(prefix, media_adapter)
     session.headers.update(gc.HEADERS)
     apply_cookies(session, use_cookies())
     return session
@@ -649,15 +657,15 @@ class Chaoxing:
             return params
 
         def perform_request(rt_val):
-            res = _session.get(_url, params=build_params(rt_val), headers=headers)
+            res = _session.get(_url, params=build_params(rt_val), headers=headers, timeout=VIDEO_REQUEST_TIMEOUT)
             if self._looks_like_captcha(res) and self._try_pass_captcha(_session, headers):
-                res = _session.get(_url, params=build_params(rt_val), headers=headers)
+                res = _session.get(_url, params=build_params(rt_val), headers=headers, timeout=VIDEO_REQUEST_TIMEOUT)
             return res
 
         def parse_passed(resp) -> Optional[bool]:
             data = _json_or_none(resp)
             if isinstance(data, dict) and "isPassed" in data:
-                return bool(data["isPassed"])
+                return data["isPassed"] is True or str(data["isPassed"]).lower() in ("true", "1")
             return None
 
         rt = _job.get('rt')
@@ -694,16 +702,16 @@ class Chaoxing:
             logger.debug("视频进度上报返回403, jobid={}, 摘要={}", _job.get("jobid"), resp.text[:200])
             return False, 403
 
-        logger.error("视频进度上报失败: HTTP {} jobid={} url={}", resp.status_code, _job.get("jobid"), resp.url)
+        logger.error("视频进度上报失败: HTTP {}", resp.status_code)
         return False, resp.status_code
 
     def _fetch_media_status(self, session: requests.Session, job: dict, headers: dict) -> Optional[dict]:
         info_url = MEDIA_STATUS_URL.format(objectid=job['objectid'])
         params = {"k": self.get_fid(), "flag": "normal", "ro": "0"}
         try:
-            resp = session.get(info_url, params=params, headers=headers)
+            resp = session.get(info_url, params=params, headers=headers, timeout=VIDEO_REQUEST_TIMEOUT)
         except RequestException as exc:
-            logger.warning("获取视频信息失败: {}", exc)
+            logger.warning("获取视频信息失败: {}", type(exc).__name__)
             return None
         if resp.status_code != 200:
             logger.warning("获取视频信息返回码异常: {}", resp.status_code)
@@ -746,6 +754,9 @@ class Chaoxing:
 
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+        # Honour task-card restrictions even when the caller requests a faster rate.
+        if str(_job.get("doublespeed", "")).lower() in ("0", "false"):
+            _speed = min(_speed, 1.0)
         _session = SessionManager.get_session()
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         job_name = _job.get("name") or _job.get("objectid", "")
@@ -784,13 +795,36 @@ class Chaoxing:
         end_reports = 0
         progress_key = f"{_course.get('courseId')}-{_job.get('jobid')}"
 
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time,
-                                                _type, headers=headers, _isdrag=3)
+        def report(position, event):
+            # Retry the same position, never restart an entire video after a network error.
+            nonlocal last_iter
+            for attempt in range(MAX_VIDEO_REQUEST_ATTEMPTS):
+                try:
+                    result = self.video_progress_log(
+                        _session, _course, _job, _job_info, _dtoken, duration,
+                        int(position), _type, headers=headers, _isdrag=event)
+                except RequestException as exc:
+                    logger.warning("视频请求失败: {}", type(exc).__name__)
+                    result = (False, -1)
+                if result[0] or result[1] not in (-1, 408, 429, 500, 502, 503, 504):
+                    return result
+                # Failed requests and backoff do not count as playback time.
+                last_iter = time.monotonic()
+                if runtime.should_stop():
+                    return False, -1
+                if attempt + 1 < MAX_VIDEO_REQUEST_ATTEMPTS:
+                    runtime.sleep(2 * (attempt + 1))
+                    last_iter = time.monotonic()
+            return result
+
+        passed, state = report(play_time, 3)
+        last_iter = time.monotonic()
         if passed:
             logger.info("服务器确认任务已完成: {}", job_name)
             return StudyResult.SUCCESS
         if state != 200:
-            return StudyResult.FORBIDDEN if state == 403 else StudyResult.ERROR
+            return StudyResult.CANCELLED if runtime.should_stop() else (
+                StudyResult.FORBIDDEN if state == 403 else StudyResult.TIMEOUT)
 
         pbar = None
         try:
@@ -803,12 +837,15 @@ class Chaoxing:
                     if play_time >= duration:
                         end_reports += 1
                         if end_reports > MAX_END_REPORTS:
-                            logger.error(f"视频已播放到结尾但服务器始终未判定完成, 稍后重试: {job_name}")
-                            return StudyResult.ERROR
+                            logger.error(f"结尾确认达到上限，保留未完成状态且不自动重播: {job_name}")
+                            return StudyResult.TIMEOUT
 
-                    passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
-                                                            int(play_time), _type, headers=headers,
-                                                            _isdrag=4 if play_time >= duration else 0)
+                    passed, state = report(play_time, 4 if play_time >= duration else 0)
+                    if passed:
+                        logger.info("服务器确认任务已完成: {}", job_name)
+                        return StudyResult.SUCCESS
+                    if runtime.should_stop():
+                        return StudyResult.CANCELLED
 
                     if state == 403:
                         if forbidden_retry >= max_forbidden_retry:
@@ -818,18 +855,19 @@ class Chaoxing:
                         logger.warning("出现403报错, 正在尝试刷新会话状态 (第{}次)", forbidden_retry)
                         runtime.sleep(random.uniform(2, 4))
                         _session = SessionManager.get_session()
-                        refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
+                        refreshed_meta = self._refresh_video_status(_session, _job, _type)
+                        last_iter = time.monotonic()
                         if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get("duration"):
                             _dtoken = refreshed_meta["dtoken"]
                             duration = int(float(refreshed_meta["duration"]))
-                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, duration, play_time)
+                            logger.debug("媒体状态已刷新，保留播放位置: {}", play_time)
                             pbar = self._close_pbar_safe(pbar)
                             continue
                         logger.error("会话恢复失败，刷新后的元数据缺少必要字段 (dtoken, duration)")
                         return StudyResult.ERROR
 
                     if not passed and state != 200:
-                        return StudyResult.ERROR
+                        return StudyResult.TIMEOUT
 
                     wait_time = 30
                     last_log_time = play_time

@@ -15,6 +15,7 @@ from api.process import increase_learning_count_for_course
 from api.runtime import interactive_lock, runtime
 from api.scheduler import ChapterTask, JobProcessor
 from api.settings import Settings, to_bool
+from api.verification import verify_course
 
 
 def format_time(num, suffix='', divisor=''):
@@ -144,6 +145,20 @@ class Runner:
                 tasks.append(ChapterTask(point=point, index=index, course=course))
         return tasks
 
+    def verify_courses(self, courses: list[dict]) -> dict[str, Any]:
+        """Read every selected course without executing tasks or querying a bank."""
+        if not self.chaoxing:
+            raise RuntimeError("请先登录")
+        runtime.set_stage("正在校验服务端任务进度")
+        reports = []
+        for course in courses:
+            if runtime.should_stop():
+                break
+            reports.append(verify_course(self.chaoxing, course))
+        return {"complete": bool(courses) and len(reports) == len(courses)
+                and all(row["complete"] for row in reports) and not runtime.should_stop(),
+                "courses": reports}
+
     def run(self, courses: list[dict], *, study: bool = True, add_learning_count: Optional[bool] = None,
             target_count: Optional[int] = None, options: Optional[dict[str, Any]] = None,
             ask_callback: Optional[Callable[[ChapterTask], str]] = None) -> dict[str, Any]:
@@ -177,9 +192,24 @@ class Runner:
                     break
                 increase_learning_count_for_course(self.chaoxing, course, {"target_count": target_count})
 
+        summary["complete"] = None
+        if study:
+            verification = self.verify_courses(courses)
+            summary["verification"] = verification
+            summary["complete"] = bool(verification["complete"] and not summary["failed"]
+                                       and not summary["skipped"] and not summary["cancelled"]
+                                       and not summary["skipped_works"] and not runtime.should_stop())
+
         summary["stopped"] = runtime.should_stop()
         summary["stop_reason"] = runtime.stop_reason
-        runtime.set_stage("已停止" if summary["stopped"] else "已完成")
+        if summary["stopped"]:
+            runtime.set_stage("已停止")
+        elif not study:
+            runtime.set_stage("运行结束")
+        elif summary["complete"]:
+            runtime.set_stage("已完成并校验")
+        else:
+            runtime.set_stage("未完成或未通过校验")
         return summary
 
 
@@ -190,6 +220,15 @@ def format_summary(summary: dict[str, Any]) -> str:
         f"完成: {summary.get('done', 0)}  失败: {len(summary.get('failed', []))}  "
         f"未开放跳过: {len(summary.get('skipped', []))}",
     ]
+    if summary.get("verification_only"):
+        lines = ["========== 只读任务校验 ==========", f"课程数: {summary.get('courses', 0)}"]
+    if summary.get("complete") is not None:
+        lines.append("服务端任务校验：" + ("通过" if summary["complete"] else "未通过"))
+    for row in summary.get("verification", {}).get("courses", []):
+        progress = row.get("progress")
+        value = f'{progress["done"]}/{progress["total"]}' if progress else "未知"
+        lines.append(f'{row["course"]}: 任务点 {value}，待完成 {sum(row["pending"].values())}')
+        lines.extend("  " + error for error in row["errors"])
     if summary.get("skipped_works"):
         lines.append(f"因未配置可用题库而跳过的章节检测: {summary['skipped_works']} 个")
     if summary.get("failed"):

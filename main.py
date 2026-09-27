@@ -6,6 +6,7 @@
     python main.py --web      # 打开网页控制台，在浏览器里操作
 """
 import argparse
+from copy import deepcopy
 import getpass
 import sys
 import traceback
@@ -27,6 +28,7 @@ EPILOG = """示例:
   python main.py -c config.ini                使用配置文件（不指定时自动查找 config.ini）
   python main.py --web                        打开网页控制台
   python main.py --check                      只读自检：检查登录与各页面解析是否正常
+  python main.py --verify -l 课程ID            只读校验：逐章核对全部任务是否完成
 
 也可以使用环境变量 CHAOXING_USERNAME / CHAOXING_PASSWORD / CHAOXING_COURSE_LIST 等提供配置。
 """
@@ -63,6 +65,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--no-browser", action="store_true", help="启动网页控制台时不自动打开浏览器")
     parser.add_argument("--check", action="store_true",
                         help="只读自检: 登录后检查课程/章节/任务点/题目页面能否正常解析, 不学习也不提交任何内容")
+    parser.add_argument("--verify", action="store_true", help="只读校验所选课程的全部任务完成状态，不播放、不答题、不发送通知")
     # 旧版本遗留参数，从未实现，保留以免旧脚本报错
     parser.add_argument("--auto-sign", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -142,10 +145,14 @@ def select_courses(all_course: list[dict], course_list: list[str], interactive: 
             return selected
 
 
-def run_cli(settings: Settings) -> int:
+def run_cli(settings: Settings, verify_only: bool = False) -> int:
     interactive = stdin_is_interactive()
     runner = None
     try:
+        if verify_only:
+            settings = deepcopy(settings)
+            settings.tiku = {"provider": ""}
+            settings.notification = {"provider": ""}
         runner = Runner(settings, interactive=interactive)
         common = settings.common
         need_password = not (common.get("username") and common.get("password"))
@@ -167,26 +174,34 @@ def run_cli(settings: Settings) -> int:
         all_course = runner.list_courses()
         if not all_course:
             logger.warning("没有找到任何课程")
-            return 0
+            return 1 if verify_only else 0
         courses = select_courses(all_course, common.get("course_list") or [], interactive)
-        summary = runner.run(courses)
+        if verify_only:
+            runtime.set_time_limit(float(common.get("max_duration") or 0))
+            verification = runner.verify_courses(courses)
+            summary = {"courses": len(courses), "verification_only": True, "complete": verification["complete"],
+                       "verification": verification, "stopped": runtime.should_stop(),
+                       "stop_reason": runtime.stop_reason}
+        else:
+            summary = runner.run(courses)
         report = format_summary(summary)
         logger.info("\n" + report)
-        runner.notify(f"chaoxing : 任务结束\n{report}")
-        return 1 if summary.get("failed") else 0
+        if not verify_only:
+            runner.notify(f"chaoxing : 任务结束\n{report}")
+        return 1 if summary.get("failed") or summary.get("stopped") or summary.get("complete") is False else 0
     except KeyboardInterrupt:
         runtime.request_stop()
         logger.warning("程序已被用户手动中断")
         return 130
     except (LoginError, InputFormatError) as e:
         logger.error(f"错误: {e}")
-        if runner:
+        if runner and not verify_only:
             runner.notify(f"chaoxing : 出现错误 {e}")
         return 1
     except Exception as e:
         logger.error(f"错误: {type(e).__name__}: {e}")
         logger.debug(traceback.format_exc())
-        if runner:
+        if runner and not verify_only:
             runner.notify(f"chaoxing : 出现错误 {type(e).__name__}: {e}")
         return 1
 
@@ -216,7 +231,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.check:
         from api.selfcheck import run_selfcheck
         return run_selfcheck(settings, interactive=stdin_is_interactive())
-    return run_cli(settings)
+    return run_cli(settings, verify_only=args.verify)
 
 
 if __name__ == "__main__":

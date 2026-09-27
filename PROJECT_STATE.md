@@ -5,7 +5,7 @@ Canonical source: https://github.com/ieduer/chaoxing main; checkout /Users/ylsue
 
 ## Objective and acceptance
 
-Complete and independently reconcile every element of one initially incomplete course: 69 chapters, 118 task points (60 videos and 58 chapter tests), plus 3 non-task PDFs and 1 reading resource. The initial target baseline was 1/118. The other, already-complete course is not acceptance evidence. **Full-course acceptance remains pending while the original video batch runs.**
+Complete and independently reconcile every element of one initially incomplete course: 69 chapters, 118 task points (60 videos and 58 chapter tests), plus 3 non-task PDFs and 1 reading resource. The initial target baseline was 1/118. The other, already-complete course is not acceptance evidence. **Full-course acceptance remains pending.**
 
 ## Published implementation and checks
 
@@ -14,12 +14,16 @@ Complete and independently reconcile every element of one initially incomplete c
 - Local env password login, authenticated course listing and task-card reads succeeded. The formal local launcher selfcheck passed 8/8 using the default auto transport.
 - Auto transport only falls back for a proven pre-send EBADF connection failure. The OS cause remains unproven. Video events now match the observed platform player: play=3, playing=0, ended=4; progress advances through elapsed monotonic time.
 
+## Efficiency revision
+
+142 offline regressions passed for bounded media requests/end confirmation, preserved bookmarks, no automatic whole-media replay, platform speed restrictions, independent per-video card confirmation and final course verification. `--verify` is read-only and returns nonzero on incomplete or unverifiable progress. The original process remains separate until a verified serial handover. [Video comparison and measurement plan](docs/VIDEO_EFFICIENCY.md).
+
 ## Live evidence and limits
 
 - 57 previously pending tests were submitted and independently confirmed; 54 scored 100, two scored 80 and one scored 75. One test was already complete. A fresh inventory of all 69 chapters found no pending test jobs.
 - The three non-perfect results were independently reread as 80, 80 and 75. Their result pages expose no redo control; the attempted normal retake returned `WorkRedoUnavailable`. Corrections are retained only in the private local bank, and are not claimed as successful resubmissions.
 - One previously unplayed 220-second video completed through the runner and a fresh card confirmed completion. The excluded browser video reached its actual 994.645-second end at 1x and displayed the completed-task indicator.
-- The existing video batch runs at 1x with four workers and a 12-hour deadline. It refreshes each queued task before execution, independently checks completion afterward, and stops on a mismatch, challenge or failure. Do not start a duplicate batch. See the private handoff for the owned process and current status file.
+- The original video batch runs at 1x with four workers and a 12-hour deadline. It refreshes each queued task before execution, independently checks completion afterward, and stops on a mismatch, challenge or failure. Do not start a duplicate batch. See the private handoff for the owned process and current status file.
 - All 3 PDFs returned HTTP 200 with valid signatures and page counts of 2, 13 and 16. The reading resource opened from the course and loaded a substantive chapter in the normal Brave reader.
 - The final gate is a stable, fresh 118/118 aggregate, all 60 completed video cards, all 58 submitted-result pages, zero pending jobs and the four non-task resource checks. A running snapshot is not a final reconciliation.
 
