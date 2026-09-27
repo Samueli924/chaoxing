@@ -299,7 +299,8 @@ class Tiku(ABC):
 
         cache_dao = CacheDAO()
         # 重做模式：不走缓存，让题库参考错误反馈重新作答
-        skip_cache = bool(self.work_feedback)
+        curated_chain = any(type(p).__name__ == "TikuLocal" for p in getattr(self, "providers", []))
+        skip_cache = bool(self.work_feedback) or curated_chain
         for idx, q in enumerate(q_list):
             if not self._is_manual_mode:
                 logger.debug(f"原始标题：{q['title']}")
@@ -339,7 +340,8 @@ class Tiku(ABC):
                 ans = str(ans).strip()
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {ans}")
                 if check_answer(ans, q_info['type'], self):
-                    cache_dao.add_cache(q_info['title'], ans)
+                    if not curated_chain:
+                        cache_dao.add_cache(q_info['title'], ans)
                     results[idx] = ans
                 else:
                     logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
@@ -1106,6 +1108,21 @@ class TikuAdapter(Tiku):
 
 
 
+class TikuLocal(Tiku):
+    """User-maintained local question bank; no third-party request."""
+    def __init__(self, config_path=None):
+        super().__init__(config_path)
+        self.name = '本机题库'
+
+    def _query(self, q_info):
+        from api.question_bank import QuestionBank
+        return QuestionBank().search(q_info['title'], q_info.get('type', 'single'), q_info.get('options'))
+
+    def query_all(self, q_list, query_delay=0.0):
+        # Curated edits/deletions must take effect immediately, bypass the legacy title-only cache.
+        return [self._query(dict(q, title=self.clean_title(q['title']))) for q in q_list]
+
+
 class TikuCustom(Tiku):
     """自建题库服务器.
 
@@ -1779,6 +1796,7 @@ PROVIDER_REGISTRY = {
     'TikuLike': TikuLike,
     'TikuAdapter': TikuAdapter,
     'TikuCustom': TikuCustom,
+    'TikuLocal': TikuLocal,
     'AI': AI,
     'SiliconFlow': SiliconFlow,
     'TikuManual': TikuManual,
@@ -1794,6 +1812,8 @@ PROVIDER_ALIASES = {
     'like': 'TikuLike',
     'adapter': 'TikuAdapter',
     'custom': 'TikuCustom',
+    'local': 'TikuLocal',
+    '本机': 'TikuLocal',
     '自建': 'TikuCustom',
     'openai': 'AI',
     'llm': 'AI',

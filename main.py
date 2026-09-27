@@ -46,6 +46,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("-l", "--list", dest="course_list", type=str, default=None,
                         help="要学习的课程ID列表, 以 , 分隔 (默认运行后选择)")
     parser.add_argument("-s", "--speed", type=float, default=None, help="视频播放倍速 (默认1, 最大2)")
+    parser.add_argument("--max-duration", type=int, default=None, help="本次任务运行时限（秒），0 为不限；当前请求结束后停止")
     parser.add_argument("-j", "--jobs", type=int, default=None, help="同时进行的章节数 (默认4)")
     parser.add_argument("-a", "--notopen-action", type=str, default=None, choices=["retry", "ask", "continue"],
                         help="遇到未开放章节时的行为: retry-重试(默认), ask-询问, continue-跳过")
@@ -74,6 +75,7 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
         "course_list": args.course_list,
         "speed": args.speed,
         "jobs": args.jobs,
+        "max_duration": args.max_duration,
         "notopen_action": args.notopen_action,
         "retry_interval": args.retry_interval,
         "use_cookies": args.use_cookies,

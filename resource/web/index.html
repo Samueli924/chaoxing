@@ -98,6 +98,7 @@
 <body>
 <header>
   <h1>学习通助手</h1>
+  <a href="/bank">本机题库</a>
   <span id="status" class="pill">加载中…</span>
 </header>
 
@@ -171,6 +172,9 @@
       <div id="tiku-wrap" hidden>
         <label for="provider">题库</label>
         <select id="provider"></select>
+        <label for="provider-chain">题库回退顺序（可选，英文逗号分隔）</label>
+        <input id="provider-chain" placeholder="TikuLocal,TikuCustom,AI">
+        <p class="hint">留空只用所选题库。填写顺序后，在下拉框中逐一配置各题库。<a href="/bank" target="_blank" rel="noopener">管理本机题库</a></p>
         <div id="tiku-fields"></div>
       </div>
     </fieldset>
@@ -180,6 +184,7 @@
       <div class="grid2">
         <div><label for="speed">视频倍速（1–2）</label>
           <input id="speed" type="number" min="1" max="2" step="0.1" value="1"></div>
+        <div><label for="max-duration">运行时限（秒，0 为不限）</label><input id="max-duration" type="number" min="0" max="86400" value="0"></div>
         <div><label for="jobs">同时进行的章节数</label>
           <input id="jobs" type="number" min="1" max="16" value="4"></div>
         <div><label for="notopen">遇到未开放章节</label>
@@ -227,6 +232,7 @@ const el = (tag, props = {}, ...kids) => {
 };
 let token = localStorage.getItem("cx_token") || "";
 let providers = [];
+const tikuDraft = {};
 let logCursor = 0;
 let polling = null;
 let lastRunning = false;
@@ -262,6 +268,7 @@ function fillProviders(defaults) {
 }
 
 function renderTikuFields(defaults) {
+  Object.assign(tikuDraft, collectTiku());
   const wrap = $("tiku-fields");
   wrap.innerHTML = "";
   const p = providers.find(x => x.id === $("provider").value);
@@ -275,13 +282,14 @@ function renderTikuFields(defaults) {
       placeholder: configured ? "已在配置文件中填写，留空即沿用" : (f.label || f.key),
     });
     input.dataset.key = f.key;
+    input.value = tikuDraft[f.key] || "";
     wrap.append(el("label", { htmlFor: input.id, textContent: f.label || f.key }), input);
   }
 }
 
 function collectTiku() {
-  const tiku = {};
-  document.querySelectorAll("#tiku-fields input").forEach(i => { if (i.value.trim()) tiku[i.dataset.key] = i.value.trim(); });
+  const tiku = {...tikuDraft};
+  document.querySelectorAll("#tiku-fields input").forEach(i => { tiku[i.dataset.key] = i.value.trim(); });
   return tiku;
 }
 
@@ -307,6 +315,8 @@ function selectedCourses() {
 function applyDefaults(d) {
   if (d.username && !$("username").value) $("username").value = d.username;
   $("speed").value = d.speed || 1;
+  $("max-duration").value = d.max_duration || 0;
+  $("provider-chain").value = (d.provider_chain || "").includes(",") ? d.provider_chain : "";
   $("jobs").value = d.jobs || 4;
   $("notopen").value = d.notopen_action === "continue" ? "continue" : "retry";
   $("task-count").checked = !!d.add_learning_count;
@@ -390,7 +400,7 @@ function summaryText(s) {
   const lines = [`共 ${s.courses} 门课程，${s.total} 个章节：完成 ${s.done}，失败 ${(s.failed || []).length}，未开放跳过 ${(s.skipped || []).length}`];
   if (s.skipped_works) lines.push(`因未配置题库跳过的章节检测：${s.skipped_works} 个`);
   if ((s.failed || []).length) lines.push("失败的章节：" + s.failed.slice(0, 20).join("；"));
-  if (s.stopped) lines.push("（运行被手动停止）");
+  if (s.stopped) lines.push(s.stop_reason === "time_limit" ? "（已达到运行时限）" : "（运行被手动停止）");
   return lines.join("\n");
 }
 
@@ -456,6 +466,8 @@ $("logout-btn").addEventListener("click", async () => {
   const data = await api("/api/logout", { method: "POST", body: {} });
   if (!data.ok) { $("run-msg").className = "msg err"; $("run-msg").textContent = data.msg || ""; return; }
   $("courses").innerHTML = ""; $("summary").hidden = true;
+  Object.keys(tikuDraft).forEach(k => delete tikuDraft[k]);
+  document.querySelectorAll("#tiku-fields input").forEach(i => i.value = "");
   await refreshState();
 });
 
@@ -479,6 +491,8 @@ $("start-btn").addEventListener("click", async () => {
     notopen_action: $("notopen").value,
     work_mode: document.querySelector("input[name=work]:checked").value,
     provider: $("provider").value,
+    provider_chain: $("provider-chain").value,
+    max_duration: Number($("max-duration").value),
     tiku: collectTiku(),
   };
   $("start-btn").disabled = true;

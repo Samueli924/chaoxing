@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
+from api.question_bank import QuestionBank
 from api.base import SessionManager
 from api.config import GlobalConst as gc, resource_path
 from api.logger import logger
@@ -36,6 +37,7 @@ CSRF_VALUE = "chaoxing-web"
 
 # 网页上可选择的题库及其需要填写的配置项（secret=True 的值不会回传给页面）
 PROVIDER_FORMS = [
+    {"id": "TikuLocal", "name": "本机题库（离线）", "fields": []},
     {"id": "TikuGo", "name": "GO题（免费，无需配置）", "fields": [
         {"key": "go_authorization", "label": "Token（可选，用于解除限流）", "secret": True}]},
     {"id": "TikuYanxi", "name": "言溪题库", "fields": [
@@ -123,6 +125,8 @@ class WebApp:
         return {
             "username": common.get("username", ""),
             "has_password": bool(common.get("password")),
+            "provider_chain": tiku.get("provider", ""),
+            "max_duration": common.get("max_duration", 0),
             "speed": common.get("speed", 1.0),
             "jobs": common.get("jobs", 4),
             "notopen_action": common.get("notopen_action", "retry") if common.get("notopen_action") != "ask" else "retry",
@@ -230,9 +234,11 @@ class WebApp:
             work_mode = "save"
         if work_mode == "skip":
             return {"provider": ""}
-        provider = str(data.get("provider") or "TikuGo")
-        if provider not in _PROVIDER_IDS:
-            provider = "TikuGo"
+        raw = str(data.get("provider_chain") or data.get("provider") or "TikuGo")
+        chain = list(dict.fromkeys(x.strip() for x in raw.split(",") if x.strip()))
+        if not chain or any(x not in _PROVIDER_IDS for x in chain):
+            raise ValueError("题库顺序包含无效名称")
+        provider = ",".join(chain)
         overrides: dict[str, Any] = {"provider": provider,
                                      "submit": "true" if work_mode in ("submit", "best") else "false"}
         if work_mode == "best":
@@ -260,12 +266,13 @@ class WebApp:
                 return {"ok": False, "msg": "请至少选择一项任务"}
 
             options = normalize_common({
+                "max_duration": data.get("max_duration"),
                 "speed": data.get("speed"),
                 "jobs": data.get("jobs"),
                 "notopen_action": data.get("notopen_action") if data.get("notopen_action") in ("retry", "continue") else None,
                 "target_count": data.get("target_count"),
             })
-            options = {k: options[k] for k in ("speed", "jobs", "notopen_action", "target_count")}
+            options = {k: options[k] for k in ("speed", "jobs", "notopen_action", "target_count", "max_duration")}
 
             runner = self.runner
             try:
@@ -376,9 +383,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "msg": "forbidden host"}, 403)
         parsed = urlparse(self.path)
         path = parsed.path
-        if path in ("/", "/index.html"):
+        if path in ("/", "/index.html", "/bank"):
             try:
-                with open(resource_path("resource", "web", "index.html"), "rb") as f:
+                with open(resource_path("resource", "web", "bank.html" if path == "/bank" else "index.html"), "rb") as f:
                     body = f.read()
             except OSError:
                 return self._json({"ok": False, "msg": "页面文件缺失"}, 500)
@@ -389,6 +396,12 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "msg": "not found"}, 404)
         if not self._authorized():
             return self._json({"ok": False, "msg": "访问口令错误", "token_required": True}, 401)
+        if path == "/api/bank":
+            params = parse_qs(parsed.query)
+            try:
+                return self._json(QuestionBank().list_rows(params.get("q", [""])[0], offset=int(params.get("offset", ["0"])[0])))
+            except ValueError:
+                return self._json({"ok": False, "msg": "分页参数无效"}, 400)
         if path == "/api/state":
             return self._json(self.app.state())
         if path == "/api/logs":
@@ -416,6 +429,9 @@ class _Handler(BaseHTTPRequestHandler):
         if data is None:
             return self._json({"ok": False, "msg": "请求格式错误"}, 400)
         routes = {
+            "/api/bank/import": lambda: {"ok": True, "count": QuestionBank().import_rows(data.get("rows"))},
+            "/api/bank/delete": lambda: {"ok": QuestionBank().delete(data.get("id"))},
+            "/api/search": lambda: {"code": 1, "data": {"answer": QuestionBank().search(data.get("question", ""), data.get("type", "0"), data.get("options"))}},
             "/api/login": lambda: self.app.login(data),
             "/api/logout": self.app.logout,
             "/api/start": lambda: self.app.start(data),
@@ -426,6 +442,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "msg": "not found"}, 404)
         try:
             return self._json(handler())
+        except (ValueError, TypeError) as e:
+            return self._json({"ok": False, "msg": str(e)}, 400)
         except Exception as e:
             logger.error(f"处理请求出错: {type(e).__name__}: {e}")
             return self._json({"ok": False, "msg": f"服务器内部错误: {e}"}, 500)

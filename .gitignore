@@ -162,3 +162,8 @@ test-data/
 live_trace.jsonl*
 live_result.json
 selfcheck_report.md
+
+# Local curated bank and credential files
+question_bank.sqlite3*
+.env.*
+!.env.example

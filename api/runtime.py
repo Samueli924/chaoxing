@@ -12,6 +12,8 @@ class Runtime:
     def __init__(self) -> None:
         """初始化停止信号与进度表."""
         self.stop_event = threading.Event()
+        self.deadline = None
+        self.stop_reason = ""
         self._lock = threading.Lock()
         self._items: dict[str, dict[str, Any]] = {}
         self._stage = ""
@@ -19,6 +21,8 @@ class Runtime:
 
     def reset(self) -> None:
         self.stop_event.clear()
+        self.deadline = None
+        self.stop_reason = ""
         with self._lock:
             self._items.clear()
             self._stage = ""
@@ -28,7 +32,13 @@ class Runtime:
         with self._lock:
             self._counts.update(counts)
 
+    def set_time_limit(self, seconds: float) -> None:
+        self.deadline = time.monotonic() + seconds if seconds > 0 else None
+
     def should_stop(self) -> bool:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            self.stop_reason = "time_limit"
+            self.stop_event.set()
         return self.stop_event.is_set()
 
     def request_stop(self) -> None:
@@ -36,9 +46,11 @@ class Runtime:
 
     def sleep(self, seconds: float) -> bool:
         """等待指定秒数；收到停止信号时提前返回 True."""
-        if seconds <= 0:
-            return self.stop_event.is_set()
-        return self.stop_event.wait(seconds)
+        if self.should_stop():
+            return True
+        if self.deadline is not None:
+            seconds = min(seconds, max(0, self.deadline - time.monotonic()))
+        return self.stop_event.wait(max(0, seconds)) or self.should_stop()
 
     def set_stage(self, text: str) -> None:
         with self._lock:

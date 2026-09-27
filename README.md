@@ -28,6 +28,19 @@
 
 ---
 
+## 本机整合入口
+
+macOS 可双击 `start.command`，使用已有的 `$HOME/.venv/bin/python`，仅加载 `$HOME/.secrets.env` 中的 `CHAOXING_*` 配置。
+其他机器也可运行 `python scripts/local.py --env-file /path/to/account.env --web`。
+
+- 控制台的「本机题库」支持 JSON 导入、查询、编辑、删除和导出，无须另装数据库服务。
+- `provider = TikuLocal,AI` 按顺序查询本机题库与已配置模型；网页端也可填写回退顺序。
+- `--max-duration 1800` 或 `CHAOXING_MAX_DURATION=1800` 将运行限制在 30 分钟，已发出的请求结束后停止。
+- 多账号使用 `python scripts/batch.py profiles.json`，默认只读检查；每个账号独立进程和数据目录。
+- 可选的 `resource/chaoxing-player.user.js` 提供网页播放器倍速、静音控制；它不伪造完成进度。
+
+参考项目功能对照、本机恢复记录及验证边界见 [docs/INTEGRATION.md](docs/INTEGRATION.md)。
+
 ## 🚀 快速开始（Python 3.10+）
 
 ```bash

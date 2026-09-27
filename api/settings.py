@@ -13,6 +13,7 @@
 """
 import configparser
 import os
+import math
 import re
 import sys
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ COMMON_DEFAULTS: dict[str, Any] = {
     "course_list": [],
     "speed": 1.0,
     "jobs": 4,
+    "max_duration": 0,
     "notopen_action": "retry",
     "retry_interval": 1.0,
     "work_max_retries": 3,
@@ -144,7 +146,9 @@ def split_course_list(value: Any) -> list[str]:
 def _number(key: str, value: Any, cast, default, minimum=None, maximum=None):
     try:
         number = cast(float(str(value).strip())) if cast is int else cast(str(value).strip())
-    except (TypeError, ValueError):
+        if not math.isfinite(number):
+            raise ValueError("non-finite number")
+    except (TypeError, ValueError, OverflowError):
         logger.warning(f"配置项 {key}={value!r} 无效，使用默认值 {default}")
         return default
     if minimum is not None and number < minimum:
@@ -170,6 +174,8 @@ def normalize_common(raw: dict[str, Any]) -> dict[str, Any]:
             common[key] = split_course_list(value)
         elif key == "speed":
             common[key] = _number(key, value, float, 1.0, 1.0, 2.0)
+        elif key == "max_duration":
+            common[key] = _number(key, value, int, 0, 0, 86400)
         elif key == "jobs":
             common[key] = _number(key, value, int, 4, 1, 16)
         elif key == "retry_interval":

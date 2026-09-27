@@ -151,6 +151,7 @@ class Runner:
         if not self.chaoxing:
             raise RuntimeError("请先登录")
         common = dict(self.settings.common, **(options or {}))
+        runtime.set_time_limit(float(common.get("max_duration") or 0))
         if add_learning_count is None:
             add_learning_count = bool(common.get("add_learning_count"))
         target_count = int(target_count or common.get("target_count") or 100)
@@ -177,6 +178,7 @@ class Runner:
                 increase_learning_count_for_course(self.chaoxing, course, {"target_count": target_count})
 
         summary["stopped"] = runtime.should_stop()
+        summary["stop_reason"] = runtime.stop_reason
         runtime.set_stage("已停止" if summary["stopped"] else "已完成")
         return summary
 
@@ -195,5 +197,5 @@ def format_summary(summary: dict[str, Any]) -> str:
     if summary.get("skipped"):
         lines.append("未开放而跳过的章节: " + "；".join(summary["skipped"][:20]))
     if summary.get("stopped"):
-        lines.append("运行已被手动停止")
+        lines.append("已达到运行时限" if summary.get("stop_reason") == "time_limit" else "运行已被手动停止")
     return "\n".join(lines)
