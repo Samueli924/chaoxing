@@ -1,12 +1,14 @@
 # Project State
 
 Last updated: 2026-09-27 UTC
-Current version: 4.0.0 plus local consolidation changes
-Current objective: Restore canonical local main and integrate reviewed automation capabilities.
-Completed work: Restored all 54 main source files; preserved old source/history; added local bank, web provider chain, bounded run duration, dotenv launcher, isolated account batch runner and optional player controls.
-Verification: 97 offline tests passed; local bank browser persistence passed; authenticated Brave course/card/player responses verified. See docs/INTEGRATION.md and docs/BROWSER_VERIFICATION_20260927.json.
-Pending work: Python authenticated network path, true task-completion readback, paid model/OCR/notifications and cross-platform packaging are unverified. Legacy high-speed/stealth claims are not accepted capabilities.
-Known problems: Outbound Python requests in current agent environment raise Bad file descriptor; curl and Brave work. Browser event capture was bounded and not a full HAR.
-Deployment status: Local source integration; no production deployment, no account task execution, no exam/assignment submission.
-Rollback anchor: origin/main 2089f7e5a51faab180c3ac5bb7220cd69037b737; original local source in .git/chaoxing-recovery-20260927 and old master 52f9fbe (legacy-closty remote).
-Next recommended task: Diagnose the Python outbound socket failure in the normal local launch environment, then validate one explicitly selected account/course operation and server-side readback.
+Canonical source: https://github.com/ieduer/chaoxing main; checkout /Users/ylsuen/chaoxing/chaoxing.
+Current objective: Real end-to-end acceptance of every element in one initially incomplete course. User requires all tasks completed and server-side reconciliation; sampling/selfcheck alone is not acceptance.
+Completed work: Canonical consolidation published at 6ae9936. New connection adapter and video resume fixes are being validated. Local env password login succeeded; 2 courses read; formal scripts/local.py --check passed 8/8 in auto transport mode. Regression suite passed 108 tests before two additional resume tests; all 13 focused transport/resume tests now pass.
+Current live baseline: Selected initially incomplete course has 69 chapters, 118 task points (60 videos and 58 chapter tests), initially 1/118 complete. Full inventory also found 3 non-task documents and 1 non-task reading attachment; no inventory errors. Other course is already 78/78 and is not the acceptance target.
+Live verification: 70-second 1x run stopped on time; reports at 822/852/883 seconds returned HTTP 200; immediate fresh card readback advanced from 822000 to 852000 ms. No task completion claimed. No CAPTCHA encountered. Initial diagnostic media 403 was caused by a probe omitting Referer; normal implementation works.
+Pending work: Complete every remaining selected-course task; verify each attachment plus aggregate 118/118; test full answer submission/readback. User explicitly authorized reading questions/options in this conversation, curating a local bank and submitting. Third-party answers may be used only after confirming accuracy. No third-party query was sent.
+Known problems: Python socket connect intermittently fails with EBADF in this host. curl works. New auto fallback only handles confirmed pre-send NewConnectionError/EBADF and retains TLS/cookies/redirects. Exact OS root cause unproven. Video start previously submitted full duration; corrected to resume position, monotonic timing and 30-second progress intervals.
+Ownership/runtime: This task owns dirty api/base.py, api/transport.py and tests/test_transport.py. Private temporary root /private/tmp/cf-task-chaoxing-live-acceptance-20260927; manifest /Users/ylsuen/CF/reports/private/runtime-artifact-manifests/chaoxing-live-acceptance-20260927/manifest.json. Contains disposable session data and test scripts; never commit secrets. No full-course worker running yet.
+Deployment status: main 6ae9936 remains remote baseline; new fixes not yet committed. No claim of full acceptance. Notifications disabled. No paid provider enabled.
+Rollback: Previous main 6ae9936f7c52264e64092ccbe63f65f17f6e3b53. Original source/history preserved under .git/chaoxing-recovery-20260927 and legacy-closty/master.
+Next action: Curate local question bank, run full selected course using actual allowed progress, reconcile all task cards and non-task attachments; repair further errors and push main directly (already authorized).

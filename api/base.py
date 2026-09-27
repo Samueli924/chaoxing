@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import requests
 from loguru import logger
 from requests import RequestException
-from requests.adapters import HTTPAdapter
+from api.transport import CompatibleHTTPAdapter
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 from tqdm import tqdm
 from urllib3.util.retry import Retry
@@ -107,7 +107,7 @@ def _build_session() -> requests.Session:
         allowed_methods=frozenset({"GET", "HEAD", "OPTIONS"}),
         raise_on_status=False,
     )
-    adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=32)
+    adapter = CompatibleHTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=32)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.headers.update(gc.HEADERS)
@@ -769,9 +769,9 @@ class Chaoxing:
         # 现实时间: last_iter, gc.THRESHOLD
         # 视频时间(随倍速缩放): duration, play_time, last_log_time, wait_time
         play_time = min(duration, int(_job.get("playTime") or 0) // 1000)
-        last_log_time = 0
-        last_iter = time.time()
-        wait_time = int(random.uniform(30, 90))
+        last_log_time = play_time
+        last_iter = time.monotonic()
+        wait_time = 30
 
         logger.info(f"开始任务: {job_name}, 总时长: {duration}s, 已进行: {play_time}s")
 
@@ -780,11 +780,13 @@ class Chaoxing:
         end_reports = 0
         progress_key = f"{_course.get('courseId')}-{_job.get('jobid')}"
 
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
-                                                _type, headers=headers, _isdrag=4)
+        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, play_time,
+                                                _type, headers=headers, _isdrag=0)
         if passed:
-            logger.info("任务瞬间完成: {}", job_name)
+            logger.info("服务器确认任务已完成: {}", job_name)
             return StudyResult.SUCCESS
+        if state != 200:
+            return StudyResult.FORBIDDEN if state == 403 else StudyResult.ERROR
 
         pbar = None
         try:
@@ -824,12 +826,12 @@ class Chaoxing:
                     if not passed and state != 200:
                         return StudyResult.ERROR
 
-                    wait_time = int(random.uniform(30, 90))
+                    wait_time = 30
                     last_log_time = play_time
                     logger.trace("Progress logged")
 
                 # 上报进度需要时间, 假设视频在后台持续播放, 手动计算经过的时间
-                now = time.time()
+                now = time.monotonic()
                 play_time = min(duration, play_time + (now - last_iter) * _speed)
                 last_iter = now
 

@@ -192,3 +192,7 @@ python scripts/live_verify.py
 ## ⚖️ 免责声明
 
 本代码遵循 [GPL-3.0 License](LICENSE)，仅用于**学习讨论**，禁止用于**任何盈利用途**。他人或组织使用本代码进行的任何**违法行为**与作者无关。
+
+### 本机连接诊断
+
+Python 连接在建立阶段报 `Bad file descriptor` 时，默认自动使用系统 curl 相容传输。可用 `CHAOXING_HTTP_TRANSPORT=requests` 禁用回退，或设为 `curl` 显式选择。TLS 验证、Cookie 和重定向仍保留；不支持流式请求。验证状态与限制见 [连接及课程验收记录](docs/NETWORK_ACCEPTANCE_20260927.md)。
