@@ -6,9 +6,11 @@ def check_single(answer):
     if not text:
         return False
 
-    # 单选答案文本中常见逗号（中英文）是句内标点，不应据此判定为多选。
+    # 单选答案文本中常见逗号（中英文）、顿号是句内标点，不应据此判定为多选。
+    # 顿号在并列式选项/答案文本中极常见（如"坚持独立负责、不参与国际组织的活动"），
+    # 若视为分隔符会误杀正确答案；"A、B"式多选答案即使漏过，下游匹配失败也会兜底随机。
     # 仅在出现明显“多段答案”分隔符时，才判定为非单选。
-    strong_delimiters = ["\n", "|", "#", "\t", "\r", "、"]
+    strong_delimiters = ["\n", "|", "#", "\t", "\r"]
     for sep in strong_delimiters:
         parts = [p.strip() for p in text.split(sep) if p.strip()]
         if len(parts) > 1:
