@@ -1165,6 +1165,9 @@ class TikuAdapter(Tiku):
 
 class AI(Tiku):
     # AI大模型答题实现
+    # 多数大模型默认开启深度思考, 会拖慢答题并污染输出, 默认通过 extra_body 关闭
+    DEFAULT_EXTRA_BODY = '{"thinking": {"type": "disabled"}}'
+
     def __init__(self, config_path: Optional[str] = None) -> None:
         """初始化AI大模型答题实现."""
         super().__init__(config_path)
@@ -1172,6 +1175,7 @@ class AI(Tiku):
         self.last_request_time = None
         self._lock = threading.Lock()
         self.work_feedback = None  # 章节检测错误反馈（重做时参考）
+        self.extra_body = {}
 
     def set_work_feedback(self, feedback) -> None:
         """
@@ -1197,16 +1201,9 @@ class AI(Tiku):
             lines.append(str(item))
         return "\n".join(lines)
 
-    def _is_deepseek_v4(self) -> bool:
-        return (
-                'api.deepseek.com' in (self.endpoint or '').lower()
-                and (self.model or '').lower().startswith('deepseek-v4')
-        )
-
     def _completion_kwargs(self, **kwargs):
-        if self._is_deepseek_v4():
-            # DeepSeek V4 defaults to thinking mode, which can leave message.content empty.
-            kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
+        if self.extra_body:
+            kwargs['extra_body'] = {**kwargs.get('extra_body', {}), **self.extra_body}
         return kwargs
 
     def _wait_for_interval(self):
@@ -1323,6 +1320,16 @@ class AI(Tiku):
         self.model = self._conf['model']
         self.http_proxy = self._conf['http_proxy']
         self.min_interval_seconds = int(self._conf['min_interval_seconds'])
+        # 多数大模型默认开启深度思考: 思考内容会混入输出导致答案解析失败, 且大幅增加耗时与token消耗,
+        # 因此默认通过 extra_body 关闭思考; 若所用 API 不支持该参数而报错, 可在配置中将其设为 {}
+        extra_body_raw = self._conf.get('extra_body', '') or self.DEFAULT_EXTRA_BODY
+        try:
+            self.extra_body = json.loads(extra_body_raw)
+            if not isinstance(self.extra_body, dict):
+                raise ValueError('extra_body 必须是 JSON 对象')
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(f'{self.name}配置 extra_body 无效: {e}, 已忽略该项, 请求将不附加额外参数')
+            self.extra_body = {}
 
     def check_llm_connection(self) -> bool:
         """
