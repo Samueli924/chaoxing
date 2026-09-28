@@ -2,10 +2,11 @@
 cd /d "%~dp0"
 
 rem If the website is already running, just open the browser (do not start twice)
-rem IMAGENAME=python.exe filter avoids treating a recycled PID as the website
+rem Verify the saved PID really belongs to this webgui.py process (a recycled PID
+rem may now be owned by another python.exe) by matching its command line.
 if exist "webgui.pid" (
     for /f %%i in (webgui.pid) do (
-        tasklist /fi "PID eq %%i" /fi "IMAGENAME eq python.exe" 2>nul | find "%%i" >nul
+        powershell -NoProfile -Command "if ((Get-CimInstance Win32_Process -Filter 'ProcessId=%%i').CommandLine -like '*webgui.py*') { exit 0 } else { exit 1 }" 2>nul
         if not errorlevel 1 (
             echo Website is already running. Opening browser...
             ping -n 2 127.0.0.1 >nul

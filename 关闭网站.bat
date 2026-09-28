@@ -10,8 +10,10 @@ if not exist "webgui.pid" (
 for /f %%i in (webgui.pid) do set "WEBPID=%%i"
 
 rem /t also kills child processes (a running study task is stopped too)
-rem IMAGENAME=python.exe filter avoids reaping a recycled PID owned by another process
-tasklist /fi "PID eq %WEBPID%" /fi "IMAGENAME eq python.exe" 2>nul | find "%WEBPID%" >nul
+rem Verify the saved PID really belongs to this webgui.py process before killing it:
+rem a recycled PID may now be owned by an unrelated python.exe, so match the
+rem process command line (contains "webgui.py") instead of the image name alone.
+powershell -NoProfile -Command "if ((Get-CimInstance Win32_Process -Filter 'ProcessId=%WEBPID%').CommandLine -like '*webgui.py*') { exit 0 } else { exit 1 }" 2>nul
 if errorlevel 1 (
     echo Website process already exited. Cleaning up.
     del "webgui.pid"
