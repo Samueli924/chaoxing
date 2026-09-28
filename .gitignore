@@ -157,3 +157,8 @@ cache.json
 start*.bat
 .workbuddy/
 myConfig/
+
+# webgui.py 运行时残留
+webgui.pid
+config_gui.ini
+!config_gui_example.ini

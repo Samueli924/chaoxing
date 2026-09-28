@@ -71,6 +71,34 @@ uv run --python 3.13 main.py
 uv run --python 3.13 main.py -c config.ini
 ```
 
+### 图形化界面运行（Windows 推荐，无需命令行）
+
+> 本仓库在原命令行版基础上新增了一个本地 Web 图形化控制界面 `webgui.py`，通过浏览器操作配置、选择课程、实时查看日志，适合不熟悉命令行的 Windows 用户。
+
+1. 准备依赖（同源码运行，需 Python 3.13+）
+
+```bash
+pip install -r requirements.txt
+```
+
+2. 双击 `启动网站.bat`
+
+   - 会弹出黑色命令行窗口（标题为 `Chaoxing Console - close this window to STOP`），并自动打开浏览器访问 `http://127.0.0.1:5000`
+   - 网站只监听本机 127.0.0.1，不会暴露到局域网/公网
+
+3. 在网页里填写账号密码，点「拉取课程」勾选要刷的课程，按需调整倍速/并发/防风控节奏，点「开始学习」即可
+
+   - 刷课日志会同时在网页日志面板和黑色命令行窗口里实时显示
+   - 关闭方式：双击 `关闭网站.bat`，或直接关闭黑色命令行窗口（会一并停止正在运行的刷课任务）
+
+4. 配置文件说明
+
+   - 首次运行会在同目录生成 `config_gui.ini`（保存你填写的账号、课程 ID、防风控参数等）
+   - 模板见 `config_gui_example.ini`，可参考其中的字段说明
+   - `config_gui.ini` 默认被 `.gitignore` 忽略，不会上传到 GitHub
+
+> Tips：单实例保护 —— 如果端口 5000 已被占用（说明网站已在运行），`启动网站.bat` 会直接打开浏览器而不会重复启动；如需重启请先 `关闭网站.bat`。
+
 ### 打包文件运行
 1. 从最新[Releases](https://github.com/Samueli924/chaoxing/releases)中下载exe文件
 2. (可选直接运行) 双击运行即可
