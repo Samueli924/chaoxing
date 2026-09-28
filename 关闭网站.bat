@@ -10,7 +10,8 @@ if not exist "webgui.pid" (
 for /f %%i in (webgui.pid) do set "WEBPID=%%i"
 
 rem /t also kills child processes (a running study task is stopped too)
-tasklist /fi "PID eq %WEBPID%" 2>nul | find "%WEBPID%" >nul
+rem IMAGENAME=python.exe filter avoids reaping a recycled PID owned by another process
+tasklist /fi "PID eq %WEBPID%" /fi "IMAGENAME eq python.exe" 2>nul | find "%WEBPID%" >nul
 if errorlevel 1 (
     echo Website process already exited. Cleaning up.
     del "webgui.pid"

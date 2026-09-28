@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
 <title>超星学习通自动化 - 本地控制台</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -456,6 +457,7 @@
 <script>
 const $ = (sel) => document.querySelector(sel);
 const consoleEl = $("#console");
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
 function toast(msg, isErr) {
   const t = $("#toast");
@@ -706,7 +708,7 @@ $("#ms_none").addEventListener("click", e => {
 $("#btn_save").addEventListener("click", async () => {
   const r = await fetch("/api/save", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
     body: JSON.stringify(collectForm())
   });
   const j = await r.json();
@@ -726,7 +728,7 @@ $("#btn_start").addEventListener("click", async () => {
   }
   const r = await fetch("/api/start", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
     body: JSON.stringify(collectForm())
   });
   const j = await r.json();
@@ -738,7 +740,7 @@ $("#btn_stop").addEventListener("click", async () => {
   const btn = $("#btn_stop");
   btn.disabled = true;
   try {
-    const r = await fetch("/api/stop", {method: "POST"});
+    const r = await fetch("/api/stop", {method: "POST", headers: {"X-CSRF-Token": CSRF}});
     const j = await r.json();
     if (j.ok) {
       toast("已发送停止信号");
@@ -764,7 +766,7 @@ $("#btn_courses").addEventListener("click", async () => {
   try {
     const r = await fetch("/api/courses", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
       body: JSON.stringify(collectForm())
     });
     const j = await r.json();

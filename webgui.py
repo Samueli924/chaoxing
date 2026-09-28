@@ -12,9 +12,11 @@
   子进程的输出通过 SSE 实时推送到网页日志控制台。
 """
 import configparser
+import functools
 import os
 import queue
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -58,6 +60,59 @@ os.chdir(PROJECT_DIR)
 CONFIG_PATH = BASE_DIR / "config_gui.ini"
 
 app = Flask(__name__)
+
+# Host 头白名单: 防 DNS rebinding / 跨域请求, 只允许本机回环地址访问
+ALLOWED_HOSTS = {"127.0.0.1:5000", "localhost:5000"}
+
+
+@app.before_request
+def _check_host() -> None:
+    """请求入口校验 Host 头, 只允许 127.0.0.1:5000 / localhost:5000。
+
+    防 DNS rebinding: 攻击者用恶意域名解析到 127.0.0.1 后浏览器仍带原域名,
+    命中白名单外则直接 403, SSE /api/stream 也走同一校验。
+    """
+    host = (request.headers.get("Host") or "").lower()
+    if host not in ALLOWED_HOSTS:
+        return ("Forbidden", 403)
+
+
+# CSRF token 持久化文件, 同时种到 HTML meta 与 /api/config, POST 请求需回带 X-CSRF-Token
+CSRF_PATH = BASE_DIR / ".csrf_token"
+CSRF_LOCK = threading.Lock()
+
+
+def _get_or_create_csrf_token() -> str:
+    """读取或生成 32 字节随机 hex token, 持久化到 .csrf_token 文件。
+
+    服务端种 token 到 HTML meta 与 /api/config 响应, 前端 POST 时回带 X-CSRF-Token。
+    使用 CSRF_LOCK 保护文件读写, 避免多线程并发时 token 不一致。
+    """
+    with CSRF_LOCK:
+        if CSRF_PATH.exists():
+            try:
+                token = CSRF_PATH.read_text(encoding="utf-8").strip()
+                if token:
+                    return token
+            except OSError:
+                pass
+        token = secrets.token_hex(32)
+        CSRF_PATH.write_text(token, encoding="utf-8")
+        return token
+
+
+def require_csrf(fn):
+    """装饰器: 校验请求头 X-CSRF-Token 与服务端 token 是否一致, 失败返回 403。"""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        sent = request.headers.get("X-CSRF-Token", "")
+        if not sent or sent != _get_or_create_csrf_token():
+            return jsonify(ok=False, msg="CSRF token 校验失败"), 403
+        return fn(*args, **kwargs)
+
+    return wrapper
+
 
 # ---------------------------------------------------------------------------
 # 子进程管理
@@ -164,10 +219,12 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 def _strip_ansi(text: str) -> str:
+    """剥掉 loguru 输出里的终端颜色转义序列(如 \\x1b[32m), 网页无法渲染。"""
     return _ANSI_RE.sub("", text)
 
 
 def is_running() -> bool:
+    """判断当前是否有刷课子进程仍在运行, 用 PROC_LOCK 保护 PROC 读操作。"""
     with PROC_LOCK:
         return PROC is not None and PROC.poll() is None
 
@@ -218,6 +275,11 @@ TIKU_REQUIRED_DEFAULTS = {
 
 
 def read_config() -> dict:
+    """读取 config_gui.ini 并按 FIELDS 映射成 {字段名: 值} 字典, 缺失回落到默认值。
+
+    _gui section 的 tiku_enabled / notify_enabled 不直接落盘, 改由 tiku / notification
+    section 是否存在对应键反推, 与 write_config 的写入逻辑对称。
+    """
     cfg = configparser.ConfigParser()
     if CONFIG_PATH.exists():
         cfg.read(CONFIG_PATH, encoding="utf8")
@@ -238,6 +300,11 @@ def read_config() -> dict:
 
 
 def write_config(data: dict) -> None:
+    """把前端表单数据写入 config_gui.ini, 原子替换(tmp + os.replace)防读到一半。
+
+    题库 / 通知按开关启用与否决定是否落盘对应 section, 与 read_config 反推逻辑对称。
+    数字字段被清空时回落到默认值, 避免 main.py 解析空字符串报错。
+    """
     cfg = configparser.ConfigParser()
     cfg.optionxform = str  # 保留大小写
 
@@ -281,16 +348,25 @@ def write_config(data: dict) -> None:
 # ---------------------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    """渲染控制台首页, 同时把 CSRF token 注入到模板 meta 标签供前端 POST 使用。"""
+    return render_template("index.html", csrf_token=_get_or_create_csrf_token())
 
 
 @app.route("/api/config", methods=["GET"])
 def api_get_config():
-    return jsonify(read_config())
+    """返回当前配置, 同时附带 csrf_token 供前端 POST 时回带。"""
+    cfg = read_config()
+    cfg["csrf_token"] = _get_or_create_csrf_token()
+    return jsonify(cfg)
 
 
 @app.route("/api/save", methods=["POST"])
+@require_csrf
 def api_save():
+    """保存前端提交的表单到 config_gui.ini。
+
+    任务运行中禁止改配置, 避免子进程读到一半的配置文件。
+    """
     if is_running():
         return jsonify(ok=False, msg="任务运行中, 请先停止再修改配置"), 400
     data = request.get_json(force=True, silent=True) or {}
@@ -299,7 +375,12 @@ def api_save():
 
 
 @app.route("/api/start", methods=["POST"])
+@require_csrf
 def api_start():
+    """写入最新配置并以子进程方式启动 main.py 刷课任务。
+
+    PROC_LOCK 保护 PROC 全局变量, 同时 RLock 让本函数内可安全调用 is_running()。
+    """
     global PROC
     with PROC_LOCK:
         if is_running():
@@ -338,7 +419,9 @@ def api_start():
 
 
 @app.route("/api/stop", methods=["POST"])
+@require_csrf
 def api_stop():
+    """向运行中的刷课子进程发送 terminate 信号, 由其自身处理退出。"""
     with PROC_LOCK:
         proc = PROC
         if proc is None or proc.poll() is not None:
@@ -350,17 +433,24 @@ def api_stop():
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
+    """返回当前是否有刷课任务在运行, 供前端轮询刷新按钮态。"""
     return jsonify(running=is_running())
 
 
 @app.route("/api/courses", methods=["POST"])
+@require_csrf
 def api_courses():
-    """用当前填写的账号登录, 拉取课程列表供用户选择课程 ID。"""
+    """用当前填写的账号登录, 拉取课程列表供用户选择课程 ID。
+
+    write_config 包进 PROC_LOCK 防止与 api_save/api_start 并发写文件竞态;
+    不需要持锁到拉取课程结束(那会卡很久), 只保护写文件那一刻即可。
+    """
     if is_running():
         return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
     data = request.get_json(force=True, silent=True) or {}
     try:
-        write_config(data)
+        with PROC_LOCK:
+            write_config(data)
         # 延迟导入, 避免缺少依赖时整个网站打不开
         from api.base import Chaoxing, Account
         from api.answer import Tiku
@@ -396,6 +486,11 @@ def load_config_for_gui():
 
 @app.route("/api/stream")
 def api_stream():
+    """SSE 端点: 每个客户端挂一个独立队列, 推送日志 / 进度 / 系统提示事件。
+
+    连接建立时先补发 RING 里最近 500 行历史日志, 之后阻塞等待 broadcast 写入;
+    每 15 秒发心跳注释防中间代理断连, finally 中把队列从 CLIENTS 移除。
+    """
     def generate():
         q: queue.Queue = queue.Queue(maxsize=2000)
         CLIENTS.add(q)
@@ -422,6 +517,7 @@ def api_stream():
 
 
 def _sse_escape(text: str) -> str:
+    """转义 SSE data 字段里的反斜杠与换行符, 保证单条事件解析不被截断。"""
     return text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "")
 
 

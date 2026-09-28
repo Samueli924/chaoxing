@@ -21,5 +21,11 @@ start "Chaoxing Console - close this window to STOP" cmd /k "python webgui.py"
 
 rem Wait for the website to be ready, then open the browser
 ping -n 4 127.0.0.1 >nul
+rem webgui.py only writes webgui.pid after the port probe succeeds;
+rem if it is missing the port was taken / startup failed, do not open a broken page
+if not exist "webgui.pid" (
+    echo Website failed to start. Check the console for the cause.
+    exit /b 1
+)
 start "" "http://127.0.0.1:5000"
 exit
