@@ -2,9 +2,10 @@
 cd /d "%~dp0"
 
 rem If the website is already running, just open the browser (do not start twice)
+rem IMAGENAME=python.exe filter avoids treating a recycled PID as the website
 if exist "webgui.pid" (
     for /f %%i in (webgui.pid) do (
-        tasklist /fi "PID eq %%i" 2>nul | find "%%i" >nul
+        tasklist /fi "PID eq %%i" /fi "IMAGENAME eq python.exe" 2>nul | find "%%i" >nul
         if not errorlevel 1 (
             echo Website is already running. Opening browser...
             ping -n 2 127.0.0.1 >nul

@@ -22,8 +22,10 @@ if errorlevel 1 (
 taskkill /pid %WEBPID% /t /f >nul 2>&1
 if errorlevel 1 (
     echo Failed to stop it. Please close the "Chaoxing Console" window manually.
-) else (
-    echo Website stopped. Any running study task is also stopped.
+    rem Keep webgui.pid so a later run of this script can retry stopping the website
+    ping -n 3 127.0.0.1 >nul
+    exit /b 1
 )
+echo Website stopped. Any running study task is also stopped.
 del "webgui.pid" 2>nul
 ping -n 3 127.0.0.1 >nul

@@ -13,6 +13,7 @@
 """
 import configparser
 import functools
+import codecs
 import os
 import queue
 import re
@@ -144,7 +145,9 @@ def broadcast(kind: str, text: str) -> None:
 def reader_thread(proc: subprocess.Popen) -> None:
     """持续读取子进程输出, 按 \\n / \\r 拆分成日志行和进度条片段后广播。"""
     raw = proc.stdout  # 二进制 BufferedReader, read1 有数据立即返回
-    leftover_bytes = b""   # 末尾不完整的 UTF-8 多字节字符
+    # 增量解码器: 不完整 UTF-8 多字节序列自动缓冲到下一 chunk, 无效字节替换为 U+FFFD
+    # 避免旧 _decode_partial 在 fallback 时丢失 continuation state 导致字符乱码
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     pending_text = ""      # 还没遇到换行的半行文本(跨读取块累积)
     while True:
         try:
@@ -156,7 +159,7 @@ def reader_thread(proc: subprocess.Popen) -> None:
                 break
             time.sleep(0.05)
             continue
-        text, leftover_bytes = _decode_partial(leftover_bytes + chunk_b)
+        text = decoder.decode(chunk_b)
         # 关键: Windows 正常换行是 \r\n, 先归一化为 \n;
         # 剩下的孤立 \r 才是 tqdm 进度条刷新, 不能把正常日志行尾误判成进度
         text = text.replace("\r\n", "\n")
@@ -191,16 +194,6 @@ def reader_thread(proc: subprocess.Popen) -> None:
     broadcast("system", f"子进程已结束, 退出码 {code}")
     # 通知所有打开的页面刷新运行状态(任务自然跑完或被停止都会走到这里)
     broadcast("status", '{"running": false}')
-
-
-def _decode_partial(data: bytes) -> tuple[str, bytes]:
-    """解码尽量多的完整 UTF-8 字节, 末尾不完整的多字节序列留到下一轮。"""
-    for cut in range(len(data), max(len(data) - 4, 0) - 1, -1):
-        try:
-            return data[:cut].decode("utf-8"), data[cut:]
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace"), b""
 
 
 def _emit_cr_segment(segment: str) -> None:
@@ -365,12 +358,14 @@ def api_get_config():
 def api_save():
     """保存前端提交的表单到 config_gui.ini。
 
-    任务运行中禁止改配置, 避免子进程读到一半的配置文件。
+    PROC_LOCK 内同时做 is_running 检查和 write_config, 避免和 /api/start 之间
+    出现"检查后任务刚启动, 然后又改了配置"的竞态窗口。
     """
-    if is_running():
-        return jsonify(ok=False, msg="任务运行中, 请先停止再修改配置"), 400
-    data = request.get_json(force=True, silent=True) or {}
-    write_config(data)
+    with PROC_LOCK:
+        if is_running():
+            return jsonify(ok=False, msg="任务运行中, 请先停止再修改配置"), 400
+        data = request.get_json(force=True, silent=True) or {}
+        write_config(data)
     return jsonify(ok=True, msg="配置已保存")
 
 
@@ -443,14 +438,15 @@ def api_courses():
     """用当前填写的账号登录, 拉取课程列表供用户选择课程 ID。
 
     write_config 包进 PROC_LOCK 防止与 api_save/api_start 并发写文件竞态;
-    不需要持锁到拉取课程结束(那会卡很久), 只保护写文件那一刻即可。
+    is_running 检查也在同一把锁内, 消除"检查后任务刚启动, 然后又改了配置"的窗口。
+    不持锁到拉取课程结束(那会卡很久), 只保护"检查+写文件"这一步即可。
     """
-    if is_running():
-        return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
-    data = request.get_json(force=True, silent=True) or {}
+    with PROC_LOCK:
+        if is_running():
+            return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
+        data = request.get_json(force=True, silent=True) or {}
+        write_config(data)
     try:
-        with PROC_LOCK:
-            write_config(data)
         # 延迟导入, 避免缺少依赖时整个网站打不开
         from api.base import Chaoxing, Account
         from api.answer import Tiku
