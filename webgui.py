@@ -454,10 +454,15 @@ def api_status():
 def api_courses():
     """用当前填写的账号登录, 拉取课程列表供用户选择课程 ID。
 
-    PROC_LOCK 内完成 is_running 检查 + 写配置 + 读配置, 消除与并发 /api/save 的
-    竞态, 保证账号和题库设置来自同一次提交; 登录和拉课在锁外执行, 不长时间占锁。
+    PROC_LOCK 内完成 is_running 检查 + 写配置 + 两次配置读取(common 与 tiku),
+    消除与并发 /api/save、/api/start 的竞态, 保证账号和题库设置来自同一次提交;
+    初始化题库、登录和拉课等慢操作都在锁外执行, 不长时间占锁。
     """
     try:
+        # 延迟导入, 避免缺少依赖时整个网站打不开
+        from api.base import Chaoxing, Account
+        from api.answer import Tiku
+
         with PROC_LOCK:
             if is_running():
                 return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
@@ -465,17 +470,14 @@ def api_courses():
             if data is None:
                 return jsonify(ok=False, msg="无效的 JSON 请求体"), 400
             write_config(data)
-            # 读配置与写配置同处一个临界区: 防止写完释放锁后被并发 /api/save 改写,
-            # 否则可能把 A 请求的账号和 B 请求的题库设置混在一起使用
+            # 两次读配置与写配置同处一个临界区: 防止写完释放锁后被并发 /api/save
+            # 改写, 否则可能把 A 请求的账号和 B 请求的题库设置混在一起使用
             common, _, _ = load_config_for_gui()
+            use_cookies = common.get("use_cookies", False)
+            account = Account(common.get("username", ""), common.get("password", ""))
+            tiku = Tiku.get_tiku_from_config({}, config_path=str(CONFIG_PATH))
 
-        # 延迟导入, 避免缺少依赖时整个网站打不开
-        from api.base import Chaoxing, Account
-        from api.answer import Tiku
-
-        use_cookies = common.get("use_cookies", False)
-        account = Account(common.get("username", ""), common.get("password", ""))
-        tiku = Tiku.get_tiku_from_config({}, config_path=str(CONFIG_PATH))
+        # 以下都是慢操作(初始化题库 + 网络登录/拉课), 必须在锁外执行
         tiku.init_tiku()
         cx = Chaoxing(account=account, tiku=tiku)
 
