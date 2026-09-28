@@ -1176,6 +1176,7 @@ class AI(Tiku):
         self._lock = threading.Lock()
         self.work_feedback = None  # 章节检测错误反馈（重做时参考）
         self.extra_body = {}
+        self.json_mode = False
 
     def set_work_feedback(self, feedback) -> None:
         """
@@ -1202,6 +1203,9 @@ class AI(Tiku):
         return "\n".join(lines)
 
     def _completion_kwargs(self, **kwargs):
+        if self.json_mode:
+            # 由服务端在采样时强制输出合法JSON, 消除模型输出围栏/废话导致的解析失败
+            kwargs.setdefault('response_format', {'type': 'json_object'})
         if self.extra_body:
             kwargs['extra_body'] = {**kwargs.get('extra_body', {}), **self.extra_body}
         return kwargs
@@ -1331,6 +1335,17 @@ class AI(Tiku):
             logger.warning(f'{self.name}配置 extra_body 无效: {e}, 已忽略该项, 请求将不附加额外参数')
             self.extra_body = {}
 
+        # 开启后请求附带 response_format={"type": "json_object"}, 由服务端保证输出为合法JSON;
+        # 部分端点/中转不支持该参数会报错, 此时请保持关闭
+        json_mode_raw = str(self._conf.get('json_mode', '')).strip().lower()
+        if json_mode_raw in ('', 'false'):
+            self.json_mode = False
+        elif json_mode_raw == 'true':
+            self.json_mode = True
+        else:
+            logger.warning(f'{self.name}配置 json_mode 无效: {self._conf.get("json_mode")}, 已按 false 处理')
+            self.json_mode = False
+
     def check_llm_connection(self) -> bool:
         """
         检查大模型连接是否可用
@@ -1356,7 +1371,8 @@ class AI(Tiku):
                     messages=[
                         {
                             'role': 'user',
-                            'content': '你好，请回答：1+1 等于几？只回答数字。'
+                            # 开启 json_mode 时, OpenAI 系端点要求消息中包含 "json" 一词
+                            'content': '你好，请以json格式回答：1+1 等于几？只回答数字。'
                         }
                     ],
                     max_tokens=200  # 增大以支持可能返回的 reasoning_content
