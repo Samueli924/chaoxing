@@ -339,6 +339,19 @@ def write_config(data: dict) -> None:
 # ---------------------------------------------------------------------------
 # 路由
 # ---------------------------------------------------------------------------
+def _parse_json_body() -> dict | None:
+    """解析 POST 请求的 JSON body 并校验为非空对象。
+
+    force+silent 解析失败时 get_json 返回 None; 若不校验直接 or {} 会得到空字典,
+    write_config 将用默认值覆盖现有配置(清掉账号密码等)。此处统一拒绝:
+    无效 JSON / 非对象 / 空对象一律返回 None, 由调用方返回 400。
+    """
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or not data:
+        return None
+    return data
+
+
 @app.route("/")
 def index():
     """渲染控制台首页, 同时把 CSRF token 注入到模板 meta 标签供前端 POST 使用。"""
@@ -364,7 +377,9 @@ def api_save():
     with PROC_LOCK:
         if is_running():
             return jsonify(ok=False, msg="任务运行中, 请先停止再修改配置"), 400
-        data = request.get_json(force=True, silent=True) or {}
+        data = _parse_json_body()
+        if data is None:
+            return jsonify(ok=False, msg="无效的 JSON 请求体"), 400
         write_config(data)
     return jsonify(ok=True, msg="配置已保存")
 
@@ -381,7 +396,9 @@ def api_start():
         if is_running():
             return jsonify(ok=False, msg="任务已在运行中"), 400
 
-        data = request.get_json(force=True, silent=True) or {}
+        data = _parse_json_body()
+        if data is None:
+            return jsonify(ok=False, msg="无效的 JSON 请求体"), 400
         try:
             write_config(data)
         except Exception as e:
@@ -437,21 +454,25 @@ def api_status():
 def api_courses():
     """用当前填写的账号登录, 拉取课程列表供用户选择课程 ID。
 
-    write_config 包进 PROC_LOCK 防止与 api_save/api_start 并发写文件竞态;
-    is_running 检查也在同一把锁内, 消除"检查后任务刚启动, 然后又改了配置"的窗口。
-    不持锁到拉取课程结束(那会卡很久), 只保护"检查+写文件"这一步即可。
+    PROC_LOCK 内完成 is_running 检查 + 写配置 + 读配置, 消除与并发 /api/save 的
+    竞态, 保证账号和题库设置来自同一次提交; 登录和拉课在锁外执行, 不长时间占锁。
     """
-    with PROC_LOCK:
-        if is_running():
-            return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
-        data = request.get_json(force=True, silent=True) or {}
-        write_config(data)
     try:
+        with PROC_LOCK:
+            if is_running():
+                return jsonify(ok=False, msg="任务运行中, 无法重复登录"), 400
+            data = _parse_json_body()
+            if data is None:
+                return jsonify(ok=False, msg="无效的 JSON 请求体"), 400
+            write_config(data)
+            # 读配置与写配置同处一个临界区: 防止写完释放锁后被并发 /api/save 改写,
+            # 否则可能把 A 请求的账号和 B 请求的题库设置混在一起使用
+            common, _, _ = load_config_for_gui()
+
         # 延迟导入, 避免缺少依赖时整个网站打不开
         from api.base import Chaoxing, Account
         from api.answer import Tiku
 
-        common, _, _ = load_config_for_gui()
         use_cookies = common.get("use_cookies", False)
         account = Account(common.get("username", ""), common.get("password", ""))
         tiku = Tiku.get_tiku_from_config({}, config_path=str(CONFIG_PATH))
