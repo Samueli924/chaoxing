@@ -23,6 +23,27 @@
 
 ## :books: 使用方法
 
+### 图形化桌面客户端 (GUI版本)
+本项目除了传统的命令行交互外，还提供了一个现代化、全可视化的**独立桌面客户端 (GUI)** (基于 Vue3 + PyWebView 构建)。
+**它支持可视化的参数配置、扫码/账密登录、实时进度条面板以及运行日志监控。**
+
+1. 安装 GUI 附加依赖:
+```bash
+pip install pywebview
+```
+
+2. 启动桌面客户端:
+```bash
+python gui_main.py
+```
+
+> **如何打包为独立可执行文件 (.exe)**
+> 你可以将其一键打包成无黑框的独立可执行文件，方便在任何电脑上双击运行：
+> `pip install pyinstaller`
+> `pyinstaller --noconsole --onefile --add-data "gui_dist;gui_dist" --name "ChaoxingDesktop" gui_main.py`
+> *(Mac/Linux 平台请将分号 `;` 改为冒号 `:`)*
+
+
 ### 源码运行（Python 3.13+）
 
 1. clone 项目至本地

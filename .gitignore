@@ -157,3 +157,7 @@ cache.json
 start*.bat
 .workbuddy/
 myConfig/
+
+# GUI App
+gui_dist/
+gui_config.json
