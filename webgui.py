@@ -18,7 +18,7 @@ import os
 import queue
 import re
 import secrets
-import subprocess
+import subprocess  # nosec: 仅用于启动固定命令 main.py，无用户输入
 import sys
 import threading
 import time
@@ -132,7 +132,7 @@ RING_LOCK = threading.Lock()
 
 
 def broadcast(kind: str, text: str) -> None:
-    """kind: 'log' 普通日志 | 'progress' 进度条 | 'system' 系统提示"""
+    """kind: 'log' 普通日志 | 'progress' 进度条 | 'system' 系统提示。"""
     item = (kind, text)
     with RING_LOCK:
         RING.append(item)
@@ -418,7 +418,7 @@ def api_start():
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # nosec: cmd 为固定列表，无用户输入拼接
             cmd,
             cwd=str(PROJECT_DIR),
             stdout=subprocess.PIPE,
@@ -557,7 +557,7 @@ if __name__ == "__main__":
     # 仅把出错策略改为 replace, 避免个别特殊字符触发崩溃
     try:
         sys.stdout.reconfigure(errors="replace")
-    except Exception:
+    except Exception:  # noqa: S110 - 兼容性处理，失败不影响功能
         pass
 
     PORT = 5000
