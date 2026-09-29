@@ -1,81 +1,41 @@
-# :computer: 超星学习通自动化完成任务点(命令行版)
+# :computer: 超星学习通自动化 - 图形化界面版
+
+> :bulb: 本仓库是 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) 的 Fork，在原命令行版基础上新增了**本地 Web 图形化控制界面**（`webgui.py`）。双击即用，无需命令行，适合不熟悉命令行的 Windows 用户。
 
 <p align="center">
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://img.shields.io/github/stars/Samueli924/chaoxing" alt="Github Stars" />
+    <a href="https://github.com/Donghs05/chaoxing10086" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
+        <img src="https://img.shields.io/github/stars/Donghs05/chaoxing10086" alt="Github Stars" />
+    </a>
+    <a href="https://github.com/Donghs05/chaoxing10086" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
+        <img src="https://img.shields.io/github/forks/Donghs05/chaoxing10086" alt="Github Forks" />
+    </a>
+    <a href="https://github.com/Donghs05/chaoxing10086" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
+        <img src="https://img.shields.io/github/languages/code-size/Donghs05/chaoxing10086" alt="Code-size" />
     </a>
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://img.shields.io/github/forks/Samueli924/chaoxing" alt="Github Forks" />
-    </a>
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://img.shields.io/github/languages/code-size/Samueli924/chaoxing" alt="Code-size" />
-    </a>
-    <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
-        <img src="https://img.shields.io/github/v/release/Samueli924/chaoxing?display_name=tag&sort=semver" alt="version" />
+        <img src="https://img.shields.io/badge/上游-Samueli924%2Fchaoxing-blue" alt="Upstream" />
     </a>
 </p>
+
 :muscle: 本项目的最终目的是通过开源消灭所谓的付费刷课平台，希望有能力的朋友都可以为这个项目提交代码，支持本项目的良性发展
 
 :star: 觉得有帮助的朋友可以给个Star
 
-## :point_up: 更新通知
-20241021更新通知： 感谢[sz134055](https://github.com/sz134055)提交代码[PR #360](https://github.com/Samueli924/chaoxing/pull/360)，**添加了对题库答题的支持**  
+## :sparkles: 本仓库新增功能
+
+| 功能 | 说明 |
+|---|---|
+| :globe_with_meridians: 图形化界面 | 本地 Web 控制面板，双击 `启动网站.bat` 即可在浏览器里操作 |
+| :lock: 安全加固 | Host 头白名单、CSRF token 校验、进程锁，防止并发冲突 |
+| :video_camera: 实时日志 | SSE 推送刷课日志到网页，实时查看进度 |
+| :file_folder: 课程选择 | 登录后自动拉取课程列表，勾选要刷的课程 |
+| :shield: 防风控参数 | 倍速、并发数、章节延迟、API 间隔等可调 |
 
 ## :books: 使用方法
 
-### 源码运行（Python 3.13+）
-
-1. clone 项目至本地
-
-```bash
-git clone --depth=1 https://github.com/Samueli924/chaoxing 
-cd chaoxing
-```
-
-2. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-或使用 `pip install .`（通过 pyproject.toml 安装依赖）
-
-3. (可选直接运行)
-
-```bash
-python main.py
-```
-
-4. (可选配置文件运行)
-
-> 复制config_template.ini文件为config.ini文件，修改文件内的账号密码内容
-
-```bash
-python main.py -c config.ini
-```
-
-5. (可选命令行运行)
-
-```bash
-python main.py -u 手机号 -p 密码 -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)
-```
-
-> Tips:  
-> 如果已安装低版本 Python 推荐使用 `uv` 运行：
-
-```bash
-uv run --python 3.13 main.py
-```
-
-使用配置文件运行 ：
-```bash
-uv run --python 3.13 main.py -c config.ini
-```
-
 ### 图形化界面运行（Windows 推荐，无需命令行）
 
-> 本仓库在原命令行版基础上新增了一个本地 Web 图形化控制界面 `webgui.py`，通过浏览器操作配置、选择课程、实时查看日志，适合不熟悉命令行的 Windows 用户。
-
-1. 准备依赖（同源码运行，需 Python 3.13+）
+1. 准备依赖（需 Python 3.13+）
 
 ```bash
 pip install -r requirements.txt
@@ -99,88 +59,30 @@ pip install -r requirements.txt
 
 > Tips：单实例保护 —— 如果端口 5000 已被占用（说明网站已在运行），`启动网站.bat` 会直接打开浏览器而不会重复启动；如需重启请先 `关闭网站.bat`。
 
-### 打包文件运行
-1. 从最新[Releases](https://github.com/Samueli924/chaoxing/releases)中下载exe文件
-2. (可选直接运行) 双击运行即可
-3. (可选配置文件运行) 下载config_template.ini文件保存为config.ini文件，修改文件内的账号密码内容, 执行 `./chaoxing.exe -c config.ini`
-4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
-
-### Docker运行
-1. 构建Docker镜像
-   ```bash
-   docker build -t chaoxing .
-   ```
-
-2. 运行Docker容器
-   ```bash
-   # 直接运行（将使用默认配置模板）
-   docker run -it chaoxing
-   
-   # 使用自定义配置文件运行
-   docker run -it -v /本地路径/config.ini:/config/config.ini chaoxing
-   ```
-
-3. 配置说明
-   - Docker版本默认使用挂载到 `/config/config.ini` 的配置文件
-   - 首次运行时，会自动将 `config_template.ini` 复制到该位置作为模板
-   - 可以将本地编辑好的配置文件挂载到容器中，按照上述示例命令操作
-
-### 题库配置说明
-
-在你的配置文件中找到`[tiku]`，按照注释填写想要使用的题库名（即`provider`，大小写要一致），并填写必要信息，如token，然后在启动时添加`-c [你的配置文件路径]`即可。
-
-题库会默认使用根目录下的`config.ini`文件中的配置，所以你可以复制配置模板（参照前面的说明）命名为`config.ini`，并只配置题库项`[tiku]`，这样即使你不填写账号之类的信息，不使用`-c`参数指定配置文件，题库也会根据这个配置文件自动配置并启用。
-
-对于那些有章节检测且任务点需要解锁的课程，必须配置题库。
-
-**提交模式与答题**
-不配置题库（既不提供配置文件，也没有放置默认配置文件`config.ini`或填写要使用的题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
-题库覆盖率：搜到的题目占总题目的比例
-提交模式`submit`值为
-
-- `true`：会答完题，达到题库题目覆盖率提交，没达到只保存，**正确率不做保证**。
-- `false`：会答题，但是不会提交，仅保存搜到答案的，随后你可以自行前往学习通查看、修改、提交。**任何填写不正确的`submit`值会被视为`false`**
-
-> 题库名即`answer.py`模块中根据`Tiku`类实现的具体题库类，例如`TikuYanxi`（言溪题库），在填写时，请务必保持大小写一致。
-
-### 已关闭任务点处理配置说明
-
-在配置文件的 `[common]` 部分，可以通过 `notopen_action` 选项配置遇到已关闭任务点时的处理方式:
-
-- `retry` (默认): 遇到关闭的任务点时尝试重新完成上一个任务点，如果连续重试 3 次仍然失败 (或未配置题库及自动提交) 则停止
-- `ask`: 遇到关闭的任务点时询问用户是否继续。选择继续后会自动跳过连续的关闭任务点，直到遇到开放的任务点
-- `continue`: 自动跳过所有关闭的任务点，继续检查和完成后续任务点
-
-也可以通过命令行参数 `-a` 或 `--notopen-action` 指定处理方式，例如：
+### 命令行运行（同上游）
 
 ```bash
-python main.py -a ask  # 使用询问模式
+git clone --depth=1 https://github.com/Donghs05/chaoxing10086
+cd chaoxing10086
+pip install -r requirements.txt
+python main.py
 ```
 
-### 章节学习次数配置说明
+更多命令行参数、题库配置、Docker 运行等说明，请参考[上游仓库 README](https://github.com/Samueli924/chaoxing#readme)。
 
-在配置文件的 `[common]` 部分，可以通过下面两个选项控制章节学习次数功能：
+## :link: 与上游的关系
 
-- `add_learning_count = false`：是否在完成刷课任务后，继续对课程章节执行学习次数增加
-- `target_count = 100`：章节学习次数的目标总次数，程序会轮询课程章节直到达到该次数
+- 本仓库 Fork 自 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing)，遵循原项目的 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE) 协议
+- 本仓库的改动（图形化界面 + 安全加固）已通过 [PR #634](https://github.com/Samueli924/chaoxing/pull/634) 提交给上游，等待原作者审核合并
+- 如果上游合并，建议直接使用上游仓库；在此之前，本仓库可作为带图形化界面的临时替代
 
-当前实现会先完成所选课程的任务点，再统一执行章节学习次数增加流程。如果开启了 `add_learning_count`，它会作为刷课完成后的追加步骤执行，而不是独立模式。
+## :heart: 致谢
 
-**外部通知配置说明**
-
-这功能会在所有课程学习任务结束后，或是程序出现错误时，使用外部通知服务推送消息告知你（~~有用但不多~~）
-
-与题库配置类似，不填写视为不使用，按照注释填写想要使用的外部通知服务（也是`provider`，大小写要一致），并填写必要的`url`
-
-## :heart: CONTRIBUTORS
-
-![Alt](https://repobeats.axiom.co/api/embed/d3931e84b4b2f17cbe60cafedb38114bdf9931cb.svg "Repobeats analytics image")  
-
-<a style="margin-top: 15px" href="https://github.com/Samueli924/chaoxing/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Samueli924/chaoxing" />
-</a>
+- 感谢 [Samueli924](https://github.com/Samueli924) 和[所有上游贡献者](https://github.com/Samueli924/chaoxing/graphs/contributors)的开源工作
+- 感谢 [CodeRabbit](https://coderabbit.ai) 的 AI 代码审核
 
 ## :warning: 免责声明
+
 - 本代码遵循 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE) 协议，允许**开源/免费使用和引用/修改/衍生代码的开源/免费使用**，不允许**修改和衍生的代码作为闭源的商业软件发布和销售**，禁止**使用本代码盈利**，以此代码为基础的程序**必须**同样遵守 [GPL-3.0 License](https://github.com/Samueli924/chaoxing/blob/main/LICENSE) 协议
 - 本代码仅用于**学习讨论**，禁止**用于盈利**
 - 他人或组织使用本代码进行的任何**违法行为**与本人无关
