@@ -132,7 +132,7 @@ RING_LOCK = threading.Lock()
 
 
 def broadcast(kind: str, text: str) -> None:
-    """kind: 'log' 普通日志 | 'progress' 进度条 | 'system' 系统提示。"""
+    """kind: 'log' 普通日志 | 'progress' 进度条 | 'system' 系统提示"""
     item = (kind, text)
     with RING_LOCK:
         RING.append(item)
