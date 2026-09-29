@@ -91,6 +91,9 @@
                     <el-form-item label="大模型名称">
                       <el-input v-model="config.tiku.model" placeholder="例如 deepseek-ai/DeepSeek-V3"></el-input>
                     </el-form-item>
+                    <el-form-item label="请求代理(可选)">
+                      <el-input v-model="config.tiku.http_proxy" placeholder="例如 http://127.0.0.1:7890，直连留空"></el-input>
+                    </el-form-item>
                   </template>
                   
                   <el-form-item>
@@ -216,7 +219,8 @@ const config = ref({
     tokens: '',
     key: '',
     endpoint: '',
-    model: ''
+    model: '',
+    http_proxy: ''
   },
   notification: {
     provider: '',

@@ -1,5 +1,12 @@
 import os
 import sys
+
+# ------------------------------------------------
+# 全局网络安全补丁 (解决代理冲突与 SSL 握手断开问题)
+# 强制 requests 和 httpx 忽略系统代理(如 Clash/V2ray)，防止 SSLEOFError
+os.environ["NO_PROXY"] = "*"
+# ------------------------------------------------
+
 import json
 import threading
 import time
@@ -35,13 +42,21 @@ import tqdm.std
 
 class GuiTqdm(tqdm.std.tqdm):
     def __init__(self, *args, **kwargs):
+        self._gui_id = str(id(self))
         kwargs['file'] = open(os.devnull, 'w')
         super().__init__(*args, **kwargs)
-        self._gui_id = str(id(self))
         self._update_gui()
 
     def update(self, n=1):
         super().update(n)
+        self._update_gui()
+
+    def refresh(self, *args, **kwargs):
+        super().refresh(*args, **kwargs)
+        self._update_gui()
+
+    def reset(self, total=None):
+        super().reset(total=total)
         self._update_gui()
 
     def set_description(self, desc=None, refresh=True):
@@ -57,10 +72,17 @@ class GuiTqdm(tqdm.std.tqdm):
         self._update_gui()
 
     def _update_gui(self):
-        desc_str = self.desc if self.desc else ""
-        if self.postfix:
-            desc_str += f" | {self.postfix}"
-        push_progress(self._gui_id, str(desc_str), self.n, self.total if self.total else 0)
+        if not hasattr(self, '_gui_id'):
+            return
+        desc_str = getattr(self, 'desc', "")
+        if not desc_str:
+            desc_str = ""
+        postfix = getattr(self, 'postfix', None)
+        if postfix:
+            desc_str += f" | {postfix}"
+        n = getattr(self, 'n', 0)
+        total = getattr(self, 'total', 0)
+        push_progress(self._gui_id, str(desc_str), n, total if total else 0)
 
 # Monkey-patch tqdm globally before importing any project modules
 tqdm.tqdm = GuiTqdm
@@ -74,9 +96,15 @@ except ImportError:
 
 class PollingLogHandler:
     def write(self, message):
-        msg = message.strip()
-        if msg:
-            push_log(msg)
+        if message != '\n' and message != '':
+            push_log(message.rstrip('\n'))
+
+class StdoutRedirector:
+    def write(self, message):
+        if message != '\n' and message != '':
+            push_log(message.rstrip('\n'))
+    def flush(self):
+        pass
 
 # Now import chaoxing internals
 from api.base import Chaoxing
@@ -106,7 +134,8 @@ class Api:
                 "tokens": "",
                 "key": "",
                 "endpoint": "",
-                "model": ""
+                "model": "",
+                "http_proxy": ""
             },
             "notification": {
                 "provider": "",
@@ -170,7 +199,7 @@ class Api:
                 "go_retry_times": "3",
                 "go_retry_backoff": "1.2",
                 "min_interval_seconds": "3",
-                "http_proxy": "",
+                "http_proxy": str(tiku_config.get("http_proxy", "")),
                 "siliconflow_key": str(tiku_config.get("key", "")),
                 "siliconflow_model": str(tiku_config.get("model", "deepseek-ai/DeepSeek-R1")),
                 "siliconflow_endpoint": str(tiku_config.get("endpoint", "https://api.siliconflow.cn/v1/chat/completions")),
@@ -223,7 +252,7 @@ class Api:
                 "go_retry_times": "3",
                 "go_retry_backoff": "1.2",
                 "min_interval_seconds": "3",
-                "http_proxy": "",
+                "http_proxy": str(tiku_config.get("http_proxy", "")),
                 "siliconflow_key": "",
                 "siliconflow_model": "deepseek-ai/DeepSeek-R1",
                 "siliconflow_endpoint": "https://api.siliconflow.cn/v1/chat/completions",
@@ -338,6 +367,10 @@ def setup_logger():
     # Intercept loguru logs
     logger.remove()
     logger.add(PollingLogHandler(), format="{message}")
+    
+    # Catch all raw prints and tracebacks safely (Polling mode doesn't crash PyWebView)
+    sys.stdout = StdoutRedirector()
+    sys.stderr = StdoutRedirector()
 
 if __name__ == '__main__':
     setup_logger()
