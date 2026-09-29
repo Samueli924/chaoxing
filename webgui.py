@@ -119,6 +119,10 @@ def require_csrf(fn):
 # 子进程管理
 # ---------------------------------------------------------------------------
 PROC_LOCK = threading.RLock()  # 可重入: api_start 持锁后会调用 is_running()
+# 拉课专用锁: SessionManager 是进程级单例, 并发 /api/courses 的
+# login + get_course_list 会互相覆盖 session, 需整段串行化;
+# 独立于 PROC_LOCK, 网络调用不阻塞进程管理
+COURSE_LOOKUP_LOCK = threading.Lock()
 PROC = None  # 当前运行中的 main.py 子进程
 
 # 日志广播: 每个 SSE 客户端一个队列; ring 保存最近 500 行用于新客户端补播
@@ -456,7 +460,8 @@ def api_courses():
 
     PROC_LOCK 内完成 is_running 检查 + 写配置 + 两次配置读取(common 与 tiku),
     消除与并发 /api/save、/api/start 的竞态, 保证账号和题库设置来自同一次提交;
-    初始化题库、登录和拉课等慢操作都在锁外执行, 不长时间占锁。
+    初始化题库、登录和拉课等慢操作都在 PROC_LOCK 外执行, 不长时间占锁;
+    登录+拉课整段再由 COURSE_LOOKUP_LOCK 串行化, 保证课程列表与本次登录配对。
     """
     try:
         # 延迟导入, 避免缺少依赖时整个网站打不开
@@ -477,15 +482,19 @@ def api_courses():
             account = Account(common.get("username", ""), common.get("password", ""))
             tiku = Tiku.get_tiku_from_config({}, config_path=str(CONFIG_PATH))
 
-        # 以下都是慢操作(初始化题库 + 网络登录/拉课), 必须在锁外执行
+        # 以下都是慢操作(初始化题库 + 网络登录/拉课), 必须在 PROC_LOCK 外执行
         tiku.init_tiku()
         cx = Chaoxing(account=account, tiku=tiku)
 
-        state = cx.login(login_with_cookies=use_cookies)
-        if not state.get("status"):
-            return jsonify(ok=False, msg=f"登录失败: {state.get('msg', '未知错误')}"), 200
+        # SessionManager 是进程级单例: login 更新共享 cookies, get_course_list 读同一
+        # session, 两个并发请求会互相覆盖, 可能把另一个账号的课程列表返回给本次请求。
+        # 用 COURSE_LOOKUP_LOCK 把"登录+拉课"整段串行化, 保证课程列表与本次登录配对。
+        with COURSE_LOOKUP_LOCK:
+            state = cx.login(login_with_cookies=use_cookies)
+            if not state.get("status"):
+                return jsonify(ok=False, msg=f"登录失败: {state.get('msg', '未知错误')}"), 200
 
-        courses = cx.get_course_list() or []
+            courses = cx.get_course_list() or []
         result = [{
             "courseId": str(c.get("courseId", "")),
             "clazzId": str(c.get("clazzId", "")),
