@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>超星学习通自动化 - 本地控制台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    background: #f2f4f8;
+    color: #2c3338;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px;
+    height: 100vh;
+  }
+  .panel {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid #e8ebf0;
+    font-size: 16px;
+    font-weight: 600;
+    flex: none;
+  }
+  .panel-body {
+    padding: 14px 18px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  fieldset {
+    border: 1px solid #e3e7ee;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    padding: 10px 14px 14px;
+  }
+  legend {
+    font-weight: 600;
+    color: #3b6fd4;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  .row { margin-bottom: 10px; }
+  .row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label { display: block; font-size: 13px; color: #5a6470; margin-bottom: 3px; }
+  label .hint { color: #9aa3af; font-size: 12px; }
+  input[type=text], input[type=password], input[type=number], select {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid #cfd6e0;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fbfcfe;
+  }
+  input:focus, select:focus { outline: none; border-color: #3b6fd4; background: #fff; }
+  .check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .check-row input { width: 16px; height: 16px; }
+  .check-row label { margin: 0; font-size: 13px; color: #2c3338; }
+  .sub-box {
+    display: none;
+    border-top: 1px dashed #dde2ea;
+    margin-top: 8px;
+    padding-top: 10px;
+  }
+  .sub-box.open { display: block; }
+  /* 课程多选下拉 */
+  .ms { position: relative; }
+  .ms-field {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid #cfd6e0;
+    border-radius: 6px;
+    background: #fbfcfe;
+    font-size: 13px;
+    font-family: inherit;
+    color: #2c3338;
+    cursor: pointer;
+    text-align: left;
+  }
+  .ms-field.open { border-color: #3b6fd4; background: #fff; }
+  .ms-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-text.placeholder { color: #9aa3af; }
+  .ms-arrow { color: #8a939f; flex: none; transition: transform .15s; }
+  .ms-field.open .ms-arrow { transform: rotate(180deg); }
+  .ms-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: #fff;
+    border: 1px solid #cfd6e0;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(30,40,60,.16);
+    z-index: 60;
+    overflow: hidden;
+  }
+  .ms-panel.open { display: block; }
+  .ms-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #eef1f5;
+  }
+  .ms-tools input { flex: 1; padding: 5px 8px; font-size: 12.5px; }
+  .ms-link { font-size: 12.5px; color: #3b6fd4; text-decoration: none; white-space: nowrap; }
+  .ms-link:hover { text-decoration: underline; }
+  .ms-options { max-height: 260px; overflow-y: auto; padding: 4px 0; }
+  .ms-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .ms-opt:hover { background: #f2f6fd; }
+  .ms-opt input { width: 15px; height: 15px; flex: none; }
+  .ms-opt .ms-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-opt .ms-id { color: #9aa3af; font-size: 11.5px; flex: none; }
+  .ms-empty { padding: 14px; text-align: center; color: #9aa3af; font-size: 12.5px; }
+  .ms.locked .ms-tools, .ms.locked .ms-options { pointer-events: none; opacity: .5; }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    padding: 12px 18px;
+    border-top: 1px solid #e8ebf0;
+    flex: none;
+  }
+  button {
+    flex: 1;
+    padding: 10px 0;
+    border: none;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-save { background: #eef2f8; color: #3b6fd4; }
+  .btn-save:hover:not(:disabled) { background: #e2e9f5; }
+  .btn-start { background: #2f9e57; color: #fff; }
+  .btn-start:hover:not(:disabled) { background: #28894b; }
+  .btn-stop { background: #d24b4b; color: #fff; }
+  .btn-stop:hover:not(:disabled) { background: #b93f3f; }
+  .status-dot {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #b6bdc7;
+    margin-right: 6px;
+  }
+  .status-dot.running { background: #2f9e57; box-shadow: 0 0 0 3px rgba(47,158,87,.18); }
+  .console-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .console {
+    flex: 1;
+    overflow-y: auto;
+    background: #1e242c;
+    color: #cdd6e0;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    padding: 12px 16px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .console .ln { padding: 1px 0; }
+  .console .ln.system { color: #7fb7ff; }
+  .ln.error, .ln.critical { color: #ff7a7a; }
+  .ln.warning { color: #e8b34f; }
+  .ln.success { color: #5fd08a; }
+  .ln.progress { color: #8a97a5; }
+  .console-bar {
+    flex: none;
+    padding: 8px 16px;
+    border-top: 1px solid #2c343f;
+    background: #181d24;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #7c8896;
+    font-size: 12px;
+  }
+  .console-bar button {
+    flex: none;
+    background: transparent;
+    color: #7c8896;
+    padding: 2px 10px;
+    font-size: 12px;
+  }
+  .console-bar button:hover { color: #cdd6e0; }
+  .toast {
+    position: fixed;
+    top: 18px; left: 50%;
+    transform: translateX(-50%);
+    background: #2c3338;
+    color: #fff;
+    padding: 9px 20px;
+    border-radius: 7px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s;
+    z-index: 99;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { background: #b93f3f; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- 左侧配置 -->
+  <section class="panel">
+    <div class="panel-head">参数配置</div>
+    <div class="panel-body">
+
+      <fieldset>
+        <legend>账号登录</legend>
+        <div class="check-row">
+          <input type="checkbox" id="use_cookies" data-field="use_cookies">
+          <label for="use_cookies">使用 cookies.txt 登录（勾选后忽略账号密码）</label>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="username">手机号</label>
+            <input type="text" id="username" data-field="username" autocomplete="off">
+          </div>
+          <div>
+            <label for="password">密码</label>
+            <input type="password" id="password" data-field="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="row">
+          <label for="course_list">课程 ID 列表 <span class="hint">英文逗号分隔，可点右侧按钮自动拉取</span></label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="course_list" data-field="course_list" placeholder="例: 2151141,189191" style="flex:1;">
+            <button type="button" id="btn_courses" class="btn-save"
+              style="flex:none; padding:7px 12px; white-space:nowrap;">读取我的课程</button>
+          </div>
+        </div>
+        <div class="row" id="course_picker_wrap" style="display:none;">
+          <label>勾选要刷的课程 <span class="hint">不勾的不会刷，可搜索</span></label>
+          <div class="ms" id="course_ms">
+            <button type="button" class="ms-field" id="ms_field">
+              <span class="ms-text" id="ms_label">读取课程后在这里勾选</span>
+              <span class="ms-arrow">▾</span>
+            </button>
+            <div class="ms-panel" id="ms_panel">
+              <div class="ms-tools">
+                <input type="text" id="ms_search" placeholder="搜索课程名…">
+                <a href="javascript:void(0)" id="ms_all" class="ms-link">全选</a>
+                <a href="javascript:void(0)" id="ms_none" class="ms-link">清空</a>
+              </div>
+              <div class="ms-options" id="ms_options"></div>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>防风控节奏（担心被检测就调慢）</legend>
+        <div class="row two">
+          <div>
+            <label for="speed">视频倍速 <span class="hint">1~2</span></label>
+            <input type="number" id="speed" data-field="speed" min="1" max="2" step="0.1">
+          </div>
+          <div>
+            <label for="jobs">同时学习章节数 <span class="hint">建议 1</span></label>
+            <input type="number" id="jobs" data-field="jobs" min="1" max="10" step="1">
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="chapter_delay_min">章节间隔下限(秒)</label>
+            <input type="number" id="chapter_delay_min" data-field="chapter_delay_min" min="0" step="0.5">
+          </div>
+          <div>
+            <label for="chapter_delay_max">章节间隔上限(秒)</label>
+            <input type="number" id="chapter_delay_max" data-field="chapter_delay_max" min="0" step="0.5">
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="api_interval">接口请求间隔(秒)</label>
+            <input type="number" id="api_interval" data-field="api_interval" min="0" step="0.1">
+          </div>
+          <div>
+            <label for="video_log_interval">视频上报间隔(秒)</label>
+            <input type="number" id="video_log_interval" data-field="video_log_interval" min="0" step="0.5">
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="retry_interval">重试等待(秒)</label>
+            <input type="number" id="retry_interval" data-field="retry_interval" min="0" step="0.1">
+          </div>
+          <div>
+            <label for="notopen_action">遇到未开放章节</label>
+            <select id="notopen_action" data-field="notopen_action">
+              <option value="retry">重试 (retry)</option>
+              <option value="ask">询问 (ask)</option>
+              <option value="continue">自动跳过 (continue)</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>章节检测与学习次数</legend>
+        <div class="row two">
+          <div>
+            <label for="work_max_retries">答错最大重做次数</label>
+            <input type="number" id="work_max_retries" data-field="work_max_retries" min="0" step="1">
+          </div>
+          <div>
+            <label for="target_count">学习次数目标</label>
+            <input type="number" id="target_count" data-field="target_count" min="1" step="1">
+          </div>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" id="add_learning_count" data-field="add_learning_count">
+          <label for="add_learning_count">刷完任务点后增加章节学习次数</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>题库（不配置则自动跳过答题任务）</legend>
+        <div class="check-row">
+          <input type="checkbox" id="tiku_enabled" data-field="tiku_enabled">
+          <label for="tiku_enabled">启用题库</label>
+        </div>
+        <div class="sub-box" id="tiku_box">
+          <div class="row two">
+            <div>
+              <label for="provider">题库名称</label>
+              <input type="text" id="provider" data-field="provider" placeholder="如 TikuYanxi / AI">
+            </div>
+            <div>
+              <label for="tiku_delay">搜题间隔(秒)</label>
+              <input type="number" id="tiku_delay" data-field="tiku_delay" min="0" step="0.5">
+            </div>
+          </div>
+          <div class="row two">
+            <div>
+              <label for="cover_rate">最低覆盖率</label>
+              <input type="text" id="cover_rate" data-field="cover_rate" placeholder="0.9">
+            </div>
+            <div style="display:flex;align-items:flex-end;padding-bottom:7px;">
+              <div class="check-row" style="margin:0;">
+                <input type="checkbox" id="submit" data-field="submit">
+                <label for="submit">自动提交答题</label>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <label for="tokens">Token（言溪 / LIKE 等题库）</label>
+            <input type="text" id="tokens" data-field="tokens">
+          </div>
+          <div class="row">
+            <label for="url">题库地址（TikuAdapter）</label>
+            <input type="text" id="url" data-field="url">
+          </div>
+          <div class="row">
+            <label for="endpoint">AI Endpoint</label>
+            <input type="text" id="endpoint" data-field="endpoint" placeholder="https://example.com/v1">
+          </div>
+          <div class="row two">
+            <div>
+              <label for="key">AI Key</label>
+              <input type="password" id="key" data-field="key">
+            </div>
+            <div>
+              <label for="model">AI 模型名</label>
+              <input type="text" id="model" data-field="model">
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>外部通知（可选）</legend>
+        <div class="check-row">
+          <input type="checkbox" id="notify_enabled" data-field="notify_enabled">
+          <label for="notify_enabled">启用完成通知</label>
+        </div>
+        <div class="sub-box" id="notify_box">
+          <div class="row two">
+            <div>
+              <label for="notify_provider">渠道</label>
+              <select id="notify_provider" data-field="notify_provider">
+                <option>ServerChan</option>
+                <option>Qmsg</option>
+                <option>Bark</option>
+                <option>Telegram</option>
+              </select>
+            </div>
+            <div>
+              <label for="tg_chat_id">Telegram chat_id</label>
+              <input type="text" id="tg_chat_id" data-field="tg_chat_id">
+            </div>
+          </div>
+          <div class="row">
+            <label for="notify_url">推送 URL</label>
+            <input type="text" id="notify_url" data-field="notify_url">
+          </div>
+        </div>
+      </fieldset>
+
+    </div>
+    <div class="toolbar">
+      <button class="btn-save" id="btn_save">保存配置</button>
+      <button class="btn-start" id="btn_start">开始学习</button>
+      <button class="btn-stop" id="btn_stop" disabled>停止</button>
+    </div>
+  </section>
+
+  <!-- 右侧日志 -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="status-dot" id="status_dot"></span><span id="status_text">空闲</span>
+    </div>
+    <div class="console-wrap">
+      <div class="console" id="console"></div>
+      <div class="console-bar">
+        <span>实时日志（输出来自 main.py）</span>
+        <button id="btn_clear">清屏</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const consoleEl = $("#console");
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+function toast(msg, isErr) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = "toast", 2600);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+}
+
+// ---------- 表单数据 ----------
+function collectForm() {
+  const data = {};
+  document.querySelectorAll("[data-field]").forEach(el => {
+    const field = el.dataset.field;
+    if (el.type === "checkbox") data[field] = el.checked ? "true" : "false";
+    else data[field] = el.value;
+  });
+  return data;
+}
+
+function fillForm(cfg) {
+  document.querySelectorAll("[data-field]").forEach(el => {
+    const field = el.dataset.field;
+    if (!(field in cfg)) return;
+    if (el.type === "checkbox") el.checked = cfg[field] === "true";
+    else el.value = cfg[field];
+  });
+  toggleSubBoxes();
+}
+
+function toggleSubBoxes() {
+  $("#tiku_box").classList.toggle("open", $("#tiku_enabled").checked);
+  $("#notify_box").classList.toggle("open", $("#notify_enabled").checked);
+}
+$("#tiku_enabled").addEventListener("change", toggleSubBoxes);
+$("#notify_enabled").addEventListener("change", toggleSubBoxes);
+
+// ---------- 日志 ----------
+function appendLog(text, cls) {
+  const div = document.createElement("div");
+  div.className = "ln " + (cls || "");
+  div.textContent = text;
+  const atBottom = consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 40;
+  consoleEl.appendChild(div);
+  // 限制 DOM 节点数量
+  while (consoleEl.childNodes.length > 2000) consoleEl.removeChild(consoleEl.firstChild);
+  if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+// 进度条覆盖在同一行上刷新
+let progressNode = null;
+function updateProgress(text) {
+  if (!progressNode) {
+    progressNode = document.createElement("div");
+    progressNode.className = "ln progress";
+    consoleEl.appendChild(progressNode);
+  }
+  progressNode.textContent = text;
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function freezeProgress() {
+  if (progressNode) {
+    // 进度结束后下一行普通日志另起一行
+    progressNode = null;
+  }
+}
+
+$("#btn_clear").addEventListener("click", () => {
+  consoleEl.innerHTML = "";
+  progressNode = null;
+});
+
+// ---------- SSE ----------
+const es = new EventSource("/api/stream");
+es.addEventListener("log", e => {
+  freezeProgress();
+  let cls = "";
+  const t = e.data;
+  if (/(^|\s)(ERROR|错误)/.test(t)) cls = "error";
+  else if (/CRITICAL|Traceback/.test(t)) cls = "critical";
+  else if (/WARNING|警告/.test(t)) cls = "warning";
+  else if (/成功|完成|SUCCESS/.test(t)) cls = "success";
+  appendLog(t, cls);
+});
+es.addEventListener("progress", e => updateProgress(e.data));
+es.addEventListener("system", e => { freezeProgress(); appendLog(e.data, "system"); });
+es.addEventListener("status", e => {
+  try { setRunning(JSON.parse(e.data).running); } catch (_) {}
+});
+
+// ---------- 运行状态 ----------
+function setRunning(running) {
+  $("#status_dot").classList.toggle("running", running);
+  $("#status_text").textContent = running ? "任务运行中" : "空闲";
+  $("#btn_start").disabled = running;
+  $("#btn_stop").disabled = !running;
+  $("#btn_save").disabled = running;
+  document.querySelectorAll(".panel-body input, .panel-body select, .panel-body button").forEach(el => {
+    el.disabled = running;
+  });
+  $("#course_ms").classList.toggle("locked", running);
+  if (running) closeMsPanel();
+}
+
+async function refreshStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const j = await r.json();
+    setRunning(j.running);
+  } catch (_) {}
+}
+
+// ---------- 课程多选下拉 ----------
+let COURSES = [];                 // 去重后的课程 [{courseId, title}]
+const checkedIds = new Set();     // 勾选的课程 ID
+const extraIds = new Set();       // 手动在输入框填写、不在拉取列表里的 ID
+let _syncingBox = false;
+
+const courseInput = $("#course_list");
+const msWrap = $("#course_picker_wrap");
+const msField = $("#ms_field");
+const msPanel = $("#ms_panel");
+const msOptions = $("#ms_options");
+const msSearch = $("#ms_search");
+const msLabel = $("#ms_label");
+
+function parseBoxIds() {
+  return courseInput.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function renderCourseOptions() {
+  const kw = msSearch.value.trim().toLowerCase();
+  const list = COURSES.filter(c =>
+    !kw || (c.title || "").toLowerCase().includes(kw) || c.courseId.includes(kw));
+  msOptions.innerHTML = "";
+  if (!list.length) {
+    msOptions.innerHTML = '<div class="ms-empty">没有匹配的课程</div>';
+    return;
+  }
+  list.forEach(c => {
+    const row = document.createElement("label");
+    row.className = "ms-opt";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = checkedIds.has(c.courseId);
+    cb.addEventListener("change", () => {
+      if (cb.checked) checkedIds.add(c.courseId);
+      else checkedIds.delete(c.courseId);
+      syncBoxFromChecks();
+    });
+    const title = document.createElement("span");
+    title.className = "ms-title";
+    title.textContent = c.title || "(未命名课程)";
+    title.title = c.title || "";
+    const id = document.createElement("span");
+    id.className = "ms-id";
+    id.textContent = c.courseId;
+    row.append(cb, title, id);
+    msOptions.appendChild(row);
+  });
+}
+
+function updateMsLabel() {
+  const n = checkedIds.size + extraIds.size;
+  if (n > 0) {
+    msLabel.textContent = `已选 ${n} 门课程（共 ${COURSES.length} 门，点击修改）`;
+    msLabel.classList.remove("placeholder");
+  } else {
+    msLabel.textContent = `点击勾选要刷的课程（共 ${COURSES.length} 门）`;
+    msLabel.classList.add("placeholder");
+  }
+}
+
+function syncBoxFromChecks() {
+  const ids = COURSES.map(c => c.courseId).filter(id => checkedIds.has(id));
+  extraIds.forEach(id => { if (!ids.includes(id)) ids.push(id); });
+  _syncingBox = true;
+  courseInput.value = ids.join(",");
+  _syncingBox = false;
+  updateMsLabel();
+}
+
+// 手动编辑 ID 框时反向同步勾选状态（手动填的陌生 ID 保留为 extraIds）
+courseInput.addEventListener("input", () => {
+  if (_syncingBox || !COURSES.length) return;
+  const known = new Set(COURSES.map(c => c.courseId));
+  checkedIds.clear();
+  extraIds.clear();
+  parseBoxIds().forEach(id => (known.has(id) ? checkedIds : extraIds).add(id));
+  renderCourseOptions();
+  updateMsLabel();
+});
+
+function setCoursePicker(courses) {
+  const map = new Map();
+  courses.forEach(c => {
+    if (c.courseId && !map.has(c.courseId)) {
+      map.set(c.courseId, {courseId: String(c.courseId), title: c.title || "(未命名课程)"});
+    }
+  });
+  COURSES = [...map.values()];
+  checkedIds.clear();
+  extraIds.clear();
+  COURSES.forEach(c => checkedIds.add(c.courseId));  // 默认全选，可自行取消
+  msSearch.value = "";
+  msWrap.style.display = "";
+  renderCourseOptions();
+  syncBoxFromChecks();
+  openMsPanel();
+}
+
+function openMsPanel() {
+  msPanel.classList.add("open");
+  msField.classList.add("open");
+}
+function closeMsPanel() {
+  msPanel.classList.remove("open");
+  msField.classList.remove("open");
+}
+
+msField.addEventListener("click", () => {
+  if (msPanel.classList.contains("open")) closeMsPanel();
+  else openMsPanel();
+});
+msSearch.addEventListener("click", e => e.stopPropagation());
+msPanel.addEventListener("click", e => e.stopPropagation());
+document.addEventListener("click", e => {
+  if (!e.target.closest("#course_ms")) closeMsPanel();
+});
+msSearch.addEventListener("input", renderCourseOptions);
+$("#ms_all").addEventListener("click", e => {
+  e.preventDefault();
+  COURSES.forEach(c => checkedIds.add(c.courseId));
+  renderCourseOptions();
+  syncBoxFromChecks();
+});
+$("#ms_none").addEventListener("click", e => {
+  e.preventDefault();
+  checkedIds.clear();
+  renderCourseOptions();
+  syncBoxFromChecks();
+});
+
+// ---------- 按钮 ----------
+$("#btn_save").addEventListener("click", async () => {
+  const r = await fetch("/api/save", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
+    body: JSON.stringify(collectForm())
+  });
+  const j = await r.json();
+  toast(j.msg || (j.ok ? "已保存" : "保存失败"), !j.ok);
+});
+
+$("#btn_start").addEventListener("click", async () => {
+  if (!$("#use_cookies").checked && (!$("#username").value || !$("#password").value)) {
+    toast("请先填写手机号和密码，或勾选 cookies 登录", true);
+    return;
+  }
+  if (!$("#course_list").value.trim()) {
+    toast($("#course_picker_wrap").style.display === "none"
+      ? "请填写课程 ID，或点「读取我的课程」后勾选"
+      : "请在课程下拉框中至少勾选一门要刷的课程", true);
+    return;
+  }
+  const r = await fetch("/api/start", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
+    body: JSON.stringify(collectForm())
+  });
+  const j = await r.json();
+  if (j.ok) { setRunning(true); toast("任务已启动"); }
+  else toast(j.msg || "启动失败", true);
+});
+
+$("#btn_stop").addEventListener("click", async () => {
+  const btn = $("#btn_stop");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/stop", {method: "POST", headers: {"X-CSRF-Token": CSRF}});
+    const j = await r.json();
+    if (j.ok) {
+      toast("已发送停止信号");
+      setRunning(false);  // 立即恢复界面; 子进程真正退出时后端还会再同步一次
+    } else {
+      toast(j.msg || "停止失败", true);
+      btn.disabled = false;
+    }
+  } catch (err) {
+    toast("停止请求未送达, 正在与服务器同步状态…", true);
+    refreshStatus();
+  }
+});
+
+$("#btn_courses").addEventListener("click", async () => {
+  if (!$("#use_cookies").checked && (!$("#username").value || !$("#password").value)) {
+    toast("请先填写手机号和密码，或勾选 cookies 登录", true);
+    return;
+  }
+  const btn = $("#btn_courses");
+  btn.disabled = true;
+  btn.textContent = "登录中...";
+  try {
+    const r = await fetch("/api/courses", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": CSRF},
+      body: JSON.stringify(collectForm())
+    });
+    const j = await r.json();
+    if (!j.ok) { toast(j.msg || "读取失败", true); return; }
+    // 日志逐条列出, 多选框按课程 ID 去重(同一课程可能有多个班级)
+    j.courses.forEach(c => {
+      appendLog(`课程ID: ${c.courseId}  班级ID: ${c.clazzId}  ${c.title}`, "system");
+    });
+    setCoursePicker(j.courses);
+    toast(`已拉取 ${j.courses.length} 个班级，请在下方勾选要刷的课程`);
+  } catch (e) {
+    toast("读取课程失败: " + e, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "读取我的课程";
+  }
+});
+
+// ---------- 初始化 ----------
+fetch("/api/config").then(r => r.json()).then(fillForm).catch(() => toast("读取配置失败", true));
+refreshStatus();
+</script>
+</body>
+</html>
