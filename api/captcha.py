@@ -45,6 +45,7 @@ _MISSING = object()
 
 class CxCaptcha:
     """CxCaptcha 类用于处理学习任务中出现的验证码."""
+
     #
     # 该类提供了获取、识别和提交验证码的方法，使用 requests 库进行 HTTP 请求，
     # 并利用 DdddOcr 进行验证码识别。

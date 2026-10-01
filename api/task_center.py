@@ -277,6 +277,7 @@ def _sse_content(event):
 
 class TaskCenter:
     """任务中心客户端：读取教学任务 + 完成任务点."""
+
     #
     # ``study_video`` / ``study_document`` 保持历史 bool 返回值，供旧调用方继续使用。
     # 新增任务类型会同时更新 ``last_outcome``，编排层据此区分失败、锁定和等待确认。

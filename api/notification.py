@@ -14,6 +14,7 @@ from api.privacy import register_config, redact
 
 class NotificationService(ABC):
     """通知服务基类，定义通知服务的公共接口和实现."""
+
     # 所有具体的通知服务类应继承此类并实现必要的方法。
 
     # 默认配置文件：用户数据目录下的 config.ini

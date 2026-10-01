@@ -31,6 +31,7 @@ __all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike"
 
 class CacheDAO:
     """@Author: SocialSisterYi."""
+
     # @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
     DEFAULT_CACHE_FILE = _paths.cache_path()

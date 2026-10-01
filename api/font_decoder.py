@@ -10,6 +10,7 @@ from api.logger import logger
 
 class FontDecoder:
     """超星加密字体解码器."""
+
     #
     # 用于解码超星平台使用特殊字体加密的内容。
 
