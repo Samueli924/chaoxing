@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chaoxing"
 version = "3.1.3"
@@ -8,7 +12,14 @@ requires-python = ">=3.13,<4.0"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-py-modules = []
+py-modules = ["main"]
+packages = ["api"]
+
+[tool.setuptools.data-files]
+"share/chaoxing" = ["config_template.ini", "resource/font_map_table.json"]
+
+[project.scripts]
+chaoxing = "main:main"
 
 [tool.setuptools.dynamic]
 dependencies = {file=["requirements.txt"]}

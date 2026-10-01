@@ -42,10 +42,12 @@ def resource_path(relative_path: str) -> str:
         # PyInstaller创建临时文件夹，定位路径
         base_path = sys._MEIPASS
     except Exception:
-        # 非打包环境，使用当前目录
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    return os.path.join(base_path, relative_path)
+    candidate = os.path.join(base_path, relative_path)
+    if os.path.isfile(candidate):
+        return candidate
+    return os.path.join(sys.prefix, "share", "chaoxing", os.path.basename(relative_path))
 
 
 class FontHashDAO:
