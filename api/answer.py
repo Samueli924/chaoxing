@@ -17,6 +17,8 @@ import requests
 from openai import OpenAI
 from urllib3 import disable_warnings, exceptions
 
+from api import llm
+from api import paths as _paths
 from api.answer_check import check_answer
 from api.logger import logger
 
@@ -32,11 +34,16 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    DEFAULT_CACHE_FILE = "cache.json"
+    # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
+    DEFAULT_CACHE_FILE = _paths.cache_path()
+
+    # 锁必须是"类级"的：每次查询都会新建一个 CacheDAO 实例，
+    # 实例锁等于没锁 —— 两个章节同时答题时会各自读-改-写，
+    # 后写的把先写的覆盖掉，缓存里的题就丢了（#552）。
+    _lock = threading.RLock()
 
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
         self.cache_file = Path(file)
-        self._lock = threading.RLock()
         if not self.cache_file.is_file():
             self._write_cache({})
 
@@ -48,7 +55,11 @@ class CacheDAO:
                     return {}
                 try:
                     with self.cache_file.open("r", encoding="utf8") as fp:
-                        return json.load(fp)
+                        data = json.load(fp)
+                    if not isinstance(data, dict):
+                        logger.warning("缓存文件内容不是对象（{}），已忽略", type(data).__name__)
+                        return {}
+                    return data
                 except json.JSONDecodeError as e:
                     logger.error(f"缓存文件 JSON 解析失败: {e}, 尝试恢复...")
                     # 尝试从原始二进制中以 utf-8 忽略错误地恢复有效 JSON 段
@@ -127,6 +138,10 @@ class CacheDAO:
 
     def get_cache(self, question: str) -> Optional[str]:
         data = self._read_cache()
+        # 缓存文件是合法 JSON 但不是对象时（例如被改成 [] 或 null）不能直接 .get
+        if not isinstance(data, dict):
+            logger.warning("缓存文件内容不是对象，已忽略并重新建立缓存")
+            return None
         return data.get(question)
 
     def add_cache(self, question: str, answer: str) -> None:
@@ -137,8 +152,48 @@ class CacheDAO:
             self._write_cache(data)
 
 
+# 这些错误"再试也没用"：出现一次就停止逐个题目重试
+FATAL_API_MARKERS = (
+    # 认证 / 余额
+    "401", "402", "unauthorized", "authentication",
+    "invalid_api_key", "invalid api key", "insufficient", "quota",
+    # 模型名写错 / 接口不存在 —— 重试多少次都一样
+    "404", "model_not_found", "model not found", "does not exist",
+    "no such model", "unknown model", "invalid model",
+)
+
+
+def is_fatal_api_error(err) -> bool:
+    """判断是否是"再试也没用"的错误（Key 失效、余额不足等）"""
+    text = str(err).lower()
+    return any(m in text for m in FATAL_API_MARKERS)
+
+
+def brief_error(err, limit=70) -> str:
+    """把冗长的 API 报错压成一句"""
+    text = str(err).strip()
+    low = text.lower()
+    if "404" in low or "model_not_found" in low or "model not found" in low \
+            or "does not exist" in low or "unknown model" in low or "invalid model" in low:
+        return "模型名不存在（检查配置里的 model）"
+    if "401" in low or "authentication" in low or "unauthorized" in low:
+        return "API Key 无效或已失效"
+    if "402" in low or "insufficient" in low or "quota" in low:
+        return "账户余额不足"
+    if "429" in low or "rate limit" in low:
+        return "请求过于频繁"
+    if "400" in low or "bad request" in low:
+        return "请求被服务方拒绝（400，通常是内容审核或参数不支持）"
+    if "timeout" in low or "timed out" in low:
+        return "连接超时"
+    if "connection" in low:
+        return "网络连接失败"
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 class Tiku(ABC):
-    CONFIG_PATH = os.path.join(os.getcwd(), "config.ini")
+    # 默认配置路径：用户数据目录（由 api.paths 统一管理）
+    CONFIG_PATH = _paths.config_path()
     DISABLE = False  # 停用标志
     SUBMIT = False  # 提交标志
     COVER_RATE = 0.8  # 覆盖率
@@ -158,6 +213,8 @@ class Tiku(ABC):
         self._config_path = config_path or self.CONFIG_PATH
         self.true_list = []
         self.false_list = []
+        # 熔断状态：一旦出现认证/余额类错误就不再逐个题目重试
+        self._fatal_error = None
 
     @property
     def name(self):
@@ -189,11 +246,16 @@ class Tiku(ABC):
         if not self._conf:
             self.config_set(self._get_conf())
         if not self.DISABLE:
-            # 设置提交模式
-            self.SUBMIT = True if self._conf['submit'] == 'true' else False
-            self.COVER_RATE = float(self._conf['cover_rate'])
-            self.true_list = self._conf['true_list'].split(',')
-            self.false_list = self._conf['false_list'].split(',')
+            # 设置提交模式。
+            # 用户手写的配置可能缺这些键，缺了就用安全默认值，
+            # 不要抛 KeyError 让整个程序崩掉。
+            self.SUBMIT = str(self._conf.get('submit', 'false')).strip().lower() == 'true'
+            try:
+                self.COVER_RATE = float(self._conf.get('cover_rate', 0.9))
+            except (TypeError, ValueError):
+                self.COVER_RATE = 0.9
+            self.true_list = (self._conf.get('true_list') or '正确,对,√,是').split(',')
+            self.false_list = (self._conf.get('false_list') or '错误,错,×,否,不对,不正确').split(',')
             # 调用自定义题库初始化
             self._init_tiku()
 
@@ -202,6 +264,8 @@ class Tiku(ABC):
         pass
 
     def config_set(self, config):
+        from api.privacy import register_config
+        register_config(config)
         self._conf = config
 
     def _get_conf(self):
@@ -346,15 +410,77 @@ class Tiku(ABC):
         子类若有批量查询或交互需求（如手动模式），可重写此方法。
         """
         results = []
-        for q in q_list:
+        total = len(q_list)
+
+        # 答题进度显示：避免用户以为程序卡死
+        if total > 1:
+            print()
+            print(f"  正在作答 {total} 题（题库 + AI，请稍候）")
+
+        skipped_by_breaker = 0
+        for i, q in enumerate(q_list, 1):
+            if self._fatal_error:
+                # 已经确认答题服务不可用 -> 不再调用 API，也不再重复报错
+                results.append(None)
+                skipped_by_breaker += 1
+                continue
+
+            if total > 1:
+                # 估算剩余时间：平均每题耗时
+                self._print_answer_progress(i - 1, total)
             if query_delay > 0:
                 time.sleep(query_delay)
             try:
                 results.append(self._query(q))
             except Exception as e:
-                logger.error(f"{self.name} 查询单个题目发生异常: {e}")
+                if is_fatal_api_error(e):
+                    # 熔断：只说明这一次，后面的题直接跳过，不再反复报错
+                    self._fatal_error = brief_error(e)
+                    logger.error(
+                        "答题服务不可用：{}\n"
+                        "    本套测验无法作答，剩余题目已跳过。\n"
+                        "    修复后重新运行即可，已完成的任务点不会重复。",
+                        self._fatal_error,
+                    )
+                else:
+                    logger.error(f"{self.name} 查询单个题目发生异常: {brief_error(e)}")
                 results.append(None)
+
+        if total > 1:
+            self._print_answer_progress(total, total)
+            if skipped_by_breaker:
+                logger.warning(
+                    "本套 {} 道题中有 {} 道因答题服务不可用被跳过", total, skipped_by_breaker
+                )
+
         return results
+
+    def _print_answer_progress(self, done, total):
+        """打印答题进度条（原地刷新）"""
+        try:
+            bar_len = 28
+            filled = int(bar_len * done / total) if total else 0
+            bar = "#" * filled + "-" * (bar_len - filled)
+            percent = int(done * 100 / total) if total else 0
+            elapsed_note = ""
+            now = time.time()
+            start = getattr(self, "_answer_start_time", None)
+            if start is None:
+                self._answer_start_time = now
+                start = now
+            if done > 0:
+                avg = (now - start) / done
+                remain = avg * (total - done)
+                if remain >= 60:
+                    elapsed_note = f"  预计还需 {int(remain // 60)} 分 {int(remain % 60)} 秒"
+                else:
+                    elapsed_note = f"  预计还需 {int(remain)} 秒"
+            print(f"\r  答题进度: [{bar}] {done}/{total} {percent}%{elapsed_note}   ", end="", flush=True)
+            if done >= total:
+                print()
+                self._answer_start_time = None
+        except Exception:
+            pass
 
     @staticmethod
     def get_tiku_from_config(config: Optional[dict] = None, config_path: Optional[str] = None):
@@ -594,7 +720,7 @@ class TikuYanxi(Tiku):
             if not res_json['code']:
                 # 如果是因为TOKEN次数到期, 则更换token
                 if self._times == 0 or '次数不足' in res_json['data']['answer']:
-                    logger.info(f'TOKEN查询次数不足, 将会更换并重新搜题')
+                    logger.info('TOKEN查询次数不足, 将会更换并重新搜题')
                     self._token_index += 1
                     self.load_token()
                     # 重新查询
@@ -609,7 +735,7 @@ class TikuYanxi(Tiku):
         return None
 
     def load_token(self):
-        token_list = self._conf['tokens'].split(',')
+        token_list = (self._conf.get('tokens') or '').split(',')
         if self._token_index == len(token_list):
             # TOKEN 用完
             logger.error('TOKEN用完, 请自行更换再重启脚本')
@@ -831,7 +957,7 @@ class TikuLike(Tiku):
 
         # 检查该token是否有余额
         if self._balance.get(token, 0) <= 0:
-            logger.error(f'{self.name}当前Token查询次数不足: ...{token[-5:]}')
+            logger.error(f'{self.name}当前Token查询次数不足: [redacted]')
             # 尝试选择其他有余额的token
             available_tokens = [t for t in self._tokens if self._balance.get(t, 0) > 0]
             if available_tokens:
@@ -849,10 +975,10 @@ class TikuLike(Tiku):
             try_times += 1
             if ans:  # 如果查询成功，减少余额
                 self._balance[token] -= 1
-                logger.info(f'使用Token ...{token[-5:]} 查询成功，剩余次数: {self._balance[token]}')
+                logger.info(f'使用Token [redacted] 查询成功，剩余次数: {self._balance[token]}')
                 break
             elif try_times < self._retry_times:
-                logger.warning(f'使用Token ...{token[-5:]} 查询失败，进行第 {try_times + 1} 次重试...')
+                logger.warning(f'使用Token [redacted] 查询失败，进行第 {try_times + 1} 次重试...')
 
         # 10次查询后更新余额
         self._count = (self._count + 1) % 10
@@ -1079,7 +1205,7 @@ class TikuLike(Tiku):
             balance = self.get_api_balance(token)
             self._balance[token] = balance
             logger.info(
-                f"当前LIKE知识库Token: ...{token[-5:]} 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
+                f"当前LIKE知识库Token: [redacted] 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
 
     def load_tokens(self) -> None:
         tokens_str = self._conf.get('tokens')
@@ -1160,7 +1286,36 @@ class TikuAdapter(Tiku):
 
     def _init_tiku(self):
         # self.load_token()
-        self.api = self._conf['url']
+        self.api = self._conf.get('url', '')
+
+
+def parse_answer_text(text: str) -> str:
+    """
+    从模型输出里提取答案正文：兼容 JSON / 代码块 / "答案：X" / 纯文本。
+
+    模型有时返回 {"Answer": ["A"]}，有时直接写 "答案：A"，有时带 markdown 代码块，
+    以前只认第一种，其它情况一律记"无法解析"并退化成随机作答（错率高的直接原因之一）。
+    """
+    if not text:
+        return ""
+    cleaned = llm.strip_code_fence(str(text))
+    try:
+        data = json.loads(cleaned)
+    except (ValueError, TypeError):
+        data = None
+    if isinstance(data, dict):
+        for key in ("Answer", "answer", "答案", "result", "content"):
+            if key in data:
+                data = data[key]
+                break
+    if isinstance(data, list):
+        return "\n".join(str(item) for item in data).strip()
+    if isinstance(data, str):
+        return data.strip()
+    matched = re.search(r"(?:答案|Answer|答)\s*[:：]?\s*(.+)", cleaned, re.IGNORECASE | re.DOTALL)
+    if matched:
+        return matched.group(1).strip()
+    return cleaned.strip()
 
 
 class AI(Tiku):
@@ -1197,17 +1352,25 @@ class AI(Tiku):
             lines.append(str(item))
         return "\n".join(lines)
 
-    def _is_deepseek_v4(self) -> bool:
-        return (
-                'api.deepseek.com' in (self.endpoint or '').lower()
-                and (self.model or '').lower().startswith('deepseek-v4')
-        )
+    def _client(self):
+        """按代理配置构造 OpenAI 客户端"""
+        if self.http_proxy:
+            httpx_client = httpx.Client(proxy=self.http_proxy)
+            return OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
+        return OpenAI(base_url=self.endpoint, api_key=self.key)
 
-    def _completion_kwargs(self, **kwargs):
-        if self._is_deepseek_v4():
-            # DeepSeek V4 defaults to thinking mode, which can leave message.content empty.
-            kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
-        return kwargs
+    def _complete(self, messages, **kwargs) -> str:
+        """
+        统一的答题模型调用：thinking 默认交给模型自己（auto）。
+
+        ：DeepSeek V4.1 flash 默认带推理且正文正常，
+        强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
+        api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。
+        """
+        client = self._client()
+        return llm.create_completion(
+            client, model=self.model, messages=messages,
+            thinking=self.thinking, allow_reasoning_fallback=True, **kwargs)
 
     def _wait_for_interval(self):
         if self.last_request_time:
@@ -1222,107 +1385,100 @@ class AI(Tiku):
             return self._query_locked(q_info)
 
     def _query_locked(self, q_info: dict):
-        def remove_md_json_wrapper(md_str):
-            # 使用正则表达式匹配Markdown代码块并提取内容
-            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
-            match = re.search(pattern, md_str, re.DOTALL)
-            return match.group(1).strip() if match else md_str.strip()
-
-        if self.http_proxy:
-            proxy = self.http_proxy
-            httpx_client = httpx.Client(proxy=proxy)
-            client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-        else:
-            client = OpenAI(base_url=self.endpoint, api_key=self.key)
-        # 去除选项字母，防止大模型直接输出字母而非内容
-        options_list = q_info['options'].split('\n')
-        cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
-        options = "\n".join(cleaned_options)
+        # 保留选项字母：让模型直接回答 A/B/C，比"回答选项内容再匹配回字母"可靠得多
+        options = q_info['options']
 
         # 上一轮章节检测的错误反馈（若有）
         feedback_text = self._build_work_feedback_text()
 
         def _make_messages(system_content: str, user_content: str) -> list:
             """构造带反馈上下文的消息列表."""
-            messages = [
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-            ]
+            messages = [{"role": "system", "content": system_content}]
             if feedback_text:
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": feedback_text
-                    }
-                )
-            messages.append(
-                {
-                    "role": "user",
-                    "content": user_content
-                }
-            )
+                messages.append({"role": "system", "content": feedback_text})
+            messages.append({"role": "user", "content": user_content})
             return messages
 
-        # 判断题目类型
-        self._wait_for_interval()
-        self.last_request_time = time.time()
-        if q_info['type'] == "single":
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}\n选项：{options}"
-                )
-            ))
-        elif q_info['type'] == 'multiple':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}\n选项：{options}"
-                )
-            ))
-        elif q_info['type'] == 'completion':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
-        elif q_info['type'] == 'judgement':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
+        q_type = q_info['type']
+        if q_type == "single":
+            system = ("本题为单选题。请先自己判断，再只输出选项字母，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"A\"]}；不要输出选项内容、解释或多余文字。")
+            user = f"题目：{q_info['title']}\n选项：\n{options}"
+        elif q_type == "multiple":
+            system = ("本题为多选题。请选出所有正确选项（可能只有 1 个，也可能多个），"
+                      "只输出选项字母，以 json 格式回答，例如 {\"Answer\": [\"A\",\"C\"]}；"
+                      "不确定的不要选、不要为了凑数多选，不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}\n选项：\n{options}"
+        elif q_type == "completion":
+            system = ("本题为填空题。请按空的顺序给出答案，用 # 分隔，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"答案1#答案2\"]}；不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
+        elif q_type == "judgement":
+            system = ("本题为判断题。只输出 {\"Answer\": [\"正确\"]} 或 {\"Answer\": [\"错误\"]}，"
+                      "不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
         else:
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
+            system = ("本题为简答题。请给出简洁准确的答案，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"答案\"]}；不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
+        messages = _make_messages(system, user)
 
-        try:
-            response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
-            sep = "\n"
-            return sep.join(response['Answer']).strip()
-        except:
+        # 客观题多次采样投票：单次生成偶发看错选项，投票能明显降低错率
+        votes = self.objective_votes if q_type in ("single", "multiple") else 1
+        answers = []
+        for _ in range(max(1, votes)):
+            self._wait_for_interval()
+            self.last_request_time = time.time()
+            try:
+                raw = self._complete(messages)
+            except Exception as e:
+                logger.error(f"{self.name} 调用失败：{e}")
+                continue
+            parsed = parse_answer_text(raw)
+            if parsed:
+                answers.append(parsed)
+        if not answers:
             logger.error("无法解析大模型输出内容")
             return None
+        if len(answers) == 1:
+            return answers[0]
+
+        def _normalize(text):
+            stripped = str(text).strip()
+            letters = re.findall(r"[A-Za-z]", stripped)
+            if letters and re.fullmatch(r"[A-Za-z\s、,，;；/|\n]+", stripped):
+                return "".join(sorted({c.upper() for c in letters}))
+            return stripped
+
+        grouped = {}
+        for item in answers:
+            grouped.setdefault(_normalize(item), []).append(item)
+        best_key = max(grouped, key=lambda key: len(grouped[key]))
+        chosen = grouped[best_key]
+        if len(grouped) > 1:
+            logger.info(
+                "客观题投票：{} 次采样，取多数答案 {}（{}/{}）",
+                len(answers), best_key, len(chosen), len(answers),
+            )
+        return chosen[0]
 
     def _init_tiku(self):
-        self.endpoint = self._conf['endpoint']
-        self.key = self._conf['key']
-        self.model = self._conf['model']
-        self.http_proxy = self._conf['http_proxy']
-        self.min_interval_seconds = int(self._conf['min_interval_seconds'])
+        # 手写配置可能缺项，用安全默认值兜底，避免 KeyError
+        self.endpoint = self._conf.get('endpoint', '')
+        self.key = self._conf.get('key', '')
+        self.model = self._conf.get('model', '')
+        self.http_proxy = self._conf.get('http_proxy', '')
+        # thinking: auto=让模型自己决定（V4.1 起默认带推理，正确率更高）；
+        # on/off 可强制；老版本"正文为空"由 api/llm 自动降级重试。
+        self.thinking = llm.normalize_thinking(self._conf.get('thinking', 'auto'))
+        try:
+            self.objective_votes = max(1, min(5, int(float(self._conf.get('objective_votes', 3) or 3))))
+        except (TypeError, ValueError):
+            self.objective_votes = 3
+        try:
+            self.min_interval_seconds = int(float(self._conf.get('min_interval_seconds', 3)))
+        except (TypeError, ValueError):
+            self.min_interval_seconds = 3
 
     def check_llm_connection(self) -> bool:
         """
@@ -1330,37 +1486,20 @@ class AI(Tiku):
         发送一个简单的测试请求来验证 API 配置
         """
         with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
+            logger.debug(f'正在检查 {self.name} 连接...')
             try:
-                # 初始化客户端
-                if self.http_proxy:
-                    httpx_client = httpx.Client(proxy=self.http_proxy)
-                    client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-                else:
-                    client = OpenAI(base_url=self.endpoint, api_key=self.key)
-
                 # 限流等待
                 self._wait_for_interval()
                 self.last_request_time = time.time()
 
-                # 发送测试请求
-                completion = client.chat.completions.create(**self._completion_kwargs(
-                    model=self.model,
-                    messages=[
-                        {
-                            'role': 'user',
-                            'content': '你好，请回答：1+1 等于几？只回答数字。'
-                        }
-                    ],
-                    max_tokens=200  # 增大以支持可能返回的 reasoning_content
-                ))
-
-                # 统一检查响应
-                if completion.choices:
-                    msg = completion.choices[0].message
-                    if msg.content or getattr(msg, 'reasoning_content', None):
-                        logger.info(f'{self.name} 连接检查成功')
-                        return True
+                # 发送测试请求（thinking 策略与答题一致，reasoning 也能兜底）
+                text = self._complete(
+                    [{'role': 'user', 'content': '你好，请回答：1+1 等于几？只回答数字。'}],
+                    max_tokens=200,
+                )
+                if text:
+                    logger.info(f'{self.name} 连接正常')
+                    return True
 
                 logger.error(f'{self.name} 连接检查失败：未收到响应')
                 return False
@@ -1463,11 +1602,14 @@ class SiliconFlow(Tiku):
     def _init_tiku(self):
         # 从配置文件读取参数
         self.api_endpoint = self._conf.get('siliconflow_endpoint', 'https://api.siliconflow.cn/v1/chat/completions')
-        self.api_key = self._conf['siliconflow_key']
+        self.api_key = self._conf.get('siliconflow_key', '')
 
         self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-V3')
 
-        self.min_interval = int(self._conf.get('min_interval_seconds', 3))
+        try:
+            self.min_interval = int(float(self._conf.get('min_interval_seconds', 3)))
+        except (TypeError, ValueError):
+            self.min_interval = 3
 
     def check_llm_connection(self) -> bool:
         """
@@ -1475,7 +1617,7 @@ class SiliconFlow(Tiku):
         发送一个简单的测试请求来验证 API 配置
         """
         with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
+            logger.debug(f'正在检查 {self.name} 连接...')
             try:
                 headers = {
                     'Authorization': f'Bearer {self.api_key}',
@@ -1491,7 +1633,9 @@ class SiliconFlow(Tiku):
                         }
                     ],
                     'stream': False,
-                    'max_tokens': 10,
+                    # 思考模型会先输出 reasoning_content，正文要更多 token 才出得来。
+                    # 原来填 10 会把"配置正确"误判成"连接失败"（#603）。
+                    'max_tokens': 200,
                     'temperature': 0.7,
                     'top_p': 0.7,
                     'response_format': {'type': 'text'}
@@ -1510,12 +1654,16 @@ class SiliconFlow(Tiku):
 
                 if response.status_code == 200:
                     result = response.json()
-                    if result.get('choices') and result['choices'][0]['message']['content']:
-                        logger.info(f'{self.name} 连接检查成功')
+                    choices = result.get('choices') if isinstance(result, dict) else None
+                    message = {}
+                    if choices and isinstance(choices, list) and isinstance(choices[0], dict):
+                        message = choices[0].get('message') or {}
+                    # 思考模型的正文可能在 reasoning_content 里，两种都算成功
+                    if message.get('content') or message.get('reasoning_content'):
+                        logger.info(f'{self.name} 连接正常')
                         return True
-                    else:
-                        logger.error(f'{self.name} 连接检查失败：未收到有效响应')
-                        return False
+                    logger.error(f'{self.name} 连接检查失败：未收到有效响应')
+                    return False
                 else:
                     logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
                     return False
@@ -1632,7 +1780,12 @@ class TikuManual(Tiku):
             print(f"\n【{type_str}】 {q['title']}")
 
         while True:
-            ans = input("请输入答案 (直接回车表示跳过/无答案): ").strip()
+            try:
+                ans = input("请输入答案 (直接回车表示跳过/无答案): ").strip()
+            except EOFError:
+                # 非交互环境（定时任务/管道）读不到输入，按"跳过"处理，不要抛异常
+                print("  [提示] 当前环境读不到键盘输入，本题按跳过处理")
+                return None
             if not ans:
                 print(f"  [已记录] 题目: {q['title']} ---> 答案: [跳过/随机]")
                 return None
@@ -1823,7 +1976,12 @@ class TikuManual(Tiku):
                         ans = ""
                     answers.append(ans)
             else:
-                raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                try:
+                    raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                except EOFError:
+                    # 非交互环境读不到输入：按"全部跳过"处理（与直接回车一致），不要死循环
+                    print("  [提示] 当前环境读不到键盘输入，本次测验按未作答处理")
+                    return [None] * len(q_list)
                 answers = self._split_batch_answers(raw_input, len(q_list))
 
             has_error, temp_answers = self._parse_and_validate_batch(q_list, answers)
@@ -1832,7 +1990,12 @@ class TikuManual(Tiku):
                 print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
                 continue
 
-            confirm = input("确认使用上述答案？[Y/n]: ").strip().lower()
+            try:
+                confirm = input("确认使用上述答案？[y/n]: ").strip().lower()
+            except EOFError:
+                # 同上：读不到确认就按已校验通过的答案继续，避免死循环
+                print("  [提示] 当前环境读不到键盘输入，已直接采用上述答案")
+                return temp_answers
             if confirm in ['', 'y', 'yes']:
                 return temp_answers
             elif confirm == 'switch':

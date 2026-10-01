@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
+from api import paths
+
+
 class GlobalConst:
     AESKey = "u2oh6Vu^HWe4_AES"
-    COOKIES_PATH = "cookies.txt"
+    # cookie 文件放在用户数据目录（~/.chaoxing/），不在项目目录
+    COOKIES_PATH = paths.legacy_cookies_path()
 
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",

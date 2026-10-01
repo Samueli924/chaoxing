@@ -9,7 +9,9 @@ from typing import Dict, Optional
 
 import requests
 
+from api import paths
 from api.logger import logger
+from api.privacy import register_config, redact
 
 
 class NotificationService(ABC):
@@ -18,7 +20,8 @@ class NotificationService(ABC):
     所有具体的通知服务类应继承此类并实现必要的方法。
     """
 
-    CONFIG_PATH = "config.ini"
+    # 默认配置文件：用户数据目录下的 config.ini
+    CONFIG_PATH = paths.config_path()
 
     def __init__(self):
         """初始化通知服务"""
@@ -36,6 +39,7 @@ class NotificationService(ABC):
             config: 包含配置参数的字典
         """
         self._conf = config
+        register_config(config)
 
     def _load_config_from_file(self) -> Optional[Dict[str, str]]:
         """
@@ -47,7 +51,9 @@ class NotificationService(ABC):
         try:
             config = configparser.ConfigParser()
             config.read(self.CONFIG_PATH, encoding="utf8")
-            return config['notification']
+            result = dict(config['notification'])
+            register_config(result)
+            return result
         except (KeyError, FileNotFoundError):
             logger.info("未找到notification配置，已忽略外部通知功能")
             self.disabled = True
@@ -86,7 +92,7 @@ class NotificationService(ABC):
             message: 要发送的消息内容
         """
         if not self.disabled:
-            self._send(message)
+            self._send(redact(message))
 
 
 class NotificationFactory:
@@ -173,11 +179,11 @@ class ServerChan(NotificationService):
         """初始化Server酱服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Server酱url配置，已忽略该通知服务")
+            logger.debug("未找到Server酱url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Server酱通知服务，URL: {self.url}")
+        logger.info("已初始化Server酱通知服务")
 
     def _send(self, message: str) -> None:
         """
@@ -214,11 +220,11 @@ class Qmsg(NotificationService):
         """初始化Qmsg酱服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Qmsg酱url配置，已忽略该通知服务")
+            logger.debug("未找到Qmsg酱url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Qmsg酱通知服务，URL: {self.url}")
+        logger.info("已初始化Qmsg酱通知服务")
 
     def _send(self, message: str) -> None:
         """
@@ -250,11 +256,11 @@ class Bark(NotificationService):
         """初始化Bark服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Bark的url配置，已忽略该通知服务")
+            logger.debug("未找到Bark的url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
-        logger.info(f"已初始化Bark通知服务，URL: {self.url}")
+        logger.info("已初始化Bark通知服务")
 
     def _send(self, message: str) -> None:
         """
@@ -285,11 +291,11 @@ class Telegram(NotificationService):
         """初始化Telegram服务"""
         if not self._conf or not self._conf.get('url') or not self._conf.get('tg_chat_id'):
             self.disabled = True
-            logger.info("未找到Telegram的url或tg_chat_id配置，已忽略该通知服务")
+            logger.debug("未找到Telegram的url 配置，已忽略该通知服务")
             return
         self.tg_chat_id = self._conf['tg_chat_id']
         self.url = self._conf['url']
-        logger.info(f"已初始化Telegram通知服务，Chat_id: {self.tg_chat_id} URL: {self.url}")
+        logger.info("已初始化Telegram通知服务")
 
     def _send(self, message: str) -> None:
         """

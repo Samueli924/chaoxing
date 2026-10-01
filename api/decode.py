@@ -15,6 +15,62 @@ from api.font_decoder import FontDecoder
 from api.logger import logger
 
 
+# 平台上常见的"特殊空白"字符。&nbsp;( ) 在 GBK 控制台里无法编码，
+# print 时会直接抛 UnicodeEncodeError 把程序打崩（#602），统一换成普通空格。
+_EXOTIC_CHARS = {
+    " ": " ",   # &nbsp; 不间断空格
+    " ": " ",   # 图形空格
+    " ": " ",   # 窄不换行空格
+    "　": " ",   # 全角空格
+    "​": "",    # 零宽空格
+    "‌": "",
+    "‍": "",
+    "﻿": "",    # BOM
+}
+
+
+def _sel_text(node, selector, default="") -> str:
+    """安全取选择器命中的文本：页面结构变了也只是取到空，不会抛 NoneType.text"""
+    try:
+        found = node.select_one(selector)
+    except Exception:
+        return default
+    if not found:
+        return default
+    try:
+        return found.text
+    except Exception:
+        return default
+
+
+def _sel_attr(node, selector, attr, default="") -> str:
+    """安全取选择器命中的属性值（同上，不会抛 NoneType.attrs）"""
+    try:
+        found = node.select_one(selector)
+    except Exception:
+        return default
+    if not found:
+        return default
+    try:
+        value = found.attrs.get(attr, default)
+    except Exception:
+        return default
+    if isinstance(value, list):
+        value = value[0] if value else default
+    return default if value is None else value
+
+
+def clean_text(text) -> str:
+    """清理平台返回文本里的特殊空白字符，并把连续空格压成一个"""
+    if text is None:
+        return ""
+    text = str(text)
+    for src, dst in _EXOTIC_CHARS.items():
+        if src in text:
+            text = text.replace(src, dst)
+    return re.sub(r"[ \t\u00a0]{2,}", " ", text).strip()
+
+
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
     """
     解析课程列表页面，提取课程信息
@@ -35,16 +91,27 @@ def decode_course_list(html_text: str) -> List[Dict[str, str]]:
         if course.select_one("a.not-open-tip") or course.select_one("div.not-open-tip"):
             continue
 
+        # 平台改版时字段可能缺失，缺了就当这条有问题跳过并记一条日志，
+        # 不能让整个课程列表直接崩掉（#58 / #392 这类 KeyError / AttributeError）
+        clazz_id = _sel_attr(course, "input.clazzId", "value")
+        course_id = _sel_attr(course, "input.courseId", "value")
+        cpi_match = re.findall(r"cpi=(.*?)&", _sel_attr(course, "a", "href"))
+        title = clean_text(_sel_attr(course, "span.course-name", "title")) or clean_text(
+            _sel_text(course, "span.course-name"))
+        if not (clazz_id and course_id and cpi_match and title):
+            logger.warning("课程条目缺少必要字段，已跳过: {}", str(course.attrs)[:200])
+            continue
+
         course_detail = {
-            "id": course.attrs["id"],
-            "info": course.attrs["info"],
-            "roleid": course.attrs["roleid"],
-            "clazzId": course.select_one("input.clazzId").attrs["value"],
-            "courseId": course.select_one("input.courseId").attrs["value"],
-            "cpi": re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0],
-            "title": course.select_one("span.course-name").attrs["title"],
-            "desc": course.select_one("p.margint10").attrs["title"] if course.select_one("p.margint10") else "",
-            "teacher": course.select_one("p.color3").attrs["title"]
+            "id": course.attrs.get("id", ""),
+            "info": course.attrs.get("info", ""),
+            "roleid": course.attrs.get("roleid", ""),
+            "clazzId": clazz_id,
+            "courseId": course_id,
+            "cpi": cpi_match[0],
+            "title": title,
+            "desc": clean_text(_sel_attr(course, "p.margint10", "title")),
+            "teacher": clean_text(_sel_attr(course, "p.color3", "title"))
         }
         course_list.append(course_detail)
 
@@ -67,14 +134,21 @@ def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
     course_folder_list = []
 
     for course in raw_courses:
-        if not course.attrs.get("fileid"):
+        folder_id = course.attrs.get("fileid")
+        if not folder_id:
             continue
 
-        course_folder_detail = {
-            "id": course.attrs["fileid"],
-            "rename": course.select_one("input.rename-input").attrs["value"]
-        }
-        course_folder_list.append(course_folder_detail)
+        # 目录条目缺 rename-input 时跳过这一条并告警，
+        # 不能让一个目录把整个课程列表读取打断
+        folder_name = _sel_attr(course, "input.rename-input", "value")
+        if not folder_name:
+            logger.warning("课程目录条目缺少名称，已跳过: {}", str(course.attrs)[:150])
+            continue
+
+        course_folder_list.append({
+            "id": folder_id,
+            "rename": clean_text(folder_name),
+        })
 
     return course_folder_list
 
@@ -123,24 +197,30 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
 
     for raw_point in raw_points:
         point = raw_point.div
-        if "id" not in point.attrs:
+        if point is None or "id" not in point.attrs:
             continue
 
-        point_id = re.findall(r"^cur(\d{1,20})$", point.attrs["id"])[0]
-        point_title = point.select_one("a.clicktitle").text.replace("\n", "").strip()
+        # id 解析不出来就跳过这一条，别用 [0] 直接 IndexError（#22 / #374）
+        id_match = re.findall(r"^cur(\d{1,20})$", str(point.attrs.get("id", "")))
+        if not id_match:
+            logger.warning("章节点 id 异常，已跳过: {}", str(point.attrs)[:120])
+            continue
+        point_id = id_match[0]
+
+        point_title = clean_text(_sel_text(point, "a.clicktitle").replace("\n", "")) or "未命名章节"
 
         # 提取任务数量
         job_count = 1  # 默认为1
         need_unlock = False
-        if point.select_one("input.knowledgeJobCount"):
-            job_count = point.select_one("input.knowledgeJobCount").attrs["value"]
-        elif point.select_one("span.bntHoverTips") and "解锁" in point.select_one("span.bntHoverTips").text:
+        hover_tips = _sel_text(point, "span.bntHoverTips")
+        job_count_attr = _sel_attr(point, "input.knowledgeJobCount", "value")
+        if job_count_attr:
+            job_count = job_count_attr
+        elif "解锁" in hover_tips:
             need_unlock = True
 
         # 判断是否已完成
-        is_finished = False
-        if point.select_one("span.bntHoverTips") and "已完成" in point.select_one("span.bntHoverTips").text:
-            is_finished = True
+        is_finished = "已完成" in hover_tips
 
         point_detail = {
             "id": point_id,
@@ -173,10 +253,20 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     # 提取mArg参数
     temp = re.findall(r"mArg=\{(.*?)\};", html_text.replace(" ", ""))
     if not temp:
-        return [], {}
+        # 正常的学习页面一定带 mArg；取不到说明拿到的是登录页/验证码页/
+        # 改版页面。标记 parseError，让上层按"读取失败"重试，
+        # 绝不能当成"这个章节没有任务点"直接打勾（#223 / #357）。
+        # 逐页的"找不到 mArg"不再单独记日志：新版只有第 0 页带 mArg，
+        # 由 api/base.py 的 get_job_list 汇总成一条。
+        return [], {"parseError": True}
 
-    # 解析JSON数据
-    cards_data = json.loads("{" + temp[0] + "}")
+    # 解析JSON数据。mArg 片段可能因为平台改版/截断而不是合法 JSON，
+    # 这里必须兜住：抛出去会让整个章节失败，兜住后按"读取失败"重试更靠谱
+    try:
+        cards_data = json.loads("{" + temp[0] + "}")
+    except (ValueError, TypeError) as e:
+        logger.warning("任务点数据解析失败（mArg 不是合法 JSON）: {}", e)
+        return [], {"parseError": True}
 
     if not cards_data:
         return [], {}
@@ -186,7 +276,9 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
-    job_list = _process_attachment_cards(cards)
+    job_list, unknown_types = _process_attachment_cards(cards)
+    if unknown_types:
+        job_info["unknownCardTypes"] = unknown_types
 
     return job_list, job_info
 
@@ -217,17 +309,22 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_attachment_cards(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     处理所有附件任务卡片，强化直播任务识别逻辑
-    
+
     Args:
         cards: 附件任务卡片列表
-        
+
     Returns:
-        处理后的任务列表
+        (处理后的任务列表, 无法识别的卡片类型列表)
+
+    平台新增任务点类型时必须让上层知道：整章卡片都不认识 → 任务列表为空，
+    以前会走"空章节"分支把章节记成完成（假完成）。现在把未知类型带上去，
+    由 get_job_list 按"读取失败"处理。
     """
     job_list = []
+    unknown_types: List[str] = []
 
     for index, card in enumerate(cards):
         # 跳过已通过的任务
@@ -285,10 +382,13 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             if work_job:
                 job_list.append(work_job)
         else:
-            logger.warning(f"Unknown card type: {card_type}")
-            logger.warning(card)
+            # 未知类型不能静默丢弃：整章都是未知卡片时会被误判成"空章节已完成"
+            logger.error(f"Unknown card type: {card_type}")
+            logger.debug(card)
+            if card_type not in unknown_types:
+                unknown_types.append(card_type)
 
-    return job_list
+    return job_list, unknown_types
 
 
 def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -403,7 +503,16 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
 
     # 处理所有问题
     questions = []
-    for div_tag in soup.find("form").find_all("div", class_="singleQuesId"):
+    form_tag = soup.find("form")
+    if form_tag is None:
+        # 页面结构异常（最常见的是接口返回了登录页），交给上层按"无效响应"重试，
+        # 不要在这里抛 NoneType.find_all 把任务打挂（#593）
+        logger.warning("题目页面没有找到 form 表单，可能是登录页或页面结构变化")
+        form_data["questions"] = []
+        form_data["answerwqbid"] = ""
+        return form_data
+
+    for div_tag in form_tag.find_all("div", class_="singleQuesId"):
         question = _process_question(div_tag, font_decoder)
         if question:
             questions.append(question)
@@ -417,9 +526,12 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
 
 def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
     """从BeautifulSoup对象中提取表单数据"""
-    form_data = {}
-    form_tag = soup.find("form")
+    return _extract_form_fields(soup.find("form"))
 
+
+def _extract_form_fields(form_tag) -> Dict[str, Any]:
+    """从 form 标签里提取所有非答案字段的 input"""
+    form_data = {}
     if not form_tag:
         return form_data
 
@@ -448,11 +560,129 @@ def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
     return form_data
 
 
+# 任务中心作业页（mooc2/work/dowork）的题型名 -> 题型代码（与 _get_question_type 对应）
+_HOMEWORK_TYPE_CODES = {
+    "单选题": "0",
+    "多选题": "1",
+    "填空题": "2",
+    "判断题": "3",
+    "简答题": "4",
+}
+
+
+def decode_homework_page(html_content: str) -> Dict[str, Any]:
+    """
+    解析「任务中心 -> 作业」的作答页（mooc2/work/dowork）。
+
+    和章节测验页（knowledge/cards 里的 TiMu/Zy_TItle）结构不同：
+      * 题型在隐藏 input answertype<题目id> 的 value 里（旧页在 div.TiMu 的 data 上）
+      * 题干在 h3.mark_name，选项在 div.stem_answer 的 div.answerBg（带 aria-label）
+      * 提交地址在 form#submitForm 的 action 上（带 token / totalQuestionNum），
+        提交接口是 addStudentWorkNewWeb，不是章节测验的 addStudentWorkNew
+
+    返回结构和 decode_questions_info 对齐（form 隐藏字段 + questions + answerwqbid），
+    额外带 form_action / form_method，供提交时原样复用。
+    """
+    soup = BeautifulSoup(html_content, "lxml")
+    form_tag = soup.find("form", id="submitForm") or soup.find("form")
+    if form_tag is None:
+        logger.warning("作业页面没有找到 form 表单，可能是登录页或页面结构变化")
+        return {"questions": [], "answerwqbid": ""}
+
+    form_data = _extract_form_fields(form_tag)
+    form_data["form_action"] = str(form_tag.attrs.get("action") or "")
+    form_data["form_method"] = str(form_tag.attrs.get("method") or "post").lower()
+
+    font_decoder = None
+    if soup.find("style", id="cxSecretStyle"):
+        font_decoder = FontDecoder(html_content)
+        logger.info("作业页面有字体加密，已启用字体解密")
+
+    questions = []
+    for div_tag in form_tag.find_all("div", class_="singleQuesId"):
+        question = _process_homework_question(div_tag, form_tag, font_decoder)
+        if question:
+            questions.append(question)
+
+    form_data["questions"] = questions
+    form_data["answerwqbid"] = (
+        ",".join(q["id"] for q in questions) + "," if questions else ""
+    )
+    return form_data
+
+
+def _extract_homework_title(div_tag, font_decoder=None) -> str:
+    """
+    提取作业题干。
+
+    作业页的题干是 "<h3>1.<span>(多选题)</span><p>题干…</p></h3>"，但 <p> 嵌在
+    <h3> 里属于非法 HTML，lxml 会把 <h3> 提前闭合，题干段落变成 h3 的兄弟节点。
+    只取 h3 会丢题干（实测第 1 题、填空题全部丢），所以这里按 DOM 顺序拼到
+    "选项区（div.stem_answer）"之前的所有文本。
+    """
+    parts = []
+    for child in div_tag.children:
+        name = getattr(child, "name", None)
+        if name == "div" and "stem_answer" in (child.get("class") or []):
+            break
+        if name == "input":
+            continue
+        if isinstance(child, NavigableString):
+            parts.append(str(child))
+        elif name in ("h3", "p", "span", "div"):
+            parts.append(_extract_title(child, font_decoder))
+    return clean_text("".join(parts))
+
+
+def _process_homework_question(div_tag, form_tag, font_decoder=None) -> Optional[Dict[str, Any]]:
+    """解析作业页里的单道题目（新版结构）"""
+    question_id = str(div_tag.attrs.get("data") or "").strip()
+    if not question_id:
+        return None
+
+    type_code = ""
+    type_input = form_tag.find("input", attrs={"name": f"answertype{question_id}"})
+    if type_input is not None:
+        type_code = str(type_input.attrs.get("value", "")).strip()
+    if not type_code:
+        type_name = str(div_tag.attrs.get("typeName") or "").strip()
+        type_code = _HOMEWORK_TYPE_CODES.get(type_name, "")
+    q_type = _get_question_type(type_code)
+
+    q_title = _extract_homework_title(div_tag, font_decoder)
+
+    options = []
+    stem = div_tag.find("div", class_="stem_answer")
+    if stem is not None:
+        for option_tag in stem.find_all("div", class_="answerBg"):
+            text = _extract_choices(option_tag, font_decoder)
+            if text:
+                options.append(text)
+        if not options:
+            for li in stem.find_all("li"):
+                text = _extract_choices(li, font_decoder)
+                if text:
+                    options.append(text)
+    options.sort()
+
+    return {
+        "id": question_id,
+        "title": q_title,
+        "options": "\n".join(options),
+        "type": q_type,
+        "answerField": {
+            f"answer{question_id}": "",
+            f"answertype{question_id}": type_code,
+        },
+    }
+
+
 def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
     """处理单个问题"""
     # 提取问题ID和题目类型
     question_id = div_tag.attrs.get("data", "")
-    q_type_code = div_tag.find("div", class_="TiMu").attrs.get("data", "")
+    timu_tag = div_tag.find("div", class_="TiMu")
+    q_type_code = timu_tag.attrs.get("data", "") if timu_tag is not None else ""
     q_type = _get_question_type(q_type_code)
 
     # 提取题目内容和选项
@@ -486,6 +716,7 @@ def _get_question_type(type_code: str) -> str:
         "0": "single",  # 单选题
         "1": "multiple",  # 多选题
         "2": "completion",  # 填空题
+        "10": "completion",  # 新版填空题
         "3": "judgement",  # 判断题
         "4": "shortanswer",  # 简答题
     }
@@ -516,9 +747,9 @@ def _extract_title(element, font_decoder=None) -> str:
 
     # 如果有字体解码器，进行解码
     if font_decoder:
-        return font_decoder.decode(cleaned_content)
+        return clean_text(font_decoder.decode(cleaned_content))
 
-    return cleaned_content
+    return clean_text(cleaned_content)
 
 
 def _extract_choices(element, font_decoder=None) -> str:
@@ -527,17 +758,26 @@ def _extract_choices(element, font_decoder=None) -> str:
         return ""
 
     # 提取aria-label属性值作为选项，解决#474
-    choice = element.get("aria-label") or element.get_text()
-    if not choice:
-        return ""
+    choice = element.get("aria-label") or element.get_text() or ""
 
     cleaned_content = re.sub(r"[\r\t\n]", "", choice)
 
-    if font_decoder:
+    if font_decoder and cleaned_content:
         cleaned_content = font_decoder.decode(cleaned_content)
 
-    cleaned_content = cleaned_content.strip()
+    cleaned_content = clean_text(cleaned_content)
     if cleaned_content.endswith("选择"):
         cleaned_content = cleaned_content[:-2].rstrip()
+
+    # 选项本身可能就是一张图片（电路图 / 公式图 / 结构图）：
+    # 这时 aria-label 往往只有选项字母，真正的题目内容在 <img> 里。
+    # 不把图片地址带上，传给题库的选项就退化成一串字母，图片题只能随机作答（#457）。
+    # 只有"除了选项字母没有别的文字"时才追加，避免给普通文字选项加噪音。
+    img_urls = [img.get("src", "") for img in element.find_all("img") if img.get("src")]
+    if img_urls:
+        bare = re.sub(r"^[A-Za-z]\s*[.、:：]?\s*", "", cleaned_content).strip()
+        if not bare:
+            images = " ".join(f'<img src="{url}">' for url in img_urls)
+            cleaned_content = (cleaned_content + " " + images).strip()
 
     return cleaned_content

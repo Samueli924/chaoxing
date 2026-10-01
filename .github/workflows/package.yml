@@ -1,0 +1,20 @@
+name: Installed wheel
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  installed-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install build
+      - run: python -m build
+      - run: pip install dist/*.whl
+      - name: Run installed package outside checkout
+        working-directory: /tmp
+        run: |
+          chaoxing --help
+          python -c "from api.cxsecret_font import FontHashDAO; FontHashDAO()"

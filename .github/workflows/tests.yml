@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Public contribution guard
+        run: python tools/audit/publication_guard.py
+      - name: Compile check
+        run: python -m compileall -q api main.py setup_wizard.py tools tests
+      - name: Unit tests (offline)
+        run: python -m unittest discover -s tests -t .
