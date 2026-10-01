@@ -547,7 +547,16 @@ def format_time(num, suffix='', divisor=''):
     return f"{mins:02d}:{sec:02d}"
 
 
+def configure_console():
+    """Keep Chinese CLI output usable with Windows redirected/frozen streams."""
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            if stream is not None and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main():
+    configure_console()
     """主程序入口"""
     try:
         # 初始化配置
