@@ -5,6 +5,7 @@ import threading
 import requests
 
 from api.config import GlobalConst as gc
+from api.privacy import register_secret
 
 # 定义全局 Cookie 文件锁，保证读写绝对安全
 cookie_lock = threading.RLock()
@@ -14,6 +15,7 @@ def save_cookies(session: requests.Session):
     with cookie_lock:
         buffer = ""
         for k, v in session.cookies.items():
+            register_secret(v)
             buffer += f"{k}={v};"
         buffer = buffer.removesuffix(";")
         with open(gc.COOKIES_PATH, "w") as f:
@@ -38,6 +40,7 @@ def use_cookies() -> dict:
                     parts = item.split("=", 1)
                     if len(parts) == 2:
                         cookies[parts[0]] = parts[1]
+                        register_secret(parts[1])
         except Exception:
             return {}
 

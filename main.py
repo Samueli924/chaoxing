@@ -13,6 +13,7 @@ from api.answer import Tiku
 from api.base import Chaoxing, Account, StudyResult
 from api.exceptions import LoginError, InputFormatError
 from api.logger import logger
+from api.privacy import redact
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
@@ -41,8 +42,8 @@ def log_error(func):
             func(*args, **kwargs)
         except BaseException as e:
             logger.error(f"Error in thread {threading.current_thread().name}: {e}")
-            traceback.print_exception(type(e), e, e.__traceback__)
-            raise
+            logger.error(redact(traceback.format_exc()))
+            raise RuntimeError(redact(str(e))) from None
 
     return wrapper
 
@@ -628,7 +629,7 @@ def main():
             notification.send(f"chaoxing : 出现错误 {type(e).__name__}: {e}\n{traceback.format_exc()}")
         except Exception:
             pass  # 如果通知发送失败，忽略异常
-        raise e
+        raise RuntimeError(redact(str(e))) from None
 
 
 if __name__ == "__main__":
