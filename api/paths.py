@@ -97,8 +97,9 @@ def backup_config(keep=15):
         for old in files[keep:]:
             try:
                 os.remove(os.path.join(backups_dir(), old))
-            except Exception:
-                pass
+            except OSError as exc:
+                from api.logger import logger
+                logger.debug("旧配置备份清理失败（{}）", type(exc).__name__)
         return dst
     except Exception:
         return None

@@ -194,7 +194,7 @@ def audit_warnings(sample: dict) -> list:
     text = str(sample.get("text") or "")
     warnings = []
     sentences = [s for s in re.split(r"[。！？!?\n]", text) if s.strip()]
-    # 犹豫词不再算"人味"证据：提示词里就要求过，审计再拿它当证据是自我验证（第五轮审计指出）
+    # 犹豫词不再算"人味"证据：提示词里就要求过，审计再拿它当证据是自我验证
     human_marker = (any(word in text for word in COLLOQUIAL)
                     or any(len(s) <= 12 for s in sentences))
     if len(text) >= 200 and not human_marker:

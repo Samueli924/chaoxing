@@ -46,6 +46,8 @@ class FakeClient:
         outer = self
 
         class Completions:
+            """Provide a synthetic test dependency."""
+
             def create(self, **kwargs):
                 outer.calls.append(kwargs)
                 item = outer.script.pop(0) if outer.script else FakeResponse(FakeMessage(""))

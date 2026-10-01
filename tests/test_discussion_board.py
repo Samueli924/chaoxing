@@ -144,6 +144,8 @@ class ResolveBbsidTestCase(unittest.TestCase):
 
     def test_missing_board_returns_empty(self):
         class EmptyTC:
+            """Provide a synthetic test dependency."""
+
             def get_course_tasks(self, course):
                 return []
         self.assertEqual(discussion.resolve_bbsid(EmptyTC(), {"title": "课"}), "")
@@ -171,6 +173,8 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         tc = FakeTaskCenter(session)
 
         class Chaoxing:
+            """Provide a synthetic test dependency."""
+
             def get_course_list(self):
                 return [{"courseId": "1", "title": "没讨论区的课"},
                         {"courseId": "2", "title": "示例课程"}]
@@ -218,6 +222,8 @@ class FetchAllTopicsTestCase(unittest.TestCase):
         }
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def __init__(self):
                 """Initialize configuration and runtime state."""
                 self.calls = []
@@ -235,6 +241,8 @@ class FetchAllTopicsTestCase(unittest.TestCase):
 
     def test_reports_capped_when_page_limit_reached(self):
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, **kwargs):
                 return FakeResp({"status": True,
                                  "datas": [_topic_item(uuid="u%d" % kwargs["params"]["page"])]
@@ -367,6 +375,8 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
         tc = TaskCenter(object(), {})
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def __init__(self):
                 """Initialize configuration and runtime state."""
                 self.posts = []

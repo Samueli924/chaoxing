@@ -384,6 +384,8 @@ class VideoProgressParseTestCase(unittest.TestCase):
     """#175 #298：视频进度上报接口返回非 JSON 时不能抛异常打断整章."""
 
     class _Resp:
+        """Provide a synthetic test dependency."""
+
         def __init__(self, payload=None, raw=False):
             """Initialize configuration and runtime state."""
             self._payload = payload
@@ -406,7 +408,11 @@ class ChapterReadFailureTestCase(unittest.TestCase):
     """#223 #357：任务点读取失败不能被当成"章节已完成"静默打勾."""
 
     class _Cx:
+        """Provide a synthetic test dependency."""
+
         class _Limiter:
+            """Provide a synthetic test dependency."""
+
             @staticmethod
             def limit_rate(**kwargs):
                 return None
@@ -417,6 +423,8 @@ class ChapterReadFailureTestCase(unittest.TestCase):
             return None, {}
 
     class _CxEmpty(_Cx):
+        """Provide a synthetic test dependency."""
+
         def get_job_list(self, course, point):
             return [], {"notOpen": False}
 
@@ -567,6 +575,8 @@ class LoginRobustnessTestCase(unittest.TestCase):
     """#163 #164 #220：登录接口没超时 / 返回非 JSON 时不能崩或挂死."""
 
     class _FakeResponse:
+        """Provide a synthetic test dependency."""
+
         status_code = 200
         text = "blocked"
 
@@ -677,10 +687,14 @@ class VideoReplayTestCase(unittest.TestCase):
             return state["calls"] >= 2, 200
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
             def get(self, url, **kwargs):
                 class R:
+                    """Provide a synthetic test dependency."""
+
                     status_code = 200
 
                     @staticmethod
@@ -722,10 +736,14 @@ class VideoReplayTestCase(unittest.TestCase):
             return state["calls"] >= 2, 200
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
             def get(self, url, **kwargs):
                 class R:
+                    """Provide a synthetic test dependency."""
+
                     status_code = 200
 
                     @staticmethod

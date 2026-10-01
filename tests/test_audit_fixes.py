@@ -95,11 +95,15 @@ class SituationalDialogueTestCase(unittest.TestCase):
         tc = TaskCenter(object(), {})
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             url = "https://mooc2-ans.chaoxing.com/mooc2-ans-vue/situationalDialogue?courseid=1"
             text = "<html>situationalDialogue</html>"
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, **kwargs):
                 return Resp()
 
@@ -128,10 +132,14 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "<html></html>"
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 
@@ -149,6 +157,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "{}"
 
@@ -156,6 +166,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
                 return {"result": False, "msg": "任务未完成"}
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 
@@ -170,6 +182,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "<html>login</html>"
 
@@ -177,6 +191,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
                 raise ValueError("not json")
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 

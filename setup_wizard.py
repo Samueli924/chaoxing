@@ -760,8 +760,9 @@ def do_login(username, password):
     name = ""
     try:
         name = cx.get_name()
-    except Exception:
-        pass
+    except Exception as exc:
+        from api.logger import logger
+        logger.debug("账号昵称读取失败（{}）", type(exc).__name__)
     return cx, name
 
 

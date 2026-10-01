@@ -32,6 +32,8 @@ class ObjectiveAnswerTestCase(unittest.TestCase):
     """选择题/判断题只提交字母或对错，不能带解释、不能回显平台反馈."""
 
     class Writer:
+        """Provide a synthetic test dependency."""
+
         def __init__(self, choice="D", judge="对"):
             """Initialize configuration and runtime state."""
             self.choice = choice
@@ -105,7 +107,7 @@ class AuditToolTestCase(unittest.TestCase):
         self.assertEqual(human_audit.audit_all(good)["problems"], 0)
 
     def test_flags_fabricated_resume(self):
-        """在校学生的"我实习那家公司"就是编的（AGENTS.md 4.9 明确禁止）."""
+        """在校学生的"我实习那家公司"没有可验证的素材支持."""
         bad = [{"kind": "主题讨论",
                 "text": "我之前实习那家公司就这样，使命写得挺响，实际考核全是拉新和续费。"}]
         rules = {rule for item in human_audit.audit_all(bad)["items"] for rule, _ in item["issues"]}

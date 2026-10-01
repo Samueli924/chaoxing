@@ -122,12 +122,15 @@ class WriterTestCase(unittest.TestCase):
 
 class ThinkingPolicyPayloadTestCase(unittest.TestCase):
     """Thinking 策略."""
+
     # auto（默认）= 第一次请求不带 thinking，让 V4.1 flash 自己推理；
     # 正文为空才自动降级成 thinking=disabled 再试一次。
 
     @staticmethod
     def _fake_response(content):
         class R:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             def raise_for_status(self):
                 return None

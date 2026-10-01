@@ -159,13 +159,11 @@ def emit(text):
         return
     try:
         print(line)
-    except Exception:
-        pass
-    try:
-        from api.logger import log_file_only
-        log_file_only(line.strip(), 'INFO')
-    except Exception:
-        pass
+    except (OSError, UnicodeError) as exc:
+        from api.logger import logger
+        logger.debug("控制台留痕输出失败（{}）", type(exc).__name__)
+    from api.logger import log_file_only
+    log_file_only(line.strip(), 'INFO')
 
 
 def emit_block(title: str, text: str, width: int = 60) -> None:

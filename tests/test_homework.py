@@ -223,6 +223,8 @@ class JobListParseTestCase(unittest.TestCase):
         cx = base_mod.Chaoxing()
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 num = str((params or {}).get("num", ""))
                 return FakeResponse(text=pages.get(num, ""))

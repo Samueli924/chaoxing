@@ -281,6 +281,7 @@ class DocumentTestCase(unittest.TestCase):
 
 class FakeGroupEngine:
     """Simulate sequential group unlocks without contacting a server."""
+
     def __init__(self, plans_by_group):
         """Initialize configuration and runtime state."""
         self.plans_by_group = plans_by_group
@@ -646,6 +647,8 @@ class GroupUnlockTestCase(unittest.TestCase):
         }
 
         class FakeChaoxing:
+            """Provide a synthetic test dependency."""
+
             last_student_job_info = None
 
         chaoxing = FakeChaoxing()
@@ -684,6 +687,8 @@ class GroupUnlockTestCase(unittest.TestCase):
         fake.sync_chapter_plan = lambda etui, data: synced.append(data) or True
 
         class FakeChaoxing:
+            """Provide a synthetic test dependency."""
+
             last_student_job_info = None
 
         def fake_process_chapter(cx, course, point, speed, engine_info=False):
@@ -708,6 +713,8 @@ class GroupUnlockTestCase(unittest.TestCase):
 
     def test_task_list_read_failure_is_not_reported_as_completion(self):
         class FailedTC:
+            """Provide a synthetic test dependency."""
+
             last_read_failed = True
 
             def get_course_tasks(self, course):
@@ -916,6 +923,8 @@ class DocumentWatchDurationTestCase(unittest.TestCase):
         seen = {}
 
         class HeaderSession:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 seen.update(kwargs)
                 return FakeResponse(status_code=403)
@@ -953,6 +962,7 @@ class SubmitModeTestCase(unittest.TestCase):
 
 class ConfirmPromptStdinTestCase(unittest.TestCase):
     """确认提示必须先让键盘监听让出 stdin."""
+
     #
     # 终端并发约束：章节阶段起的键盘监听线程会把终端设成
     # cbreak 并一直 os.read(stdin,1)，与 input() 抢字符——逐字敲 "yes" 会被
@@ -970,6 +980,8 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
                 events.append("resume")
 
         class FakeTTY:
+            """Provide a synthetic test dependency."""
+
             def isatty(self):
                 return True
 
@@ -1107,6 +1119,8 @@ class AIPracticeTestCase(unittest.TestCase):
             return FakeResponse(lines=lines)
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context=""):
                 return "A"
 
@@ -1238,6 +1252,8 @@ class AIPracticeTestCase(unittest.TestCase):
             return FakeResponse(payload={"status": True, "data": state["submits"]})
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context=""):
                 return "A"
 
@@ -1293,6 +1309,8 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         calls = []
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append(dict(params or {}))
                 return FakeResponse(payload=payload)
@@ -1323,6 +1341,8 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         calls = []
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append(dict(params or {}))
                 return FakeResponse(status_code=403, text="403 错误页")
@@ -1342,10 +1362,14 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         from api import base as base_mod
 
         class FakeProc:
+            """Provide a synthetic test dependency."""
+
             stdout = '{"isPassed": true}\n200'
             returncode = 0
 
         class FakeSession:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
         with mock.patch("shutil.which", return_value="/usr/bin/curl"), \
@@ -1373,6 +1397,8 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
 
     def _sess(self, calls, stu):
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append((url, dict(params or {})))
                 if "mooc-ans/job/document" in url:
@@ -1520,6 +1546,8 @@ class AIReportScoreTestCase(unittest.TestCase):
             return FakeResponse(payload={"status": True, "data": 1})
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 
@@ -1560,6 +1588,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
     def test_options_without_type_are_answered_as_choice(self):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "B"
 
@@ -1582,6 +1612,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
         """题型编码没见过（如 "2"）但题目给了选项：按客观题作答，不写小作文."""
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 
@@ -1602,6 +1634,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
     def test_chinese_judgement_label_answers_with_dui_cuo(self):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_judgement(self, question, context="", exclude=None):
                 return "错"
 
@@ -1620,8 +1654,9 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
 class AIPracticeLoopGuardTestCase(unittest.TestCase):
     """平台拿自己的大模型判分，会把标准答案判错并反复推回同一题."""
+
     #
-    # 实测被推回 15 次、整局拖到 112 题。知识点答完后必须及时收手。
+    # 同一题重复出现时，知识点答完后应及时结束，避免无效循环。
 
     PAGE_URL = AIPracticeTestCase.PAGE_URL
     QUESTION = [
@@ -1643,6 +1678,8 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
 
     def _run(self, state, load_data, talk, submit):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 banned = {str(item).upper() for item in (exclude or [])}
                 for letter in "ABCD":
@@ -1813,6 +1850,8 @@ class AIAverageScoreTestCase(unittest.TestCase):
             return FakeResponse(lines=['data:{"id":"score","content":"95"}', "data:[DONE]"])
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 
