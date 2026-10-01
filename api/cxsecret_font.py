@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import site
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, IO, Optional, Union
@@ -47,7 +48,11 @@ def resource_path(relative_path: str) -> str:
     candidate = os.path.join(base_path, relative_path)
     if os.path.isfile(candidate):
         return candidate
-    return os.path.join(sys.prefix, "share", "chaoxing", os.path.basename(relative_path))
+    for data_root in (base_path, sys.prefix, site.getuserbase()):
+        installed = os.path.join(data_root, "share", "chaoxing", os.path.basename(relative_path))
+        if os.path.isfile(installed):
+            return installed
+    return candidate
 
 
 class FontHashDAO:
