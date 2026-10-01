@@ -139,9 +139,9 @@ def _migrate_once():
         new_cache = cache_path()
         if os.path.exists(old_cache) and not os.path.exists(new_cache):
             shutil.copy2(old_cache, new_cache)
-    except Exception:
-        # 迁移失败不能影响主流程
-        pass
+    except (OSError, shutil.Error) as exc:
+        from api.logger import logger
+        logger.debug("旧配置迁移失败（{}）", type(exc).__name__)
 
 
 def init():

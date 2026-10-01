@@ -317,8 +317,9 @@ class ChapterProgress:
         except Exception:
             try:
                 print(line, file=sys.stderr, flush=True)
-            except Exception:
-                pass
+            except (OSError, UnicodeError) as exc:
+                from api.logger import logger
+                logger.debug("进度输出不可用（{}）", type(exc).__name__)
 
     def _bump(self, kind, title, extra=""):
         with self._lock:

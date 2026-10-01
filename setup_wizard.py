@@ -1087,8 +1087,9 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
         f.write(text)
     try:
         os.chmod(user_config, 0o600)
-    except Exception:
-        pass
+    except OSError:
+        if os.name != "nt":
+            raise
     return user_config
 
 
