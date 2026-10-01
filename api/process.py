@@ -5,15 +5,13 @@ from api.config import GlobalConst as gc
 
 
 def sec2time(seconds: int) -> str:
-    """
-    将秒数转换为时分秒格式的字符串。
-    
-    Args:
-        seconds: 要转换的秒数
-        
-    Returns:
-        格式化的时间字符串，格式为 "h:mm:ss" 或 "mm:ss"，如果秒数为0则返回"--:--"
-    """
+    """将秒数转换为时分秒格式的字符串."""
+    #
+    # Args:
+    # seconds: 要转换的秒数
+    #
+    # Returns:
+    # 格式化的时间字符串，格式为 "h:mm:ss" 或 "mm:ss"，如果秒数为0则返回"--:--"
     hours = int(seconds / 3600)
     minutes = int(seconds % 3600 / 60)
     secs = int(seconds % 60)
@@ -27,19 +25,17 @@ def sec2time(seconds: int) -> str:
 
 def show_progress(task_name: str, start_position: int, duration: int,
                   total_length: int, speed: float) -> None:
-    """
-    显示任务进度条，模拟任务进度。
-    
-    Args:
-        task_name: 当前执行的任务名称
-        start_position: 起始位置（以秒为单位）
-        duration: 任务持续时间（以秒为单位）
-        total_length: 任务总长度（以秒为单位）
-        speed: 任务执行速度
-        
-    Returns:
-        None
-    """
+    """显示任务进度条，模拟任务进度."""
+    #
+    # Args:
+    # task_name: 当前执行的任务名称
+    # start_position: 起始位置（以秒为单位）
+    # duration: 任务持续时间（以秒为单位）
+    # total_length: 任务总长度（以秒为单位）
+    # speed: 任务执行速度
+    #
+    # Returns:
+    # None
     start_time = time.time()
     expected_end_time = start_time + (duration / speed)
 
@@ -64,16 +60,14 @@ def show_progress(task_name: str, start_position: int, duration: int,
 
 
 def increase_learning_count_for_course(chaoxing, course, config):
-    """
-    为单个课程增加章节学习次数。
-
-    遍历课程的所有章节，轮询调用 studentstudyAjax，直到总次数达到 target_count。
-
-    Args:
-        chaoxing: Chaoxing 实例
-        course: 课程信息字典
-        config: 配置字典，需包含 target_count 字段
-    """
+    """为单个课程增加章节学习次数."""
+    #
+    # 遍历课程的所有章节，轮询调用 studentstudyAjax，直到总次数达到 target_count。
+    #
+    # Args:
+    # chaoxing: Chaoxing 实例
+    # course: 课程信息字典
+    # config: 配置字典，需包含 target_count 字段
     target_count = config.get("target_count", 100)
     logger.info(f"开始为课程 [{course['title']}] 增加章节学习次数, 目标总次数: {target_count}")
 

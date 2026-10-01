@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# cx —— 超星刷课（多用户）
+#
+#   cx            启动：已配置则直接选用户->登录->选课->刷课
+#   cx setup      重新配置（答题方式 / 通知）
+#   cx discuss    浏览讨论区、自己挑帖子回复
+#   cx review     复核 AI 生成并提交过的文字
+#   cx --yes      跳过确认（自动化用）
+#   cx <参数...>  直接用上次的配置运行 main.py
+
+set -o pipefail
+
+# 定位项目目录（支持软链接，可从任意目录调用）
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+APP_DIR="${CX_HOME:-$(cd -P "$(dirname "$src")" && pwd)}"
+cd "$APP_DIR" || exit 1
+
+if [ -x "$APP_DIR/.venv/bin/python" ]; then
+  PY="$APP_DIR/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PY="$(command -v python3)"
+else
+  echo "cx: 找不到 python3" >&2
+  exit 1
+fi
+
+# cx setup -> 重新配置
+if [ "${1:-}" = "setup" ]; then
+  shift
+  exec "$PY" "$APP_DIR/setup_wizard.py" --setup "$@"
+fi
+
+# cx discuss -> 浏览讨论区、自己挑帖子回复（模式 2）
+if [ "${1:-}" = "discuss" ] || [ "${1:-}" = "topics" ]; then
+  shift
+  exec "$PY" "$APP_DIR/main.py" --discuss "$@"
+fi
+
+# cx review -> 复核 AI 生成过的文字（测验简答 / 作业简答 / 讨论回复 / AI实践作答）
+if [ "${1:-}" = "review" ]; then
+  shift
+  exec "$PY" "$APP_DIR/main.py" --review "$@"
+fi
+# 无参数 或 --yes -> 正常流程（已配置则不再重复询问配置）
+if [ "${1:-}" = "" ] || [ "${1:-}" = "--yes" ] || [ "${1:-}" = "-y" ]; then
+  exec "$PY" "$APP_DIR/setup_wizard.py" "$@"
+fi
+
+# 其它参数 -> 直接用上次的配置运行 main.py
+exec "$PY" "$APP_DIR/main.py" "$@"

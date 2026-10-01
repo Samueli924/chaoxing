@@ -146,6 +146,8 @@ cookies.txt
 .config.ini
 config.ini
 chaoxing.log
+# 多用户模式保存的账号（含明文密码，绝不能提交）
+accounts/
 config*.ini
 .chaoxing.log
 ./config.ini
@@ -154,6 +156,27 @@ config*.ini
 .idea/
 .vscode/
 cache.json
+
+# 探针本机配置（含真实账号/课程参数，绝不入库）
+tools/probe/local.env
+
+# 抓包文件：*.har 一律不入库；capture_*.txt 脱敏后可以入库（提交前必须自查）
+docs/artifacts/*.har
 start*.bat
 .workbuddy/
 myConfig/
+
+# Private development material must never be published.
+AGENTS.md
+CLAUDE.md
+docs/handoff/
+docs/artifacts/
+private/
+*.har
+*capture*.txt
+SESSION-LOG*
+TASKS.yaml
+HANDOFF*
+AUDIT-REPORT*
+.env.*
+!.env.example

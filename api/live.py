@@ -9,6 +9,7 @@ from api.logger import logger
 
 class Live:
     def __init__(self, attachment: dict, defaults: dict, course_id: str):
+        """Initialize configuration and runtime state."""
         self.attachment = attachment
         self.defaults = defaults  # 包含用户ID、课程ID等信息
         self.course_id = course_id  # 课程ID
@@ -19,7 +20,7 @@ class Live:
         })
 
     def do_finish(self):
-        """提交直播观看时长（核心方法）"""
+        """提交直播观看时长（核心方法）."""
         # 从直播信息中提取关键参数
         stream_name = self.attachment.get("property", {}).get("streamName")
         vdoid = self.attachment.get("property", {}).get("vdoid")
@@ -44,7 +45,7 @@ class Live:
             return False
 
     def get_status(self) -> dict | None:
-        """获取直播状态（总时长等信息）"""
+        """获取直播状态（总时长等信息）."""
         live_id = self.attachment.get("property", {}).get("liveId")
         user_id = self.defaults.get("userid")
         clazz_id = self.defaults.get("clazzId")

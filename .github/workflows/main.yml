@@ -1,46 +1,43 @@
-name: CI
+name: Windows package
 
 on:
   push:
-
-  # Allows you to run this workflow manually from the Actions tab
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            architecture: 'x64'
-            name: 'win64'
-
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          architecture: ${{matrix.architecture}}
 
       - name: Install requirements
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build win bin
-        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
+      - name: Build binaries
+        run: |
+          pyinstaller -F main.py -n chaoxing --add-data "resource;resource" --hidden-import=chardet
+          pyinstaller -F setup_wizard.py -n chaoxing-setup --add-data "resource;resource" --add-data "config_template.ini;." --hidden-import main
+
+      - name: Smoke test executable
+        run: ./dist/chaoxing.exe --help
 
       - name: Create release package
         run: |
           mkdir release
           copy dist\chaoxing.exe release\
+          copy dist\chaoxing-setup.exe release\
           copy config_template.ini release\
           cd release
-          7z a -tzip chaoxing.zip *
+          7z a -tzip chaoxing-win64.zip *
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: 'release/chaoxing.zip'
+          name: win64
+          path: release/chaoxing-win64.zip

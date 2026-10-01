@@ -1,14 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chaoxing"
 version = "3.1.3"
-description = "超星学习通/超星尔雅/泛雅超星全自动无人值守完成任务点"
+description = "Command-line automation for Chaoxing (Xuexitong / Fanya): chapters and the Task Center"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13,<4.0"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-py-modules = []
+py-modules = ["main", "setup_wizard"]
+packages = ["api"]
+
+[tool.setuptools.data-files]
+"share/chaoxing" = ["config_template.ini", "resource/font_map_table.json"]
+
+[project.scripts]
+chaoxing = "main:main"
+chaoxing-setup = "setup_wizard:main"
 
 [tool.setuptools.dynamic]
 dependencies = {file=["requirements.txt"]}
