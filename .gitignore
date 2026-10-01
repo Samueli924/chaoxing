@@ -157,3 +157,18 @@ cache.json
 start*.bat
 .workbuddy/
 myConfig/
+
+# Local credentials and development records
+.env*
+!.env.example
+AGENTS.md
+CLAUDE.md
+docs/handoff/
+docs/artifacts/
+private/
+*.har
+*capture*.txt
+SESSION-LOG*
+TASKS.yaml
+HANDOFF*
+AUDIT-REPORT*

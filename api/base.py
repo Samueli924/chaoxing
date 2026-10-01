@@ -23,6 +23,7 @@ from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
 from api.cookies import save_cookies, use_cookies
+from api.privacy import register_secret
 from api.decode import (
     decode_course_list,
     decode_course_point,
@@ -95,6 +96,8 @@ class Account:
     isSuccess = None
 
     def __init__(self, _username, _password):
+        register_secret(_username)
+        register_secret(_password)
         self.username = _username
         self.password = _password
 
@@ -394,7 +397,7 @@ class Chaoxing:
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
-            logger.debug(f"Logged in with cookies: {SessionManager.get_instance()._session.cookies}")
+            logger.debug("Cookie session loaded")
             if not self._validate_cookie_session():
                 logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
                 if self.account and self.account.username and self.account.password:
@@ -917,7 +920,7 @@ class Chaoxing:
                             if refreshed_play_time is not None:
                                 play_time = int(refreshed_play_time)
 
-                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, duration, play_time)
+                            logger.debug("已刷新视频会话，持续时间: {}, 播放时间: {}", duration, play_time)
                             pbar = self._close_pbar_safe(pbar)
                             continue
                         else:

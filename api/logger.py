@@ -2,6 +2,7 @@ import sys
 
 from loguru import logger
 from tqdm import tqdm
+from api.privacy import patch_record
 
 tqdm_stream = sys.stderr
 
@@ -34,5 +35,6 @@ def tqdm_sink(msg):
 
 
 logger.remove()
-logger.add(tqdm_sink, colorize=True, enqueue=True)
-logger.add("chaoxing.log", rotation="10 MB", level="TRACE")
+logger.configure(patcher=patch_record)
+logger.add(tqdm_sink, colorize=True, enqueue=True, diagnose=False)
+logger.add("chaoxing.log", rotation="10 MB", level="TRACE", diagnose=False)
