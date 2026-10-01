@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from uuid import uuid4
 
 from api import privacy, review
 from api.logger import logger
@@ -12,7 +13,7 @@ from api.logger import logger
 
 class PrivacyTest(unittest.TestCase):
     def test_console_and_file_sinks_redact_fields_urls_and_exceptions(self):
-        secret = "synthetic-canary-auth-value"
+        secret = uuid4().hex
         privacy.register_secret(secret)
         console = io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
@@ -67,3 +68,25 @@ class PrivacyTest(unittest.TestCase):
                 self.assertNotIn("synthetic-private", path.read_text())
                 self.assertNotIn("must-not-persist", path.read_text())
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+
+class CurlConfigTest(unittest.TestCase):
+    def test_headers_and_cookies_cannot_inject_curl_options(self):
+        from api.base import _curl_get, _curl_config_value
+        import requests
+        self.assertEqual(_curl_config_value('a\\b"c'), 'a\\\\b\\"c')
+        session = requests.Session()
+        with mock.patch("shutil.which", return_value="/usr/bin/curl"), mock.patch("subprocess.run") as run:
+            for field in ("X-Test", "X-Test\noutput"):
+                self.assertIsNone(_curl_get(session, "https://example.invalid/", {},
+                                           {field: "value\noutput = stolen"}))
+            session.cookies.set("sid", "value\noutput = stolen")
+            self.assertIsNone(_curl_get(session, "https://example.invalid/", {}))
+            run.assert_not_called()
+
+    @unittest.skipIf(__import__("os").name == "nt", "POSIX permission checks")
+    def test_private_data_directory_permission_failure_is_reported(self):
+        from api.paths import data_dir
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict("os.environ", {"CX_DATA_HOME": directory}), mock.patch("os.chmod", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                data_dir()

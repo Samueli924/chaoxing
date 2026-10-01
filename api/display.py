@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
-刷课进度显示
-
-目标：刷课时不再刷屏，每完成一个章节只输出一行，清晰可读。
-
-显示形式：
-  ██████░░░░░░░░░░░░░░░░░░░░   23/111  21%   剩 88 节 · 预计 12 分 30 秒   ✓ 1.2 什么是马克思主义
-  ██████████░░░░░░░░░░░░░░░░   24/111  22%   剩 87 节 · 预计 12 分 10 秒   ⤼ 3.1 社会形态（未开放）
-  ████████████░░░░░░░░░░░░░░   25/111  23%   剩 86 节 · 预计 11 分 50 秒   ✗ 4.2.6 社会形态
-
-  ✓ 完成   ⤼ 跳过   ✗ 失败
-
-通过 tqdm.write 输出，与视频进度条共存不会互相破坏。
-"""
+"""刷课进度显示."""
+#
+# 目标：刷课时不再刷屏，每完成一个章节只输出一行，清晰可读。
+#
+# 显示形式：
+# ██████░░░░░░░░░░░░░░░░░░░░   23/111  21%   剩 88 节 · 预计 12 分 30 秒   ✓ 1.2 什么是马克思主义
+# ██████████░░░░░░░░░░░░░░░░   24/111  22%   剩 87 节 · 预计 12 分 10 秒   ⤼ 3.1 社会形态（未开放）
+# ████████████░░░░░░░░░░░░░░   25/111  23%   剩 86 节 · 预计 11 分 50 秒   ✗ 4.2.6 社会形态
+#
+# ✓ 完成   ⤼ 跳过   ✗ 失败
+#
+# 通过 tqdm.write 输出，与视频进度条共存不会互相破坏。
 
 import re
 import sys
@@ -24,27 +22,23 @@ from tqdm import tqdm
 
 
 def safe_console():
-    """
-    让控制台输出永远不会因为编码问题崩溃。
-
-    Windows 中文版控制台默认是 GBK 编码，课程名 / 题干里只要出现一个
-    &nbsp;(\xa0) 之类的字符，print 就会抛 UnicodeEncodeError 直接结束程序（#602）。
-    这里只放宽错误处理（errors="replace"），不改编码 ——
-    改编码会让中文在旧控制台上变成乱码。
-    """
+    """让控制台输出永远不会因为编码问题崩溃."""
+    #
+    # Windows 中文版控制台默认是 GBK 编码，课程名 / 题干里只要出现一个
+    # &nbsp;( ) 之类的字符，print 就会抛 UnicodeEncodeError 直接结束程序（#602）。
+    # 这里只放宽错误处理（errors="replace"），不改编码 ——
+    # 改编码会让中文在旧控制台上变成乱码。
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="replace")
-        except Exception:
-            # 被重定向 / 打包成窗口程序时没有 reconfigure，忽略即可
-            pass
+        except (AttributeError, OSError, ValueError) as exc:
+            from api.logger import logger
+            logger.debug("控制台编码设置不可用（{}）", type(exc).__name__)
 
 
 def _disp_width(text) -> int:
-    """
-    字符串在终端里的显示宽度。
-    中文/全角字符占 2 列，ASCII 占 1 列 —— 直接用 len() 会导致中文对不齐。
-    """
+    """字符串在终端里的显示宽度."""
+    # 中文/全角字符占 2 列，ASCII 占 1 列 —— 直接用 len() 会导致中文对不齐。
     width = 0
     for ch in str(text):
         if unicodedata.east_asian_width(ch) in ("W", "F"):
@@ -55,14 +49,14 @@ def _disp_width(text) -> int:
 
 
 def _pad_right(text, width) -> str:
-    """按显示宽度右侧补空格"""
+    """按显示宽度右侧补空格."""
     text = str(text)
     gap = width - _disp_width(text)
     return text + (" " * gap if gap > 0 else "")
 
 
 def _truncate(text, max_width) -> str:
-    """按显示宽度截断，超出部分用省略号"""
+    """按显示宽度截断，超出部分用省略号."""
     text = str(text)
     if _disp_width(text) <= max_width:
         return text
@@ -78,7 +72,7 @@ def _truncate(text, max_width) -> str:
 
 
 def _fmt_duration(seconds, ceil_min=False):
-    """秒 -> 可读时长；ceil_min=True 时不足 1 秒也显示 1 秒"""
+    """秒 -> 可读时长；ceil_min=True 时不足 1 秒也显示 1 秒."""
     try:
         seconds = float(seconds)
     except Exception:
@@ -97,7 +91,7 @@ def _fmt_duration(seconds, ceil_min=False):
 
 
 def _fmt_bar(done, total, width=20):
-    """文本进度条（用方块字符，比 # 更清晰）"""
+    """文本进度条（用方块字符，比 # 更清晰）."""
     if total <= 0:
         return "░" * width
     filled = int(width * done / total)
@@ -122,7 +116,7 @@ QUESTION_TYPE_LABELS = {
 
 
 def clip(text, limit: int = 36) -> str:
-    '''单行显示用的截断（按显示宽度，中文算 2 列）'''
+    """单行显示用的截断（按显示宽度，中文算 2 列）."""
     value = re.sub(r'\s+', ' ', str(text or '')).strip()
     if not value:
         return ''
@@ -140,7 +134,7 @@ def clip(text, limit: int = 36) -> str:
 
 
 def answer_line(index, q_type, answer, title: str = "") -> str:
-    '''一题的作答留痕：序号 + 题型 + 题干提示 + 答案'''
+    """一题的作答留痕：序号 + 题型 + 题干提示 + 答案."""
     label = QUESTION_TYPE_LABELS.get(str(q_type or '').lower(), '作答')
     hint = clip(title, 20)
     prefix = f'    {index:>2}. {label:<4}'
@@ -153,12 +147,12 @@ def answer_line(index, q_type, answer, title: str = "") -> str:
 
 
 def answers_header(title, count) -> str:
-    '''一次作答的开头：题目数量一眼可见'''
+    """一次作答的开头：题目数量一眼可见."""
     return f'  作答 · {clip(title, 24)}（{count} 题）'
 
 
 def emit(text):
-    '''把一行留痕同时写到控制台和运行日志（普通运行日志即可回溯）'''
+    """把一行留痕同时写到控制台和运行日志（普通运行日志即可回溯）."""
     from api.privacy import redact
     line = redact(str(text or ''))
     if not line.strip():
@@ -175,7 +169,7 @@ def emit(text):
 
 
 def emit_block(title: str, text: str, width: int = 60) -> None:
-    '''多行正文（讨论回复等）留痕：标题一行 + 折行正文'''
+    """多行正文（讨论回复等）留痕：标题一行 + 折行正文."""
     import textwrap
     if title:
         emit('  ' + title)
@@ -196,10 +190,8 @@ def emit_block(title: str, text: str, width: int = 60) -> None:
         emit('    ' + line)
 
 def chapter_label(point, max_width=20) -> str:
-    """
-    章节简称：优先用编号（1.2 / 1.2.3），没有编号就退回标题本身。
-    point 可以是章节字典，也可以直接是标题字符串。
-    """
+    """章节简称：优先用编号（1.2 / 1.2.3），没有编号就退回标题本身."""
+    # point 可以是章节字典，也可以直接是标题字符串。
     if isinstance(point, dict):
         title = str(point.get("title") or "").strip()
     else:
@@ -213,11 +205,9 @@ def chapter_label(point, max_width=20) -> str:
 
 
 def compress_labels(labels, max_groups=3) -> str:
-    """
-    把连续的编号压成区间：
-      ['1.1', '1.2', '1.3', '2.1'] -> '1.1~1.3、2.1'
-    传入顺序必须和章节顺序一致。
-    """
+    """把连续的编号压成区间."""
+    # ['1.1', '1.2', '1.3', '2.1'] -> '1.1~1.3、2.1'
+    # 传入顺序必须和章节顺序一致。
     labels = [str(x) for x in labels]
     if not labels:
         return ""
@@ -242,14 +232,12 @@ def compress_labels(labels, max_groups=3) -> str:
 
 
 def course_plan_summary(finished_points, pending_points, planned_count=None) -> str:
-    """
-    一门课开刷前的一句话说明，让用户一眼看清"哪些已经刷过、从哪儿接着刷"：
-
-      共 30 节待刷
-      共 12 节已完成（1.1 ~ 3.4），从 4.1 开始
-      共 12 节已完成（1.1 ~ 3.4），从 4.1 开始，本次刷 3 节
-      共 30 节全部已完成
-    """
+    """一门课开刷前的一句话说明，让用户一眼看清"哪些已经刷过、从哪儿接着刷"."""
+    #
+    # 共 30 节待刷
+    # 共 12 节已完成（1.1 ~ 3.4），从 4.1 开始
+    # 共 12 节已完成（1.1 ~ 3.4），从 4.1 开始，本次刷 3 节
+    # 共 30 节全部已完成
     finished_points = list(finished_points or [])
     pending_points = list(pending_points or [])
     done = len(finished_points)
@@ -272,9 +260,10 @@ def course_plan_summary(finished_points, pending_points, planned_count=None) -> 
 
 
 class ChapterProgress:
-    """章节级进度：每完成一个章节输出一行整体进度"""
+    """章节级进度：每完成一个章节输出一行整体进度."""
 
     def __init__(self, total, enabled=True, title_width=30):
+        """Initialize configuration and runtime state."""
         self.total = int(total or 0)
         self.done = 0
         self.failed = 0
@@ -289,7 +278,7 @@ class ChapterProgress:
         return max(0.0, time.time() - self.start_time)
 
     def _eta(self):
-        """基于平均每章节耗时估算剩余时间"""
+        """基于平均每章节耗时估算剩余时间."""
         processed = self.done + self.failed + self.skipped
         if processed <= 0:
             return None
@@ -357,7 +346,7 @@ class ChapterProgress:
         self._bump("fail", title)
 
     def summary(self):
-        """刷课结束时的总结"""
+        """刷课结束时的总结."""
         if not self._enabled:
             return
         elapsed = self._elapsed()

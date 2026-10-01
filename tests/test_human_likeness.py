@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-"""真人化回归：任何"提交给平台"的文本都不能露出 AI/机器痕迹（不联网）
-
-需要防止的错误格式：AI实践选择题被拼成
-"选 D。D：……。依据：回答正确！……平台判据：……" —— 既不是人的作答格式，
-又把平台自己的判分反馈回显了出来。
-"""
+"""真人化回归：任何"提交给平台"的文本都不能露出 AI/机器痕迹（不联网）."""
+#
+# 需要防止的错误格式：AI实践选择题被拼成
+# "选 D。D：……。依据：回答正确！……平台判据：……" —— 既不是人的作答格式，
+# 又把平台自己的判分反馈回显了出来。
 import json
 import os
 import sys
@@ -30,10 +29,11 @@ _spec.loader.exec_module(human_audit)
 
 
 class ObjectiveAnswerTestCase(unittest.TestCase):
-    """选择题/判断题只提交字母或对错，不能带解释、不能回显平台反馈"""
+    """选择题/判断题只提交字母或对错，不能带解释、不能回显平台反馈."""
 
     class Writer:
         def __init__(self, choice="D", judge="对"):
+            """Initialize configuration and runtime state."""
             self.choice = choice
             self.judge = judge
 
@@ -105,7 +105,7 @@ class AuditToolTestCase(unittest.TestCase):
         self.assertEqual(human_audit.audit_all(good)["problems"], 0)
 
     def test_flags_fabricated_resume(self):
-        """在校学生的"我实习那家公司"就是编的（AGENTS.md 4.9 明确禁止）"""
+        """在校学生的"我实习那家公司"就是编的（AGENTS.md 4.9 明确禁止）."""
         bad = [{"kind": "主题讨论",
                 "text": "我之前实习那家公司就这样，使命写得挺响，实际考核全是拉新和续费。"}]
         rules = {rule for item in human_audit.audit_all(bad)["items"] for rule, _ in item["issues"]}
@@ -114,7 +114,7 @@ class AuditToolTestCase(unittest.TestCase):
             "我之前实习那家公司就这样，使命写得挺响，实际考核全是拉新和续费。"))
 
     def test_flags_fabricated_part_time_job(self):
-        """实测模型会写"我在奶茶店做过兼职"——同样是没有依据的个人经历"""
+        """实测模型会写"我在奶茶店做过兼职"——同样是没有依据的个人经历."""
         text = "我在奶茶店做过兼职，店长从来不提什么使命，但排班先照顾谁心里有数。"
         rules = {rule for item in human_audit.audit_all(
             [{"kind": "主题讨论", "text": text}])["items"] for rule, _ in item["issues"]}
@@ -187,7 +187,7 @@ class AuditToolTestCase(unittest.TestCase):
         self.assertNotIn("引用不存在的前文", rules)
 
     def test_context_flag_alone_is_not_enough(self):
-        """光声明 has_context 不行：必须真带上被引用的原文"""
+        """光声明 has_context 不行：必须真带上被引用的原文."""
         bad = [{"kind": "主题讨论", "has_context": True,
                 "text": "奶茶店那个例子挺直观的。我觉得使命和愿景确实容易混着说。"}]
         rules = {rule for item in human_audit.audit_all(bad)["items"] for rule, _ in item["issues"]}

@@ -70,17 +70,15 @@ def log_error(func):
 
 
 class NetworkRetryFailed(Exception):
-    """网络问题重试多次仍然失败（不是用户配置错误）"""
+    """网络问题重试多次仍然失败（不是用户配置错误）."""
 
 
 def with_network_retry(func, *args, what="请求", times=3, delay=2.0, **kwargs):
-    """
-    主流程的网络请求重试。
-
-    登录 / 取课表 / 取章节这几步以前一次网络抖动就整轮崩掉（#124 #166 #192 #226 #228），
-    这里对连接类异常重试几次；仍然失败就抛 NetworkRetryFailed，
-    由 main() 统一给一句人话提示，而不是甩一堆 traceback。
-    """
+    """主流程的网络请求重试."""
+    #
+    # 登录 / 取课表 / 取章节这几步以前一次网络抖动就整轮崩掉（#124 #166 #192 #226 #228），
+    # 这里对连接类异常重试几次；仍然失败就抛 NetworkRetryFailed，
+    # 由 main() 统一给一句人话提示，而不是甩一堆 traceback。
     last_error = None
     for attempt in range(1, times + 1):
         try:
@@ -100,10 +98,8 @@ def str_to_bool(value):
 
 
 def safe_float(value, default, low=None, high=None):
-    """
-    安全地把配置值转成浮点数。
-    配置里写错（"abc"）或超范围时用默认值，绝不让程序崩溃。
-    """
+    """安全地把配置值转成浮点数."""
+    # 配置里写错（"abc"）或超范围时用默认值，绝不让程序崩溃。
     try:
         num = float(str(value).strip())
     except (TypeError, ValueError):
@@ -116,7 +112,7 @@ def safe_float(value, default, low=None, high=None):
 
 
 def safe_int(value, default, low=None, high=None):
-    """安全地把配置值转成整数；写错或超范围时用默认值"""
+    """安全地把配置值转成整数；写错或超范围时用默认值."""
     try:
         num = int(float(str(value).strip()))
     except (TypeError, ValueError):
@@ -132,7 +128,7 @@ NOTOPEN_ACTIONS = ("retry", "ask", "continue")
 
 
 def parse_args():
-    """解析命令行参数"""
+    """解析命令行参数."""
     parser = argparse.ArgumentParser(
         description="Samueli924/chaoxing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -245,7 +241,7 @@ def parse_args():
 
 
 def load_config_from_file(config_path):
-    """从配置文件加载设置"""
+    """从配置文件加载设置."""
     config, broken = read_config_file(config_path)
     if broken:
         logger.warning(f"配置文件 {config_path} 内容有损坏，已跳过异常行并尽量沿用其余设置")
@@ -329,13 +325,11 @@ def load_config_from_file(config_path):
 
 
 def _load_default_tiku_and_notification():
-    """
-    命令行模式（不带 -c）下，题库和通知设置仍然从用户配置里读。
-
-    运行时 Tiku 本来就会去读 ~/.chaoxing/config.ini 的 [tiku] 段，
-    如果启动检查看不到它，就会出现"参数都填了却被拦下来问答题方式"的矛盾。
-    只取题库和通知两段：账号 / 课程 / 刷课参数一律以命令行参数为准。
-    """
+    """命令行模式（不带 -c）下，题库和通知设置仍然从用户配置里读."""
+    #
+    # 运行时 Tiku 本来就会去读 ~/.chaoxing/config.ini 的 [tiku] 段，
+    # 如果启动检查看不到它，就会出现"参数都填了却被拦下来问答题方式"的矛盾。
+    # 只取题库和通知两段：账号 / 课程 / 刷课参数一律以命令行参数为准。
     try:
         default_config = paths.config_path()
     except Exception:
@@ -351,7 +345,7 @@ def _load_default_tiku_and_notification():
 
 
 def build_config_from_args(args):
-    """从命令行参数构建配置"""
+    """从命令行参数构建配置."""
     common_config = {
         "use_cookies": args.use_cookies,
         "username": args.username,
@@ -376,7 +370,7 @@ def build_config_from_args(args):
 
 
 def init_config():
-    """初始化配置"""
+    """初始化配置."""
     args = parse_args()
 
     if args.config:
@@ -399,7 +393,7 @@ def init_config():
 
 
 def init_chaoxing(common_config, tiku_config, config_path=None):
-    """初始化超星实例"""
+    """初始化超星实例."""
     username = common_config.get("username", "")
     password = common_config.get("password", "")
     use_cookies = common_config.get("use_cookies", False)
@@ -475,11 +469,10 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
 
 def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float,
                 engine_info: bool = False) -> StudyResult:
-    """处理单个任务点
-
-    engine_info=True 表示这次是任务引擎的"章节"任务点在刷 mooc 章节，
-    打点/文档完成请求要带 courseEngineInfo，平台才会下发 stuJobInfo。
-    """
+    """处理单个任务点."""
+    #
+    # engine_info=True 表示这次是任务引擎的"章节"任务点在刷 mooc 章节，
+    # 打点/文档完成请求要带 courseEngineInfo，平台才会下发 stuJobInfo。
     # 视频任务
     if job["type"] == "video":
         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
@@ -707,11 +700,10 @@ class JobProcessor:
 
 def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float,
                     engine_info: bool = False) -> ChapterResult:
-    """处理单个章节
-
-    engine_info=True：这次章节是任务引擎的"章节"任务点，打点要带引擎标记，
-    完成后由调用方用平台下发的 stuJobInfo 做 autoPullChapterScore 同步。
-    """
+    """处理单个章节."""
+    #
+    # engine_info=True：这次章节是任务引擎的"章节"任务点，打点要带引擎标记，
+    # 完成后由调用方用平台下发的 stuJobInfo 做 autoPullChapterScore 同步。
     # 用户已要求终止：不再开始新章节
     if interrupt.should_stop():
         return ChapterResult.ERROR
@@ -755,7 +747,7 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
 
 
 def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
-    """处理单个课程"""
+    """处理单个课程."""
     logger.info(f"开始学习课程: {course['title']}")
 
     # 获取当前课程的所有章节
@@ -780,18 +772,16 @@ def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
 
 
 def _parse_max_points(raw):
-    """
-    解析 max_points_per_course 配置。
-
-    支持：
-      3                   -> ({}, 3, [])            全部课程都刷 3 个
-      2151141:3,189191:0  -> ({'2151141':3, ...}, 0, [])
-      0 或空              -> ({}, 0, [])            全部刷完
-    返回 (每课程字典, 默认值, 无法识别的片段)
-
-    第三个返回值很重要：如果用户填了东西却一个都认不出来，
-    必须停下来提醒，绝不能默默当成"全部刷完"。
-    """
+    """解析 max_points_per_course 配置."""
+    #
+    # 支持：
+    # 3                   -> ({}, 3, [])            全部课程都刷 3 个
+    # 2151141:3,189191:0  -> ({'2151141':3, ...}, 0, [])
+    # 0 或空              -> ({}, 0, [])            全部刷完
+    # 返回 (每课程字典, 默认值, 无法识别的片段)
+    #
+    # 第三个返回值很重要：如果用户填了东西却一个都认不出来，
+    # 必须停下来提醒，绝不能默默当成"全部刷完"。
     if raw is None:
         return {}, 0, []
     text = str(raw).strip()
@@ -833,14 +823,12 @@ def _parse_max_points(raw):
 
 
 def select_points_for_course(all_points, max_points=0):
-    """
-    把一门课的章节分成"已完成"和"待刷"两部分，并算出本次要刷哪些。
-
-    已完成（has_finished）的章节直接跳过，不再排进任务队列 ——
-    否则每节都会闪过一行"预计 1 秒"，看起来像是要把前面几章重刷一遍。
-
-    返回 (已完成, 待刷, 本次要刷)
-    """
+    """把一门课的章节分成"已完成"和"待刷"两部分，并算出本次要刷哪些."""
+    #
+    # 已完成（has_finished）的章节直接跳过，不再排进任务队列 ——
+    # 否则每节都会闪过一行"预计 1 秒"，看起来像是要把前面几章重刷一遍。
+    #
+    # 返回 (已完成, 待刷, 本次要刷)
     all_points = list(all_points or [])
     finished = [p for p in all_points if p.get("has_finished")]
     pending = [p for p in all_points if not p.get("has_finished")]
@@ -852,7 +840,7 @@ def select_points_for_course(all_points, max_points=0):
 
 
 def _format_course_table(all_course):
-    """格式化课程列表，供用户选择或报错时展示"""
+    """格式化课程列表，供用户选择或报错时展示."""
     lines = ["*" * 10 + "课程列表" + "*" * 10]
     for course in all_course:
         lines.append(f"ID: {course['courseId']} 班级ID: {course['clazzId']} 课程名: {course['title']}")
@@ -861,10 +849,8 @@ def _format_course_table(all_course):
 
 
 def _parse_course_ids(raw):
-    """
-    解析用户输入的课程ID，兼容中文逗号 / 空格 / 换行 / 全角数字等常见误输入。
-    返回去重后的 ID 列表。
-    """
+    """解析用户输入的课程ID，兼容中文逗号 / 空格 / 换行 / 全角数字等常见误输入."""
+    # 返回去重后的 ID 列表。
     if raw is None:
         return []
     # 已经是列表（例如配置里解析后的 course_list）则逐个处理，避免 str(list) 变成 "['111']"
@@ -884,18 +870,16 @@ def _parse_course_ids(raw):
 
 
 def filter_courses(all_course, course_list):
-    """
-    过滤要学习的课程。
-
-    规则（严格模式）：
-      必须明确指定要刷的课程 ID。
-        - 匹配成功   -> 只刷这些课程
-        - 一个都没匹配上 -> 报错停止，绝不回退全刷
-        - 没有指定(空)   -> 报错停止，绝不自动刷全部课程
-
-    历史上这里有个"没指定就刷全部课程"的兜底逻辑，曾导致用户只想刷 1 门课
-    却把 12 门课全部刷了。该兜底已移除。
-    """
+    """过滤要学习的课程."""
+    #
+    # 规则（严格模式）：
+    # 必须明确指定要刷的课程 ID。
+    # - 匹配成功   -> 只刷这些课程
+    # - 一个都没匹配上 -> 报错停止，绝不回退全刷
+    # - 没有指定(空)   -> 报错停止，绝不自动刷全部课程
+    #
+    # 历史上这里有个"没指定就刷全部课程"的兜底逻辑，曾导致用户只想刷 1 门课
+    # 却把 12 门课全部刷了。该兜底已移除。
     if not all_course:
         raise InputFormatError("登录成功但没读到任何课程，请检查账号是否有课程")
 
@@ -954,7 +938,7 @@ TASK_CENTER_MAX_ROUNDS = 6
 
 
 def _task_center_enabled(common_config: dict, args) -> bool:
-    """任务中心开关：命令行 > 配置文件 > 默认开启"""
+    """任务中心开关：命令行 > 配置文件 > 默认开启."""
     cli = getattr(args, "task_center", None)
     if cli is not None:
         return bool(cli)
@@ -967,7 +951,7 @@ def _task_center_enabled(common_config: dict, args) -> bool:
 
 
 def _chapter_study_enabled(common_config: dict, args) -> bool:
-    """章节（目录）开关：命令行 > 配置文件 > 默认开启"""
+    """章节（目录）开关：命令行 > 配置文件 > 默认开启."""
     cli = getattr(args, "chapter_study", None)
     if cli is not None:
         return bool(cli)
@@ -981,11 +965,10 @@ def _chapter_study_enabled(common_config: dict, args) -> bool:
 
 def _discussion_mode_for_run(common_config: dict, task_center_enabled: bool,
                              only_discussion: bool) -> str:
-    """把讨论处理方式约束在本轮的任务中心范围内。
-
-    向导每轮都会重写范围，但旧账号配置、手改配置或 CLI 覆盖仍可能留下 board。
-    当本轮不跑任务中心时，把它降为 none，确保章节流程没有讨论区分派或提示。
-    """
+    """把讨论处理方式约束在本轮的任务中心范围内."""
+    #
+    # 向导每轮都会重写范围，但旧账号配置、手改配置或 CLI 覆盖仍可能留下 board。
+    # 当本轮不跑任务中心时，把它降为 none，确保章节流程没有讨论区分派或提示。
     if not (task_center_enabled or only_discussion):
         return "none"
     mode = str(common_config.get("discussion_mode", "") or "task").strip().lower()
@@ -993,7 +976,7 @@ def _discussion_mode_for_run(common_config: dict, task_center_enabled: bool,
 
 
 def _teaching_task_finished(task: dict) -> bool:
-    """教学任务在列表里的完成进度（1.0 = 全部刷完）"""
+    """教学任务在列表里的完成进度（1.0 = 全部刷完）."""
     try:
         return float(task.get("taskStudyProgress") or 0) >= 1.0
     except (TypeError, ValueError):
@@ -1001,7 +984,7 @@ def _teaching_task_finished(task: dict) -> bool:
 
 
 def _load_course_point_map(chaoxing: Chaoxing, course: dict) -> dict:
-    """knowledgeId -> 章节点。教学任务里的"章节"类型任务点要靠它落回章节刷课逻辑"""
+    """Map knowledgeId values to chapter records."""
     try:
         point_list = chaoxing.get_course_point(
             course["courseId"], course["clazzId"], course["cpi"]
@@ -1016,14 +999,72 @@ def _load_course_point_map(chaoxing: Chaoxing, course: dict) -> dict:
     return {str(point.get("id")): point for point in points}
 
 
+def _study_task_chapter(tc, chaoxing, course, plan, info, config, point_map, name):
+    """Study a chapter and synchronize only platform-provided completion data."""
+    # 章节类型：任务点带 knowledgeId，直接复用章节刷课逻辑。
+    # 与普通章节刷课的唯一区别是要带任务引擎标记，并在刷完后把平台
+    # 下发的 stuJobInfo 交给 autoPullChapterScore（任务引擎才认账）。
+    knowledge_id = str(plan.get("externalDataId") or "")
+    point = point_map.get(knowledge_id)
+    if point is None:
+        logger.warning("教学任务里的章节在目录中找不到: {}（knowledgeId={}）", name, knowledge_id)
+        return False
+    if hasattr(chaoxing, "last_student_job_info"):
+        chaoxing.last_student_job_info = None
+    logger.info("任务中心章节任务点: {}（knowledgeId={}）", name, knowledge_id)
+    result = process_chapter(chaoxing, course, point, config["speed"], engine_info=True)
+    if result != ChapterResult.SUCCESS:
+        logger.info("教学任务中的章节未完成: {} -> {}", name, result)
+        return False
+    job_info = getattr(chaoxing, "last_student_job_info", None)
+    if isinstance(job_info, dict) and job_info:
+        logger.info("教学任务章节刷完，正在同步给任务引擎: {}", name)
+        if not tc.sync_chapter_plan(info["encryTaskUserId"], job_info):
+            # 同步请求没被接受时不能继续等：引擎不认这一章的完成
+            logger.warning("章节成绩同步未被接受，本次不计完成: {}", name)
+            return False
+    else:
+        # 平台没下发同步数据（常见于章节本来就已经刷完）：不伪造 enc，
+        # 交给下面的 wait_plan_finished 复查，完成与否只认引擎状态。
+        logger.info("章节已完成但平台未下发同步数据（stuJobInfo），等待任务引擎更新: {}", name)
+    return True
+
+
+def _study_task_media(tc, course, plan, info, plan_type, name, type_name):
+    """Dispatch a supported engine task without losing cancellation outcomes."""
+    study_url = tc.get_study_url(info["encryTaskUserId"], plan.get("encryptPlanId", ""))
+    if not study_url:
+        return False
+    method_name, label, needs_course = {
+        PLAN_TYPE_VIDEO: ("study_video", "视频", False),
+        PLAN_TYPE_DOCUMENT: ("study_document", "文档", False),
+        PLAN_TYPE_HOMEWORK: ("study_homework", "作业", True),
+        PLAN_TYPE_DISCUSS: ("study_discussion", "主题讨论", True),
+        PLAN_TYPE_AI: ("study_ai_practice", "AI 实践", False),
+    }[plan_type]
+    method = getattr(tc, method_name, None)
+    if not callable(method):
+        logger.info("教学任务点类型暂不支持，需要手动完成: [{}] {}", type_name, name)
+        if hasattr(tc, "last_outcome"):
+            tc.last_outcome = TaskOutcome.UNSUPPORTED
+        return None
+    logger.info("任务中心{}任务点: {}", label, name)
+    args = (study_url, plan, course) if needs_course else (study_url, plan)
+    if method(*args):
+        return True
+    if (plan_type != PLAN_TYPE_AI and hasattr(tc, "last_outcome")
+            and tc.last_outcome != TaskOutcome.WAITING_CONFIRMATION):
+        tc.last_outcome = TaskOutcome.FAILED
+    logger.warning("任务中心{}任务未完成: {}", label, name)
+    return False
+
+
 def _complete_teaching_plan(tc: TaskCenter, chaoxing: Chaoxing, course: dict, plan: dict,
                             info: dict, config: dict, point_map: dict):
-    """
-    完成一个教学任务点。
-
-    返回 True(已完成) / False(没完成) / None(类型不支持)。
-    新任务中心客户端会额外写入 ``last_outcome``，旧的 FakeTC/调用方仍可只看 bool。
-    """
+    """完成一个教学任务点."""
+    #
+    # 返回 True(已完成) / False(没完成) / None(类型不支持)。
+    # 新任务中心客户端会额外写入 ``last_outcome``，旧的 FakeTC/调用方仍可只看 bool。
     if hasattr(tc, "last_outcome"):
         tc.last_outcome = TaskOutcome.FAILED
     try:
@@ -1040,87 +1081,11 @@ def _complete_teaching_plan(tc: TaskCenter, chaoxing: Chaoxing, course: dict, pl
         return None
 
     if plan_type == PLAN_TYPE_CHAPTER:
-        # 章节类型：任务点带 knowledgeId，直接复用章节刷课逻辑。
-        # 与普通章节刷课的唯一区别是要带任务引擎标记，并在刷完后把平台
-        # 下发的 stuJobInfo 交给 autoPullChapterScore（任务引擎才认账）。
-        knowledge_id = str(plan.get("externalDataId") or "")
-        point = point_map.get(knowledge_id)
-        if point is None:
-            logger.warning("教学任务里的章节在目录中找不到: {}（knowledgeId={}）", name, knowledge_id)
-            return False
-        if hasattr(chaoxing, "last_student_job_info"):
-            chaoxing.last_student_job_info = None
-        logger.info("任务中心章节任务点: {}（knowledgeId={}）", name, knowledge_id)
-        result = process_chapter(chaoxing, course, point, config["speed"], engine_info=True)
-        if result != ChapterResult.SUCCESS:
-            logger.info("教学任务中的章节未完成: {} -> {}", name, result)
-            return False
-        job_info = getattr(chaoxing, "last_student_job_info", None)
-        if isinstance(job_info, dict) and job_info:
-            logger.info("教学任务章节刷完，正在同步给任务引擎: {}", name)
-            if not tc.sync_chapter_plan(info["encryTaskUserId"], job_info):
-                # 同步请求没被接受时不能继续等：引擎不认这一章的完成
-                logger.warning("章节成绩同步未被接受，本次不计完成: {}", name)
-                return False
-        else:
-            # 平台没下发同步数据（常见于章节本来就已经刷完）：不伪造 enc，
-            # 交给下面的 wait_plan_finished 复查，完成与否只认引擎状态。
-            logger.info("章节已完成但平台未下发同步数据（stuJobInfo），等待任务引擎更新: {}", name)
+        result = _study_task_chapter(tc, chaoxing, course, plan, info, config, point_map, name)
     else:
-        # 视频 / 文档：走任务引擎自己的学习页
-        study_url = tc.get_study_url(info["encryTaskUserId"], plan.get("encryptPlanId", ""))
-        if not study_url:
-            return False
-        if plan_type == PLAN_TYPE_VIDEO:
-            logger.info("任务中心视频任务点: {}", name)
-            if not tc.study_video(study_url, plan):
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.FAILED
-                logger.warning("任务中心视频任务未完成: {}", name)
-                return False
-        elif plan_type == PLAN_TYPE_DOCUMENT:
-            logger.info("任务中心文档任务点: {}", name)
-            if not tc.study_document(study_url, plan):
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.FAILED
-                logger.warning("任务中心文档任务未完成: {}", name)
-                return False
-        elif plan_type == PLAN_TYPE_HOMEWORK:
-            study_homework = getattr(tc, "study_homework", None)
-            if not callable(study_homework):
-                logger.info("教学任务点类型暂不支持，需要手动完成: [{}] {}", type_name, name)
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.UNSUPPORTED
-                return None
-            logger.info("任务中心作业任务点: {}", name)
-            if not study_homework(study_url, plan, course):
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.FAILED
-                logger.warning("任务中心作业任务未完成: {}", name)
-                return False
-        elif plan_type == PLAN_TYPE_DISCUSS:
-            study_discussion = getattr(tc, "study_discussion", None)
-            if not callable(study_discussion):
-                logger.info("教学任务点类型暂不支持，需要手动完成: [{}] {}", type_name, name)
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.UNSUPPORTED
-                return None
-            logger.info("任务中心主题讨论任务点: {}", name)
-            if not study_discussion(study_url, plan, course):
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.FAILED
-                logger.warning("任务中心主题讨论任务未完成: {}", name)
-                return False
-        elif plan_type == PLAN_TYPE_AI:
-            study_ai = getattr(tc, "study_ai_practice", None)
-            if not callable(study_ai):
-                logger.info("教学任务点类型暂不支持，需要手动完成: [{}] {}", type_name, name)
-                if hasattr(tc, "last_outcome"):
-                    tc.last_outcome = TaskOutcome.UNSUPPORTED
-                return None
-            logger.info("任务中心 AI 实践任务点: {}", name)
-            if not study_ai(study_url, plan):
-                return False
+        result = _study_task_media(tc, course, plan, info, plan_type, name, type_name)
+    if result is not True:
+        return result
 
     if tc.wait_plan_finished(
         info["encryTaskUserId"], plan.get("encryptGroupId", ""), plan.get("planId")
@@ -1135,103 +1100,8 @@ def _complete_teaching_plan(tc: TaskCenter, chaoxing: Chaoxing, course: dict, pl
     return False
 
 
-def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, task: dict,
-                           config: dict, point_map: dict,
-                           only_discussion: bool = False, stats: dict = None,
-                           skip_discussion: bool = False) -> tuple:
-    """
-    按分组顺序推进一个教学任务。
-
-    任务引擎是"通关式"的：只有 groupAllowStudy=True 的分组能学，
-    上一组全部完成之后，下一组才会解锁，所以要反复重新读取分组状态。
-    """
-    logger.debug("教学任务：{} - {}", course.get("title", "?"), task.get("name", "?"))
-    print(f"    ▸ 教学任务：{task.get('name', '?')}")
-    unsupported = set()
-    # 本次运行里已经失败过的任务点：不再重试。
-    # 任务引擎的重试轮次是为"上一组刚完成、下一组还没解锁"准备的，
-    # 拿它去重试一个真的失败的任务点只会白烧时间（AI实践重试一次就是好几分钟）。
-    failed_plans = set()
-    if hasattr(tc, "last_outcome"):
-        tc.last_outcome = TaskOutcome.FAILED
-    if hasattr(tc, "waiting_confirmation"):
-        tc.waiting_confirmation = False
-
-    skipped_other_ids = set()      # 只刷讨论时，同一计划多轮扫描只计一次
-    for _ in range(TASK_CENTER_MAX_ROUNDS):
-        if interrupt.should_stop():
-            return False, unsupported
-        info = tc.open_task(task)
-        if not info:
-            return False, unsupported
-        groups = tc.get_groups(info["encryTaskUserId"])
-        if not isinstance(groups, list) or not groups:
-            return False, unsupported
-
-        allowed_left = 0
-        locked_left = 0
-        skipped_failed = 0
-        progressed = False
-        saw_plan_data = False
-        skipped_other = 0
-        for group in groups:
-            plans = tc.get_plans(info["encryTaskUserId"], group.get("encryptGroupId", ""))
-            if getattr(tc, "last_plan_read_failed", False):
-                logger.warning("教学任务点状态读取失败，本次不判定为完成")
-                return False, unsupported
-            if plans:
-                saw_plan_data = True
-            unfinished = [p for p in plans if not tc.plan_finished(p)]
-            if not group.get("groupAllowStudy"):
-                locked_left += len(unfinished)
-                continue
-            for plan in unfinished:
-                if interrupt.should_stop():
-                    return False, unsupported
-                plan_key = str(plan.get("planId"))
-                plan_type = int(plan.get("planType") or -1)
-                skip_this = (only_discussion and plan_type != PLAN_TYPE_DISCUSS) or \
-                    (skip_discussion and plan_type == PLAN_TYPE_DISCUSS)
-                if skip_this:
-                    if plan_key not in skipped_other_ids:
-                        skipped_other_ids.add(plan_key)
-                        if stats is not None:
-                            stats["skipped_other"] = stats.get("skipped_other", 0) + 1
-                    continue
-                if plan_key in failed_plans:
-                    skipped_failed += 1
-                    continue
-                allowed_left += 1
-                result = _complete_teaching_plan(
-                    tc, chaoxing, course, plan, info, config, point_map
-                )
-                if result is True:
-                    progressed = True
-                elif result is None:
-                    unsupported.add(plan_type_name(plan.get("planType")))
-                    # 同一轮内不再重复尝试不支持的类型（否则每轮都会重读一遍并重复写日志）
-                    failed_plans.add(plan_key)
-                elif getattr(tc, "last_outcome", None) == TaskOutcome.WAITING_CONFIRMATION:
-                    # 用户明确取消或当前没有交互终端时，停止当前教学任务，避免继续触发别的提交。
-                    return False, unsupported
-                else:
-                    failed_plans.add(plan_key)
-
-        if allowed_left == 0 and locked_left == 0 and skipped_failed == 0 and saw_plan_data:
-            # 所有任务点都已经完成：这是"完成"，不是"失败"。
-            # 之前这里直接 return，last_outcome 还停在开头的 FAILED，
-            # 调用方（或读日志的人）会把一次成功的跳过看成失败。
-            if hasattr(tc, "last_outcome"):
-                tc.last_outcome = TaskOutcome.COMPLETED
-            return True, unsupported
-        if not progressed:
-            if allowed_left == 0 and locked_left:
-                # 上一组刚完成，解锁要等任务引擎同步一下，再读一次分组
-                tc.last_outcome = TaskOutcome.LOCKED
-                time.sleep(3)
-                continue
-            break
-
+def _recheck_task_completion(tc, task, only_discussion, skip_discussion, unsupported):
+    """Determine completion from a final fresh group/plan readback."""
     # 收尾复查：可能最后几个任务点刚同步完成
     info = tc.open_task(task)
     if info:
@@ -1270,19 +1140,156 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
     return False, unsupported
 
 
+def _advance_task_plan(tc, chaoxing, course, plan, info, config, point_map,
+                       only_discussion, skip_discussion, stats, state,
+                       failed_plans, skipped_other_ids, unsupported):
+    """Advance one eligible plan while preserving cancellation and failures."""
+    if interrupt.should_stop():
+        return False
+    plan_key = str(plan.get("planId"))
+    plan_type = int(plan.get("planType") or -1)
+    skip_this = (only_discussion and plan_type != PLAN_TYPE_DISCUSS) or (
+        skip_discussion and plan_type == PLAN_TYPE_DISCUSS)
+    if skip_this:
+        if plan_key not in skipped_other_ids:
+            skipped_other_ids.add(plan_key)
+            if stats is not None:
+                stats["skipped_other"] = stats.get("skipped_other", 0) + 1
+        return True
+    if plan_key in failed_plans:
+        state["failed"] += 1
+        return True
+    state["allowed"] += 1
+    result = _complete_teaching_plan(tc, chaoxing, course, plan, info, config, point_map)
+    if result is True:
+        state["progressed"] = True
+    elif result is None:
+        unsupported.add(plan_type_name(plan.get("planType")))
+        failed_plans.add(plan_key)
+    elif getattr(tc, "last_outcome", None) == TaskOutcome.WAITING_CONFIRMATION:
+        return False
+    else:
+        failed_plans.add(plan_key)
+    return True
+
+
+def _advance_task_group(tc, chaoxing, course, group, info, config, point_map,
+                       only_discussion, skip_discussion, stats, state,
+                       failed_plans, skipped_other_ids, unsupported):
+    """Read one group and only advance its unlocked unfinished plans."""
+    plans = tc.get_plans(info["encryTaskUserId"], group.get("encryptGroupId", ""))
+    if getattr(tc, "last_plan_read_failed", False):
+        logger.warning("教学任务点状态读取失败，本次不判定为完成")
+        return False
+    if plans:
+        state["saw_plans"] = True
+    unfinished = [plan for plan in plans if not tc.plan_finished(plan)]
+    if not group.get("groupAllowStudy"):
+        state["locked"] += len(unfinished)
+        return True
+    for plan in unfinished:
+        if not _advance_task_plan(tc, chaoxing, course, plan, info, config, point_map,
+                only_discussion, skip_discussion, stats, state,
+                failed_plans, skipped_other_ids, unsupported):
+            return False
+    return True
+
+
+def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, task: dict,
+                           config: dict, point_map: dict,
+                           only_discussion: bool = False, stats: dict = None,
+                           skip_discussion: bool = False) -> tuple:
+    """按分组顺序推进一个教学任务."""
+    #
+    # 任务引擎是"通关式"的：只有 groupAllowStudy=True 的分组能学，
+    # 上一组全部完成之后，下一组才会解锁，所以要反复重新读取分组状态。
+    logger.debug("教学任务：{} - {}", course.get("title", "?"), task.get("name", "?"))
+    print(f"    ▸ 教学任务：{task.get('name', '?')}")
+    unsupported = set()
+    # 本次运行里已经失败过的任务点：不再重试。
+    # 任务引擎的重试轮次是为"上一组刚完成、下一组还没解锁"准备的，
+    # 拿它去重试一个真的失败的任务点只会白烧时间（AI实践重试一次就是好几分钟）。
+    failed_plans = set()
+    if hasattr(tc, "last_outcome"):
+        tc.last_outcome = TaskOutcome.FAILED
+    if hasattr(tc, "waiting_confirmation"):
+        tc.waiting_confirmation = False
+
+    skipped_other_ids = set()      # 只刷讨论时，同一计划多轮扫描只计一次
+    for _ in range(TASK_CENTER_MAX_ROUNDS):
+        if interrupt.should_stop():
+            return False, unsupported
+        info = tc.open_task(task)
+        if not info:
+            return False, unsupported
+        groups = tc.get_groups(info["encryTaskUserId"])
+        if not isinstance(groups, list) or not groups:
+            return False, unsupported
+
+        state = {"allowed": 0, "locked": 0, "failed": 0,
+                 "progressed": False, "saw_plans": False}
+        for group in groups:
+            if not _advance_task_group(tc, chaoxing, course, group, info, config,
+                    point_map, only_discussion, skip_discussion, stats, state,
+                    failed_plans, skipped_other_ids, unsupported):
+                return False, unsupported
+        allowed_left, locked_left, skipped_failed = state["allowed"], state["locked"], state["failed"]
+        progressed, saw_plan_data = state["progressed"], state["saw_plans"]
+
+        if allowed_left == 0 and locked_left == 0 and skipped_failed == 0 and saw_plan_data:
+            # 所有任务点都已经完成：这是"完成"，不是"失败"。
+            # 之前这里直接 return，last_outcome 还停在开头的 FAILED，
+            # 调用方（或读日志的人）会把一次成功的跳过看成失败。
+            if hasattr(tc, "last_outcome"):
+                tc.last_outcome = TaskOutcome.COMPLETED
+            return True, unsupported
+        if not progressed:
+            if allowed_left == 0 and locked_left:
+                # 上一组刚完成，解锁要等任务引擎同步一下，再读一次分组
+                tc.last_outcome = TaskOutcome.LOCKED
+                time.sleep(3)
+                continue
+            break
+
+    return _recheck_task_completion(tc, task, only_discussion, skip_discussion, unsupported)
+
+
+def _record_task_outcome(tc, stats, ok, unsupported):
+    """Count and display the actual result of a teaching task."""
+    if ok:
+        stats["done"] += 1
+        print("      ✓ 完成")
+    else:
+        stats["failed"] += 1
+        outcome = getattr(tc, "last_outcome", TaskOutcome.FAILED)
+        if outcome == TaskOutcome.WAITING_CONFIRMATION:
+            stats["waiting_confirmation"] += 1
+            print("      ⏸ 等待确认（未提交，稍后可继续）")
+        elif unsupported:
+            # 当前组有暂不支持的任务点时，即使后续组也处于锁定状态，
+            # 先报告真正阻塞解锁的原因，避免把“暂不支持”模糊成“未解锁”。
+            stats["unsupported"] += 1
+            print(
+                "      ⤼ 跳过（含暂不支持的任务点："
+                + "、".join(sorted(unsupported)) + "，需要手动完成）"
+            )
+        elif outcome == TaskOutcome.LOCKED:
+            stats["locked"] += 1
+            print("      ⤼ 还没轮到（要先完成前面的任务）")
+        else:
+            print("      ✗ 未完成（可能要先完成前面的任务）")
+
 def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
                            max_tasks=None, only_discussion: bool = False,
                            skip_discussion: bool = False) -> dict:
-    """
-    任务中心 -> 教学任务。
-
-    和"章节"互相独立：章节全刷完的课程也可能还有教学任务，
-    所以这一步在章节之后单独跑，失败只影响它自己。
-
-    max_tasks: (每课程字典, 默认值)，来自 max_tasks_per_course；
-    不传时从 config 里现解析（0 = 全部）。只限制要处理的教学任务个数，
-    不会把"被限制没刷"当成失败。
-    """
+    """任务中心 -> 教学任务."""
+    #
+    # 和"章节"互相独立：章节全刷完的课程也可能还有教学任务，
+    # 所以这一步在章节之后单独跑，失败只影响它自己。
+    #
+    # max_tasks: (每课程字典, 默认值)，来自 max_tasks_per_course；
+    # 不传时从 config 里现解析（0 = 全部）。只限制要处理的教学任务个数，
+    # 不会把"被限制没刷"当成失败。
     if max_tasks is None:
         max_tasks_map, max_tasks_default, _bad = _parse_max_points(
             config.get("max_tasks_per_course")
@@ -1358,33 +1365,13 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
                              type(e).__name__, e)
                 logger.debug(traceback.format_exc())
                 ok, unsupported = False, set()
-            if ok:
-                stats["done"] += 1
-                print("      ✓ 完成")
-            else:
-                stats["failed"] += 1
-                outcome = getattr(tc, "last_outcome", TaskOutcome.FAILED)
-                if outcome == TaskOutcome.WAITING_CONFIRMATION:
-                    stats["waiting_confirmation"] += 1
-                    print("      ⏸ 等待确认（未提交，稍后可继续）")
-                elif unsupported:
-                    # 当前组有暂不支持的任务点时，即使后续组也处于锁定状态，
-                    # 先报告真正阻塞解锁的原因，避免把“暂不支持”模糊成“未解锁”。
-                    stats["unsupported"] += 1
-                    print(
-                        "      ⤼ 跳过（含暂不支持的任务点："
-                        + "、".join(sorted(unsupported)) + "，需要手动完成）"
-                    )
-                elif outcome == TaskOutcome.LOCKED:
-                    stats["locked"] += 1
-                    print("      ⤼ 还没轮到（要先完成前面的任务）")
-                else:
-                    print("      ✗ 未完成（可能要先完成前面的任务）")
+            _record_task_outcome(tc, stats, ok, unsupported)
+
     return stats
 
 
 def _board_result_text(result: Optional[dict]) -> str:
-    """讨论区结果一句话（失败/一条没发时绝不写"已发送"）"""
+    """讨论区结果一句话（失败/一条没发时绝不写"已发送"）."""
     result = result or {}
     sent = int(result.get("sent") or 0)
     skipped = int(result.get("skipped") or 0)
@@ -1397,7 +1384,7 @@ def _board_result_text(result: Optional[dict]) -> str:
 
 
 def _print_board_result(result: Optional[dict]) -> None:
-    """控制台汇报：发送了就说发送，没发送就说没发送"""
+    """控制台汇报：发送了就说发送，没发送就说没发送."""
     result = result or {}
     sent = int(result.get("sent") or 0)
     if sent:
@@ -1407,10 +1394,9 @@ def _print_board_result(result: Optional[dict]) -> None:
 
 
 def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list) -> dict:
-    """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送。
-
-    返回 discuss_cli 的结果字典，调用方据此汇报——一条都没发时绝不能说"已发送"。
-    """
+    """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送."""
+    #
+    # 返回 discuss_cli 的结果字典，调用方据此汇报——一条都没发时绝不能说"已发送"。
     from api import discussion
     try:
         return discussion.discuss_cli(chaoxing, None, config, courses=courses)
@@ -1422,7 +1408,7 @@ def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list) -> di
 
 
 def _print_review_hint():
-    """刷完后提示可以复核 AI 生成的文字（有留痕才提示，保持界面干净）"""
+    """刷完后提示可以复核 AI 生成的文字（有留痕才提示，保持界面干净）."""
     try:
         from api import review
         count = review.count_today()
@@ -1433,7 +1419,7 @@ def _print_review_hint():
 
 
 def _start_interrupt(hint_shown: bool) -> bool:
-    """启动 q 键监听；提示语整次运行只打一遍，避免每个阶段重复刷屏。"""
+    """启动 q 键监听；提示语整次运行只打一遍，避免每个阶段重复刷屏."""
     if not hint_shown:
         interrupt.print_hint()
     interrupt.start_watcher()
@@ -1443,12 +1429,10 @@ def _start_interrupt(hint_shown: bool) -> bool:
 def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
                            max_tasks=None, only_discussion: bool = False,
                            skip_discussion: bool = False) -> dict:
-    """
-    任务中心阶段包一层控制台静音。
-
-    这一段的内部日志（任务点读取、逐页解析、题库明细）只写日志文件，
-    控制台只保留用户能看懂的 print 结果行和 WARNING 以上。
-    """
+    """任务中心阶段包一层控制台静音."""
+    #
+    # 这一段的内部日志（任务点读取、逐页解析、题库明细）只写日志文件，
+    # 控制台只保留用户能看懂的 print 结果行和 WARNING 以上。
     set_console_quiet(True)
     try:
         return run_task_center_phase(chaoxing, course_task, config, max_tasks,
@@ -1459,7 +1443,7 @@ def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
 
 
 def _print_task_center_summary(stats: dict):
-    """任务中心处理结果：一条一条列，超过 76 列自动折行（别撑爆终端）"""
+    """任务中心处理结果：一条一条列，超过 76 列自动折行（别撑爆终端）."""
     if not stats or (not stats.get("courses") and not stats.get("read_failed")
                      and not stats.get("empty")):
         return
@@ -1491,7 +1475,16 @@ def _print_task_center_summary(stats: dict):
         print(line)
 
 
+def configure_console():
+    """Keep Chinese CLI output usable with Windows redirected/frozen streams."""
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            if stream is not None and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main():
+    configure_console()
     """主程序入口"""
     # cx discuss / cx topics 需要登录：没显式给 -c 时用最近使用的账号配置
     if ("--discuss" in sys.argv[1:] or "--list-topics" in sys.argv[1:]) \
@@ -1515,7 +1508,7 @@ def main():
         # 强制播放按照配置文件调节
         common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
         common_config["notopen_action"] = common_config.get("notopen_action", "retry")
-        
+
         # 初始化增加章节学习次数配置
         add_learning_count = str_to_bool(common_config.get("add_learning_count", False))
         target_count = int(common_config.get("target_count", 100))
@@ -1937,7 +1930,7 @@ def main():
                 increase_learning_count_for_course(chaoxing, course, common_config)
             logger.info("所有课程章节学习次数增加完成")
             notification.send("超星刷课：章节学习次数已刷完")
-        
+
     except UserAbort as e:
         # 用户未确认/选择停止：不是程序错误，但用非 0 退出码，方便脚本判断"没跑成"
         logger.warning(f"已停止: {e}")

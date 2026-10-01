@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""去 AI 味文案生成器的离线测试（不联网）"""
+"""去 AI 味文案生成器的离线测试（不联网）."""
 import json
 import os
 import sys
@@ -121,11 +121,9 @@ class WriterTestCase(unittest.TestCase):
 
 
 class ThinkingPolicyPayloadTestCase(unittest.TestCase):
-    """
-    thinking 策略：
-      auto（默认）= 第一次请求不带 thinking，让 V4.1 flash 自己推理；
-      正文为空才自动降级成 thinking=disabled 再试一次。
-    """
+    """Thinking 策略."""
+    # auto（默认）= 第一次请求不带 thinking，让 V4.1 flash 自己推理；
+    # 正文为空才自动降级成 thinking=disabled 再试一次。
 
     @staticmethod
     def _fake_response(content):
@@ -200,7 +198,7 @@ class ThinkingPolicyPayloadTestCase(unittest.TestCase):
 
 
 class ExamPromptTestCase(unittest.TestCase):
-    """AI 实践的选择/判断题要按“先判断再给答案”的格式解析，避免误读推理过程里的字母"""
+    """AI 实践的选择/判断题要按“先判断再给答案”的格式解析，避免误读推理过程里的字母."""
 
     def _writer(self):
         return HumanLikeWriter({"endpoint": "https://api.deepseek.com/v1",

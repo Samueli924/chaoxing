@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-刷课范围（章节 / 任务中心）回归：
-
-- main.py 的 chapter_study 开关（命令行 > 配置文件 > 默认开启）
-- 向导里的「刷什么内容」选择与写出的账号配置
-
-不联网、不碰真实用户数据（CX_DATA_HOME 指向临时目录）。
-"""
+"""刷课范围（章节 / 任务中心）回归."""
+#
+# - main.py 的 chapter_study 开关（命令行 > 配置文件 > 默认开启）
+# - 向导里的「刷什么内容」选择与写出的账号配置
+#
+# 不联网、不碰真实用户数据（CX_DATA_HOME 指向临时目录）。
 
 import configparser
 import os
@@ -22,7 +20,7 @@ import setup_wizard as wizard  # noqa: E402
 
 
 class ChapterStudyFlagTestCase(unittest.TestCase):
-    """chapter_study：命令行 > 配置文件 > 默认开启"""
+    """Chapter_study：命令行 > 配置文件 > 默认开启."""
 
     def test_default_on(self):
         args = mock.Mock(chapter_study=None)
@@ -65,7 +63,7 @@ class ChapterStudyFlagTestCase(unittest.TestCase):
 
 
 class TaskCountConfigTestCase(unittest.TestCase):
-    """max_tasks_per_course 复用 max_points_per_course 的解析规则"""
+    """Max_tasks_per_course 复用 max_points_per_course 的解析规则."""
 
     def test_per_course_format(self):
         mapping, default, bad = main_mod._parse_max_points("1:2,3:0")
@@ -86,7 +84,7 @@ class TaskCountConfigTestCase(unittest.TestCase):
 
 
 class WizardScopeTestCase(unittest.TestCase):
-    """向导里的范围选择与写出的账号配置"""
+    """向导里的范围选择与写出的账号配置."""
 
     def test_scope_table(self):
         self.assertEqual(wizard.STUDY_SCOPES["1"], (True, True, False))
@@ -119,7 +117,7 @@ class WizardScopeTestCase(unittest.TestCase):
 
 
     def test_only_discussion_keeps_task_center_enabled(self):
-        """只刷讨论必须写成 task_center = true，否则启动检查会拦下"""
+        """只刷讨论必须写成 task_center = true，否则启动检查会拦下."""
         plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 0, 0)]
         path = wizard.build_config("13800000000", "pw", plan,
                                    chapters_enabled=False, task_center_enabled=False,
@@ -132,13 +130,12 @@ class WizardScopeTestCase(unittest.TestCase):
 
     @staticmethod
     def _empty_cfg():
-        import configparser
         cfg = configparser.ConfigParser()
         cfg.add_section("tiku")
         return cfg
 
     def test_question_bank_mode_does_not_ask_ai_key(self):
-        """选言溪题库不该被追问 DeepSeek Key（表结构解包顺序回归）"""
+        """选言溪题库不该被追问 DeepSeek Key（表结构解包顺序回归）."""
         with mock.patch.object(wizard, "read_config", return_value=self._empty_cfg()), \
              mock.patch.object(wizard, "ask", side_effect=["2", "tok-123"]), \
              mock.patch.object(wizard, "ask_deepseek_key") as key_ask, \
@@ -150,7 +147,7 @@ class WizardScopeTestCase(unittest.TestCase):
         key_ask.assert_not_called()
 
     def test_key_step_downgrade_keeps_question_bank_tokens(self):
-        """在 Key 步骤选「不做测验」时，不能把刚填好的题库 token 丢掉"""
+        """在 Key 步骤选「不做测验」时，不能把刚填好的题库 token 丢掉."""
         with mock.patch.object(wizard, "read_config", return_value=self._empty_cfg()), \
              mock.patch.object(wizard, "ask", side_effect=["4", "tok-9"]), \
              mock.patch.object(wizard, "ask_deepseek_key", return_value=""), \
@@ -170,7 +167,7 @@ class WizardScopeTestCase(unittest.TestCase):
         self.assertEqual(plan, [(course, 0, 0)])
 
     def test_choose_courses_asks_both_counts(self):
-        """章节 + 任务中心都刷时，每门课分别问两个数量"""
+        """章节 + 任务中心都刷时，每门课分别问两个数量."""
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
         cx = mock.Mock()
         cx.get_course_list.return_value = [course]
@@ -187,7 +184,7 @@ class WizardScopeTestCase(unittest.TestCase):
                 self.assertEqual(wizard._ask_count("x"), expect)
 
     def test_ask_count_empty_input_uses_all_default(self):
-        """回车走 ask 的默认值 all（mock 里模拟 ask 的默认值行为）"""
+        """回车走 ask 的默认值 all（mock 里模拟 ask 的默认值行为）."""
         with mock.patch.object(
             wizard, "ask",
             side_effect=lambda prompt, default=None: str(default),
@@ -212,7 +209,7 @@ class WizardScopeTestCase(unittest.TestCase):
         self.assertEqual(cfg.get("common", "task_center"), "true")
 
     def test_chapters_only_clears_previous_discussion_mode(self):
-        """连续下一轮只刷章节时，绝不能把上一轮 board 留在运行配置里。"""
+        """连续下一轮只刷章节时，绝不能把上一轮 board 留在运行配置里."""
         plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 1, 0)]
         path = wizard.build_config("13800000003", "pw", plan,
                                    chapters_enabled=True, task_center_enabled=False,
@@ -223,7 +220,7 @@ class WizardScopeTestCase(unittest.TestCase):
 
 
 class DiscussionScopeIsolationTestCase(unittest.TestCase):
-    """运行时也必须隔离旧配置，而不仅依赖向导正确写文件。"""
+    """运行时也必须隔离旧配置，而不仅依赖向导正确写文件."""
 
     def test_chapter_only_ignores_stale_board_setting(self):
         self.assertEqual(
@@ -244,7 +241,7 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
         )
 
     def test_build_config_uses_recommended_defaults(self):
-        """向导不再逐项问配置：写出的运行配置直接用推荐值"""
+        """向导不再逐项问配置：写出的运行配置直接用推荐值."""
         plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 3, 2)]
         path = wizard.build_config("13800000002", "pw", plan)
         cfg = configparser.ConfigParser()
@@ -257,8 +254,7 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
         self.assertEqual(common["task_center_submit_mode"], "auto")
 
     def test_prefs_do_not_ask(self):
-        """已经配置过：正常启动不再问任何东西"""
-        import configparser
+        """已经配置过：正常启动不再问任何东西."""
         cfg = configparser.ConfigParser()
         cfg.add_section("cx")
         cfg.set("cx", "prefs_done", "yes")
@@ -272,8 +268,7 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
             wizard.ensure_global_prefs(force=False)
 
     def test_first_run_asks_optional_notification(self):
-        """第一次运行会问一次可选的通知设置（直接回车＝不用）"""
-        import configparser
+        """第一次运行会问一次可选的通知设置（直接回车＝不用）."""
         cfg = configparser.ConfigParser()
         cfg.add_section("cx")
         with mock.patch.object(wizard, "read_config", return_value=cfg), \
@@ -285,7 +280,7 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
         self.assertTrue(notify.called)
 
     def test_setup_only_asks_notification(self):
-        """cx setup 也只问可选的通知，不问刷课参数"""
+        """Cx setup 也只问可选的通知，不问刷课参数."""
         with mock.patch.object(wizard, "setup_notification",
                                return_value=("", "", "")) as notify, \
              mock.patch.object(wizard, "ask",
@@ -311,7 +306,7 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
 
 
 class WizardDisplayTestCase(unittest.TestCase):
-    """向导页面展示回归：简洁（不超宽、不双空行）且关键信息在"""
+    """向导页面展示回归：简洁（不超宽、不双空行）且关键信息在."""
 
     @staticmethod
     def _width(text):
@@ -339,7 +334,7 @@ class WizardDisplayTestCase(unittest.TestCase):
              mock.patch.object(wizard, "ensure_global_prefs"), \
              mock.patch.object(wizard, "pick_user",
                                return_value=("13800000000", "pw", cx, "测试用户")), \
-             mock.patch.object(wizard, "build_config", return_value="/tmp/cx-ui-test.ini"), \
+             mock.patch.object(wizard, "build_config", return_value=os.path.join(tempfile.gettempdir(), 'cx-ui-test.ini')), \
              mock.patch.object(wizard, "ask_after_run", return_value="exit"), \
              mock.patch("builtins.input", fake_input), \
              redirect_stdout(buf):
@@ -367,7 +362,7 @@ class WizardDisplayTestCase(unittest.TestCase):
 
 
 class WizardFlowTestCase(unittest.TestCase):
-    """登录后先问范围、再选课；只刷任务中心时不问任务点数，--yes 透传给 main.py"""
+    """登录后先问范围、再选课；只刷任务中心时不问任务点数，--yes 透传给 main.py."""
 
     def _run_flow(self, argv, scope, submit_answer=None):
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
@@ -386,7 +381,7 @@ class WizardFlowTestCase(unittest.TestCase):
                               only_discussion=False, discussion_mode="task"):
             seen["scope"] = (chapters_enabled, task_center_enabled, only_discussion)
             seen["discussion_mode"] = discussion_mode
-            return "/tmp/cx-test-run.ini"
+            return os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')
 
         def fake_run_main():
             seen["argv"] = list(sys.argv)
@@ -410,14 +405,14 @@ class WizardFlowTestCase(unittest.TestCase):
         self.assertFalse(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (False, True, False))
-        self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini", "--yes"])
+        self.assertEqual(seen["argv"], ["main.py", "-c", os.path.join(tempfile.gettempdir(), 'cx-test-run.ini'), "--yes"])
 
     def test_chapters_and_task_center_without_yes(self):
         seen = self._run_flow(["setup_wizard.py"], (True, True, False, "task"), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (True, True, False))
-        self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini"])
+        self.assertEqual(seen["argv"], ["main.py", "-c", os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')])
 
     def test_chapters_only_does_not_ask_tasks(self):
         seen = self._run_flow(["setup_wizard.py"], (True, False, False, ""), submit_answer=True)
@@ -429,7 +424,7 @@ class WizardFlowTestCase(unittest.TestCase):
         self.assertNotIn("argv", seen)
 
     def test_continue_after_board_round_uses_fresh_chapter_only_scope(self):
-        """“继续刷其他课程”必须重新取本轮范围，不能沿用上一轮讨论区模式。"""
+        """“继续刷其他课程”必须重新取本轮范围，不能沿用上一轮讨论区模式."""
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
         scopes = iter([(False, False, True, "board"), (True, False, False, "")])
         actions = iter(["again", "exit"])
@@ -444,7 +439,7 @@ class WizardFlowTestCase(unittest.TestCase):
                               discussion_mode="task"):
             written.append((chapters_enabled, task_center_enabled,
                             only_discussion, discussion_mode))
-            return "/tmp/cx-test-run.ini"
+            return os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')
 
         def fake_run_main():
             ran.append(list(sys.argv))

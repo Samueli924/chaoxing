@@ -19,7 +19,7 @@ _quiet = False
 
 
 def set_quiet(enabled: bool):
-    """刷课期间开启/关闭控制台静音"""
+    """刷课期间开启/关闭控制台静音."""
     global _quiet
     _quiet = bool(enabled)
 
@@ -29,7 +29,7 @@ def is_quiet() -> bool:
 
 
 def _console_filter(record) -> bool:
-    """静音时过滤掉 WARNING 以下的日志（文件日志不受影响）"""
+    """静音时过滤掉 WARNING 以下的日志（文件日志不受影响）."""
     # 用 log_file_only() 发的日志只进文件，控制台由 print 统一输出，避免同一句话出现两遍
     if record["extra"].get("file_only"):
         return False
@@ -44,16 +44,14 @@ def _console_filter(record) -> bool:
 
 
 def _console_format(record) -> str:
-    """
-    控制台输出格式：去掉时间戳、模块名、行号，只保留可读信息。
-
-      非刷课阶段：  消息内容
-      刷课阶段：    ⚠ 警告 / ✘ 错误（且只显示 WARNING 及以上）
-
-    【重要】loguru 会把这里返回的字符串再当成模板做一次 format_map，
-    因此消息里原生的 { } 必须转义，否则会抛 KeyError（例如 API 返回的
-    JSON 报错里带 {'error': ...} 就会让日志线程崩溃）。
-    """
+    """控制台输出格式：去掉时间戳、模块名、行号，只保留可读信息."""
+    #
+    # 非刷课阶段：  消息内容
+    # 刷课阶段：    ⚠ 警告 / ✘ 错误（且只显示 WARNING 及以上）
+    #
+    # 【重要】loguru 会把这里返回的字符串再当成模板做一次 format_map，
+    # 因此消息里原生的 { } 必须转义，否则会抛 KeyError（例如 API 返回的
+    # JSON 报错里带 {'error': ...} 就会让日志线程崩溃）。
     level = record["level"].name
     msg = str(record["message"]).rstrip()
 
@@ -74,16 +72,15 @@ def _console_format(record) -> str:
 
 
 def log_file_only(message, level="ERROR"):
-    """
-    只写日志文件，不在控制台显示。
-
-    控制台的提示语统一用 print 输出（顺序确定、排版可控），
-    日志文件里再留一份记录，避免同一句话在屏幕上出现两遍。
-    """
+    """只写日志文件，不在控制台显示."""
+    #
+    # 控制台的提示语统一用 print 输出（顺序确定、排版可控），
+    # 日志文件里再留一份记录，避免同一句话在屏幕上出现两遍。
     try:
         logger.bind(file_only=True).log(level, message)
     except Exception:
-        pass
+        # Logging may be unavailable during shutdown; do not recurse into the logger.
+        return None
 
 
 def tqdm_sink(msg):

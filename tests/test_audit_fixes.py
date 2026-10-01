@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-审计修复的离线回归：
-
-  * 直播任务失败/被终止时不再报成功
-  * 没有题库的章节测验不再被记为完成（返回 ERROR）
-  * 向导确认页回车 = 取消（安全默认）
-  * main() 在任务中心阶段被终止时不会走到"全部完成"
-"""
+"""审计修复的离线回归."""
+#
+# * 直播任务失败/被终止时不再报成功
+# * 没有题库的章节测验不再被记为完成（返回 ERROR）
+# * 向导确认页回车 = 取消（安全默认）
+# * main() 在任务中心阶段被终止时不会走到"全部完成"
 import os
 import sys
 import tempfile
@@ -26,6 +24,7 @@ import setup_wizard as wizard  # noqa: E402
 
 class FakeLive:
     def __init__(self, status=True, duration=60, finish=True):
+        """Initialize configuration and runtime state."""
         self.name = "测试直播"
         self._status = status
         self._duration = duration
@@ -90,7 +89,7 @@ class ConfirmDefaultTestCase(unittest.TestCase):
 
 
 class SituationalDialogueTestCase(unittest.TestCase):
-    """新版 AI 实践（情景对话）要明确报"暂不支持"，不能只说参数缺失"""
+    """新版 AI 实践（情景对话）要明确报"暂不支持"，不能只说参数缺失."""
 
     def test_detected_as_unsupported_subtype(self):
         tc = TaskCenter(object(), {})
@@ -115,7 +114,7 @@ class SituationalDialogueTestCase(unittest.TestCase):
 
 
 class NoFakeSuccessTestCase(unittest.TestCase):
-    """独立审计新发现的"可能假完成"路径：一律不能返回成功（铁律 1）"""
+    """独立审计新发现的"可能假完成"路径：一律不能返回成功（铁律 1）."""
 
     def test_unknown_card_type_is_collected(self):
         from api.decode import _process_attachment_cards
@@ -126,7 +125,6 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(unknown, ["weird-new-type"])
 
     def test_get_job_list_fails_on_unknown_card_types(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:
@@ -148,7 +146,6 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(info.get("unknownCardTypes"), ["weird"])
 
     def test_chapter_document_result_false_is_error(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:
@@ -170,7 +167,6 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(result, base_mod.StudyResult.ERROR)
 
     def test_read_non_json_is_error(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:

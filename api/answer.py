@@ -30,10 +30,8 @@ __all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike"
 
 
 class CacheDAO:
-    """
-    @Author: SocialSisterYi
-    @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
-    """
+    """@Author: SocialSisterYi."""
+    # @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
     DEFAULT_CACHE_FILE = _paths.cache_path()
 
@@ -43,6 +41,7 @@ class CacheDAO:
     _lock = threading.RLock()
 
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
+        """Initialize configuration and runtime state."""
         self.cache_file = Path(file)
         if not self.cache_file.is_file():
             self._write_cache({})
@@ -164,13 +163,13 @@ FATAL_API_MARKERS = (
 
 
 def is_fatal_api_error(err) -> bool:
-    """判断是否是"再试也没用"的错误（Key 失效、余额不足等）"""
+    """判断是否是"再试也没用"的错误（Key 失效、余额不足等）."""
     text = str(err).lower()
     return any(m in text for m in FATAL_API_MARKERS)
 
 
 def brief_error(err, limit=70) -> str:
-    """把冗长的 API 报错压成一句"""
+    """把冗长的 API 报错压成一句."""
     text = str(err).strip()
     low = text.lower()
     if "404" in low or "model_not_found" in low or "model not found" in low \
@@ -201,12 +200,10 @@ class Tiku(ABC):
     false_list = None
 
     def __init__(self, config_path: Optional[str] = None) -> None:
-        """
-        初始化题库基类。
-
-        Args:
-            config_path: 配置文件路径，若为 None 则使用默认的 CONFIG_PATH。
-        """
+        """初始化题库基类."""
+        #
+        # Args:
+        # config_path: 配置文件路径，若为 None 则使用默认的 CONFIG_PATH。
         self._name = None
         self._api = None
         self._conf = None
@@ -269,9 +266,7 @@ class Tiku(ABC):
         self._conf = config
 
     def _get_conf(self):
-        """
-        从默认配置文件查询配置, 如果未能查到, 停用题库
-        """
+        """从默认配置文件查询配置, 如果未能查到, 停用题库."""
         try:
             config = configparser.ConfigParser()
             config.read(self._config_path, encoding="utf8")
@@ -389,26 +384,20 @@ class Tiku(ABC):
 
     @abstractmethod
     def _query(self, q_info: dict) -> Optional[str]:
-        """
-        查询接口, 交由自定义题库实现
-        """
+        """查询接口, 交由自定义题库实现."""
         pass
 
 
     def set_work_feedback(self, feedback) -> None:
-        """
-        设置上一轮章节检测的错误反馈，供支持反馈的大模型题库在重新作答时参考。
-
-        Args:
-            feedback: 错误反馈，可以是 str 或 list[str]（描述哪些题目答错、正确答案是什么）
-        """
+        """设置上一轮章节检测的错误反馈，供支持反馈的大模型题库在重新作答时参考."""
+        #
+        # Args:
+        # feedback: 错误反馈，可以是 str 或 list[str]（描述哪些题目答错、正确答案是什么）
         pass
 
     def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
-        """
-        批量查询的实现接口，默认循环调用单个查询 _query。
-        子类若有批量查询或交互需求（如手动模式），可重写此方法。
-        """
+        """批量查询的实现接口，默认循环调用单个查询 _query."""
+        # 子类若有批量查询或交互需求（如手动模式），可重写此方法。
         results = []
         total = len(q_list)
 
@@ -456,7 +445,7 @@ class Tiku(ABC):
         return results
 
     def _print_answer_progress(self, done, total):
-        """打印答题进度条（原地刷新）"""
+        """打印答题进度条（原地刷新）."""
         try:
             bar_len = 28
             filled = int(bar_len * done / total) if total else 0
@@ -484,9 +473,7 @@ class Tiku(ABC):
 
     @staticmethod
     def get_tiku_from_config(config: Optional[dict] = None, config_path: Optional[str] = None):
-        """
-        从配置文件加载题库, 这个配置可以是用户提供, 可以是默认配置文件
-        """
+        """从配置文件加载题库, 这个配置可以是用户提供, 可以是默认配置文件."""
         conf = config
         path = config_path or Tiku.CONFIG_PATH
         if not conf:
@@ -546,10 +533,8 @@ class Tiku(ABC):
         return fallback
 
     def judgement_select(self, answer: str) -> bool:
-        """
-        这是一个专用的方法, 要求配置维护两个选项列表, 一份用于正确选项, 一份用于错误选项, 以应对题库对判断题答案响应的各种可能的情况
-        它的作用是将获取到的答案answer与可能的选项列对比并返回对应的布尔值
-        """
+        """这是一个专用的方法, 要求配置维护两个选项列表, 一份用于正确选项, 一份用于错误选项, 以应对题库对判断题答案响应的各种可能的情况."""
+        # 它的作用是将获取到的答案answer与可能的选项列对比并返回对应的布尔值
         if self.DISABLE:
             return False
         # 对响应的答案作处理
@@ -573,9 +558,7 @@ class Tiku(ABC):
             return random.choice([True, False])
 
     def get_submit_params(self):
-        """
-        这是一个专用方法, 用于根据当前设置的提交模式, 响应对应的答题提交API中的pyFlag值
-        """
+        """这是一个专用方法, 用于根据当前设置的提交模式, 响应对应的答题提交API中的pyFlag值."""
         # 留空直接提交, 1保存但不提交
         if self.SUBMIT:
             return ""
@@ -583,10 +566,8 @@ class Tiku(ABC):
             return "1"
 
     def check_llm_connection(self) -> bool:
-        """
-        检查大模型连接是否可用
-        默认返回 True（非大模型题库不需要检查）
-        """
+        """检查大模型连接是否可用."""
+        # 默认返回 True（非大模型题库不需要检查）
         return True
 
 
@@ -988,16 +969,14 @@ class TikuLike(Tiku):
         return ans
 
     def _query_single(self, token: str = "", query: str = "") -> str:
-        """
-        查询单个问题的答案
-        
-        Args:
-            token: API访问令牌
-            query: 查询的问题内容
-            
-        Returns:
-            查询到的答案，如果失败则返回None
-        """
+        """查询单个问题的答案."""
+        #
+        # Args:
+        # token: API访问令牌
+        # query: 查询的问题内容
+        #
+        # Returns:
+        # 查询到的答案，如果失败则返回None
         # 验证输入参数
         if not token:
             logger.error(f'{self.name}查询失败: 未提供有效的token')
@@ -1060,15 +1039,13 @@ class TikuLike(Tiku):
         return None
 
     def _parse_response(self, response):
-        """
-        解析API响应
-        
-        Args:
-            response: HTTP响应对象
-            
-        Returns:
-            解析后的答案，如果解析失败则返回None
-        """
+        """解析API响应."""
+        #
+        # Args:
+        # response: HTTP响应对象
+        #
+        # Returns:
+        # 解析后的答案，如果解析失败则返回None
         try:
             res_json = response.json()
         except json.JSONDecodeError:
@@ -1107,16 +1084,14 @@ class TikuLike(Tiku):
         return self._extract_answer_by_type(q_type, answer)
 
     def _extract_answer_by_type(self, q_type: str, answer: dict) -> str:
-        """
-        根据题目类型提取答案
-        
-        Args:
-            q_type: 题目类型
-            answer: 答案字典
-            
-        Returns:
-            提取的答案文本
-        """
+        """根据题目类型提取答案."""
+        #
+        # Args:
+        # q_type: 题目类型
+        # answer: 答案字典
+        #
+        # Returns:
+        # 提取的答案文本
         if not isinstance(answer, dict):
             logger.error(f'{self.name}答案格式错误: 不是有效的字典格式')
             return None
@@ -1290,12 +1265,10 @@ class TikuAdapter(Tiku):
 
 
 def parse_answer_text(text: str) -> str:
-    """
-    从模型输出里提取答案正文：兼容 JSON / 代码块 / "答案：X" / 纯文本。
-
-    模型有时返回 {"Answer": ["A"]}，有时直接写 "答案：A"，有时带 markdown 代码块，
-    以前只认第一种，其它情况一律记"无法解析"并退化成随机作答（错率高的直接原因之一）。
-    """
+    """从模型输出里提取答案正文：兼容 JSON / 代码块 / "答案：X" / 纯文本."""
+    #
+    # 模型有时返回 {"Answer": ["A"]}，有时直接写 "答案：A"，有时带 markdown 代码块，
+    # 以前只认第一种，其它情况一律记"无法解析"并退化成随机作答（错率高的直接原因之一）。
     if not text:
         return ""
     cleaned = llm.strip_code_fence(str(text))
@@ -1329,12 +1302,10 @@ class AI(Tiku):
         self.work_feedback = None  # 章节检测错误反馈（重做时参考）
 
     def set_work_feedback(self, feedback) -> None:
-        """
-        设置章节检测上一轮的错误反馈，供重新作答时参考。
-
-        Args:
-            feedback: str 或 list[str]，描述答错的题目与正确答案
-        """
+        """设置章节检测上一轮的错误反馈，供重新作答时参考."""
+        #
+        # Args:
+        # feedback: str 或 list[str]，描述答错的题目与正确答案
         self.work_feedback = feedback
 
     def _build_work_feedback_text(self) -> str:
@@ -1353,20 +1324,18 @@ class AI(Tiku):
         return "\n".join(lines)
 
     def _client(self):
-        """按代理配置构造 OpenAI 客户端"""
+        """按代理配置构造 OpenAI 客户端."""
         if self.http_proxy:
             httpx_client = httpx.Client(proxy=self.http_proxy)
             return OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
         return OpenAI(base_url=self.endpoint, api_key=self.key)
 
     def _complete(self, messages, **kwargs) -> str:
-        """
-        统一的答题模型调用：thinking 默认交给模型自己（auto）。
-
-        ：DeepSeek V4.1 flash 默认带推理且正文正常，
-        强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
-        api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。
-        """
+        """统一的答题模型调用：thinking 默认交给模型自己（auto）."""
+        #
+        # ：DeepSeek V4.1 flash 默认带推理且正文正常，
+        # 强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
+        # api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。
         client = self._client()
         return llm.create_completion(
             client, model=self.model, messages=messages,
@@ -1481,10 +1450,8 @@ class AI(Tiku):
             self.min_interval_seconds = 3
 
     def check_llm_connection(self) -> bool:
-        """
-        检查大模型连接是否可用
-        发送一个简单的测试请求来验证 API 配置
-        """
+        """检查大模型连接是否可用."""
+        # 发送一个简单的测试请求来验证 API 配置
         with self._lock:
             logger.debug(f'正在检查 {self.name} 连接...')
             try:
@@ -1612,10 +1579,8 @@ class SiliconFlow(Tiku):
             self.min_interval = 3
 
     def check_llm_connection(self) -> bool:
-        """
-        检查硅基流动大模型连接是否可用
-        发送一个简单的测试请求来验证 API 配置
-        """
+        """检查硅基流动大模型连接是否可用."""
+        # 发送一个简单的测试请求来验证 API 配置
         with self._lock:
             logger.debug(f'正在检查 {self.name} 连接...')
             try:
@@ -1801,9 +1766,7 @@ class TikuManual(Tiku):
             return normalized_ans
 
     def _validate_user_input(self, ans: str, q: dict) -> tuple[bool, str]:
-        """
-        验证用户手动输入的答案是否合规.
-        """
+        """验证用户手动输入的答案是否合规."""
         if not ans:
             return True, ""
 
@@ -1830,9 +1793,7 @@ class TikuManual(Tiku):
         return True, ""
 
     def _validate_choice_input(self, ans: str, q: dict) -> tuple[bool, str]:
-        """
-        验证选择题手动输入是否合规.
-        """
+        """验证选择题手动输入是否合规."""
         options = q.get('options', '')
         parts = self._parse_options(options)
         valid_keys = self._extract_valid_keys(parts)
@@ -1854,9 +1815,7 @@ class TikuManual(Tiku):
         return True, ""
 
     def _parse_options(self, options) -> list[str]:
-        """
-        解析选项.
-        """
+        """解析选项."""
         parts = []
         if isinstance(options, str):
             parts = [o.strip() for o in options.split('\n') if o.strip()]
@@ -1870,9 +1829,7 @@ class TikuManual(Tiku):
         return parts
 
     def _extract_valid_keys(self, parts: list[str]) -> list[str]:
-        """
-        提取合法的选项字母.
-        """
+        """提取合法的选项字母."""
         valid_keys = []
         for p in parts:
             first_char = p[:1].upper()
@@ -1881,9 +1838,7 @@ class TikuManual(Tiku):
         return valid_keys
 
     def _validate_text_match(self, ans: str, parts: list[str]) -> tuple[bool, str]:
-        """
-        验证用户输入的文本是否和选项文本匹配.
-        """
+        """验证用户输入的文本是否和选项文本匹配."""
         from api.answer_check import cut
         split_ans = cut(ans)
         if split_ans:
@@ -1899,9 +1854,7 @@ class TikuManual(Tiku):
         return True, ""
 
     def _normalize_user_input(self, ans: str, q: dict) -> Optional[str]:
-        """
-        规整化用户的手动输入答案.
-        """
+        """规整化用户的手动输入答案."""
         if not ans:
             return None
 
@@ -1917,9 +1870,7 @@ class TikuManual(Tiku):
         return ans
 
     def _normalize_judgement_input(self, ans: str) -> str:
-        """
-        规整化判断题的手动输入.
-        """
+        """规整化判断题的手动输入."""
         val = ans.lower()
         if val in ['true', 't', '1', '对', '正确', '√', '是', 'yes', 'y']:
             return "正确"
@@ -1928,9 +1879,7 @@ class TikuManual(Tiku):
         return ans
 
     def _normalize_choice_input(self, ans: str, q: dict) -> str:
-        """
-        规整化选择题的手动输入.
-        """
+        """规整化选择题的手动输入."""
         options = q.get('options', '')
         parts = self._parse_options(options)
         valid_keys = self._extract_valid_keys(parts)
@@ -1950,9 +1899,7 @@ class TikuManual(Tiku):
         return ans
 
     def _batch_query_flow(self, q_list: list[dict]) -> list[Optional[str]]:
-        """
-        执行批量手动搜题交互.
-        """
+        """执行批量手动搜题交互."""
         self._print_batch_questions(q_list)
 
         sep_desc = self.separator

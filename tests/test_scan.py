@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-开始前扫描 + 刷课数量语义 + 只刷讨论 的离线回归。
-
-数量语义（用户最关心的）：
-  数字 = 本次刷多少个「还没完成」的任务点，已完成的自动跳过，不会重刷。
-"""
+"""开始前扫描 + 刷课数量语义 + 只刷讨论 的离线回归."""
+#
+# 数量语义（用户最关心的）：
+# 数字 = 本次刷多少个「还没完成」的任务点，已完成的自动跳过，不会重刷。
 
 import os
 import sys
@@ -20,7 +18,7 @@ from api import scan  # noqa: E402
 
 
 class CountSemanticsTestCase(unittest.TestCase):
-    """共 300 节、前 150 节已完成：填 150 应该是把后 150 节刷完"""
+    """共 300 节、前 150 节已完成：填 150 应该是把后 150 节刷完."""
 
     @staticmethod
     def _points():
@@ -45,9 +43,10 @@ class CountSemanticsTestCase(unittest.TestCase):
 
 
 class FakeTaskCenter:
-    """最小可用的任务中心替身"""
+    """最小可用的任务中心替身."""
 
     def __init__(self, groups, plans_by_group, finished_ids=()):
+        """Initialize configuration and runtime state."""
         self._groups = groups
         self._plans = plans_by_group
         self._finished = set(finished_ids)
@@ -120,7 +119,7 @@ class ScanRenderTestCase(unittest.TestCase):
 
 
 class OnlyDiscussionTestCase(unittest.TestCase):
-    """只刷讨论：其它类型的任务点本次跳过，并且不判失败"""
+    """只刷讨论：其它类型的任务点本次跳过，并且不判失败."""
 
     def test_non_discussion_plans_are_skipped(self):
         groups = [{"encryptGroupId": "g1", "groupAllowStudy": True}]
@@ -149,7 +148,7 @@ class OnlyDiscussionTestCase(unittest.TestCase):
 
 
     def test_skip_discussion_skips_task_discussions(self):
-        """board 模式：任务中心里跳过主题讨论（之前 skip_discussion 未定义直接 NameError）"""
+        """Board 模式：任务中心里跳过主题讨论（之前 skip_discussion 未定义直接 NameError）."""
         groups = [{"encryptGroupId": "g1", "groupAllowStudy": True}]
         plans = {"g1": [
             {"planId": 1, "planType": 14, "name": "讨论"},
@@ -174,7 +173,7 @@ class OnlyDiscussionTestCase(unittest.TestCase):
         self.assertEqual(stats["skipped_other"], 1)
 
     def test_main_assigns_skip_discussion(self):
-        """main() 里必须有 skip_discussion 赋值，否则任务中心阶段每次 NameError"""
+        """Main() 里必须有 skip_discussion 赋值，否则任务中心阶段每次 NameError."""
         source = open(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py"),
             encoding="utf-8").read()

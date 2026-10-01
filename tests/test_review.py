@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-复核环节（api/review.py）回归：留痕、列表、正文渲染，以及写作钩子。
-
-留痕必须落盘可查，且写失败/空内容不能污染记录；钩子要真的把
-"会被平台看到的文字"记下来（简答题/讨论/实践作答）。
-"""
+"""复核环节（api/review.py）回归：留痕、列表、正文渲染，以及写作钩子."""
+#
+# 留痕必须落盘可查，且写失败/空内容不能污染记录；钩子要真的把
+# "会被平台看到的文字"记下来（简答题/讨论/实践作答）。
 import os
 import sys
 import tempfile
@@ -85,6 +83,7 @@ class FakeWriter:
     available = True
 
     def __init__(self):
+        """Initialize configuration and runtime state."""
         self.calls = []
 
     def answer(self, question, **kwargs):
@@ -113,7 +112,7 @@ class HomeworkShortAnswerHookTestCase(unittest.TestCase):
 
 
 class LiveTraceTestCase(unittest.TestCase):
-    """运行中实时留痕：控制台看得到、普通运行日志也留一份"""
+    """运行中实时留痕：控制台看得到、普通运行日志也留一份."""
 
     def test_answer_line_formats_letters_and_types(self):
         from api.display import answer_line, answers_header
@@ -130,7 +129,7 @@ class LiveTraceTestCase(unittest.TestCase):
         self.assertLessEqual(len(line), 80)
 
     def test_emit_writes_console_and_run_log(self):
-        """留痕要同时进控制台和运行日志（这里校验调用契约，避免异步写盘抖动）"""
+        """留痕要同时进控制台和运行日志（这里校验调用契约，避免异步写盘抖动）."""
         import contextlib
         import io
         from api import display

@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""
-"像真人写的"答案 / 讨论回复生成器
-
-任务中心的问答（思考题、作业简答）和主题讨论不能用模板腔：
-平台上老师和同学一眼就能看出 AI 味，讨论区还要求和其他同学的回复风格一致。
-
-这个模块负责两件事：
-    1. 用配置里的大模型（[tiku] 段的 endpoint / key / model）生成内容
-    2. 严格"去 AI 味"：提示词约束 + 生成后清洗 + 长度/风格对齐参考文本
-
-注意：这里只负责写字，不负责任何提交动作。
-"""
+"""生成并检查问答和讨论回复."""
+#
+# 任务中心的问答（思考题、作业简答）和主题讨论不能用模板腔：
+# 平台上老师和同学一眼就能看出 AI 味，讨论区还要求和其他同学的回复风格一致。
+#
+# 这个模块负责两件事：
+# 1. 用配置里的大模型（[tiku] 段的 endpoint / key / model）生成内容
+# 2. 严格"去 AI 味"：提示词约束 + 生成后清洗 + 长度/风格对齐参考文本
+#
+# 注意：这里只负责写字，不负责任何提交动作。
 
 import configparser
 import json
@@ -43,9 +41,10 @@ MARKDOWN_NOISE = re.compile(
 
 
 class HumanLikeWriter:
-    """用大模型生成"像真人写的"课程问答 / 讨论回复"""
+    """用大模型生成"像真人写的"课程问答 / 讨论回复."""
 
     def __init__(self, tiku_config: Optional[dict] = None, config_path: Optional[str] = None):
+        """Initialize configuration and runtime state."""
         cfg = dict(tiku_config or {})
         if not cfg:
             cfg = self._read_tiku_config(config_path)
@@ -78,7 +77,7 @@ class HumanLikeWriter:
     def available(self) -> bool:
         return bool(self.endpoint and self.key and self.model)
     def _thinking_steps(self) -> list:
-        """按配置的 thinking 模式返回尝试顺序（默认 auto：先让模型自己推理）"""
+        """按配置的 thinking 模式返回尝试顺序（默认 auto：先让模型自己推理）."""
         return llm.thinking_steps(self.thinking)
 
     # ------------------------------------------------------------------ 底层
@@ -138,7 +137,7 @@ class HumanLikeWriter:
 
     @staticmethod
     def clean(text: str) -> str:
-        """把明显的 AI 腔和 markdown 痕迹洗掉"""
+        """把明显的 AI 腔和 markdown 痕迹洗掉."""
         if not text:
             return ""
         text = MARKDOWN_NOISE.sub("", text)
@@ -152,7 +151,7 @@ class HumanLikeWriter:
 
     @staticmethod
     def style_reference(posts) -> str:
-        """把同学们的回复整理成风格参考（长度、口吻、用词）"""
+        """把同学们的回复整理成风格参考（长度、口吻、用词）."""
         lines = []
         for index, post in enumerate(posts or [], 1):
             if isinstance(post, dict):
@@ -270,7 +269,7 @@ class HumanLikeWriter:
 
     @classmethod
     def find_leak(cls, text: str):
-        """返回正文里命中的"平台话术"（空列表表示干净）"""
+        """返回正文里命中的"平台话术"（空列表表示干净）."""
         return [pattern for pattern in cls.LEAK_PATTERNS if re.search(pattern, str(text or ""))]
 
     @classmethod
@@ -280,7 +279,7 @@ class HumanLikeWriter:
 
     @staticmethod
     def cut_at_sentence(text: str, max_chars: int) -> str:
-        """按整句截断，避免在句子中间被硬切（真人不会写半句话）"""
+        """按整句截断，避免在句子中间被硬切（真人不会写半句话）."""
         text = str(text or "")
         if len(text) <= max_chars:
             return text
@@ -291,48 +290,38 @@ class HumanLikeWriter:
     @classmethod
     def style_problems(cls, text: str, require_hesitation: bool = False,
                        require_course_anchor: bool = False) -> list:
-        """真人化自检：返回命中的问题（空列表=过检）
-
-        检查范围：
-        结尾金句、无来源的假具体、口癖分布过密、长文没有一处真实的犹豫。
-        """
+        """真人化自检：返回命中的问题（空列表=过检）."""
+        #
+        # 检查范围：
+        # 结尾金句、无来源的假具体、口癖分布过密、长文没有一处真实的犹豫。
         text = str(text or "")
         problems = []
         # No authenticated course or personal source material is accepted by this
         # API. Reject source attribution and narrated experience conservatively,
         # rather than enumerating time adverbs that a model can paraphrase.
-        if re.search(r"教材|课本|讲义|老师|教师|教授|授课|课上|课堂|(?:本章|本节|课程|讲义|原文).{0,8}(?:写|说|指出|提及|提到|强调)", text):
-            problems.append("未经提供的课程来源")
-        if re.search(r"(?<!如果)(?<!假如)(?<!假设)我(?!觉得|认为|倾向|更支持|不支持|建议|理解|赞同|同意|支持|们(?:可以|应该|需要|认为))", text):
-            problems.append("未经提供的个人经历")
-        if "我" in text and re.search(r"曾经|去年|前年|当时|参加过|参加的|实习|培训|亲身|亲自|经营过|我们组", text):
-            problems.append("未经提供的个人经历")
-        if cls.find_leak(text):
-            problems.append("平台判分话术")
+        checks = [
+            (re.search('教材|课本|讲义|老师|教师|教授|授课|课上|课堂|(?:本章|本节|课程|讲义|原文).{0,8}(?:写|说|指出|提及|提到|强调)', text), '未经提供的课程来源'),
+            (re.search('(?<!如果)(?<!假如)(?<!假设)我(?!觉得|认为|倾向|更支持|不支持|建议|理解|赞同|同意|支持|们(?:可以|应该|需要|认为))', text), '未经提供的个人经历'),
+            ('我' in text and re.search('曾经|去年|前年|当时|参加过|参加的|实习|培训|亲身|亲自|经营过|我们组', text), '未经提供的个人经历'),
+            (cls.find_leak(text), '平台判分话术'),
+        ]
+        problems.extend(message for matched, message in checks if matched)
         stats = cls.habit_stats(text)
         # 长文里出现几种不同口癖是正常的，按长度放宽；"同一个词反复用"才一定有问题
         habit_limit = max(2, len(text) // 120)
-        if len(stats) > habit_limit or any(count >= 3 for count in stats.values()):
-            problems.append("口癖分布过密")
-        if any(re.search(pattern, text) for pattern in cls.CLOSING_CLICHE):
-            problems.append("金句收束")
-        if any(re.search(pattern, text) for pattern in cls.UNSOURCED_SPECIFIC):
-            problems.append("无来源的假具体")
-        if any(re.search(pattern, text) for pattern in cls.FAKE_PERSONAL):
-            problems.append("编造的个人琐事")
-        if any(word in text for word in cls.AI_CONNECTORS):
-            problems.append("模板连接词")
-        if any(re.search(pattern, text.strip()) for pattern in cls.WEAK_ENDING):
-            problems.append("示弱收尾口癖")
-        if any(re.search(pattern, text) for pattern in cls.CLAIMED_COMMUNITY):
-            problems.append("认领共同经历")
-        if any(re.search(pattern, text) for pattern in cls.UNIVERSAL_CLAIM):
-            problems.append("普适经验断言")
-        if require_course_anchor and not any(word in text for word in cls.COURSE_ANCHOR):
-            problems.append("没有课程锚点")
-        # 全篇扫描：上一版只看结尾 80 字，金句/排比挪到中段就漏了（第四、五轮审计都指出）
-        if any(re.search(pattern, text) for pattern in cls.STRUCTURE_CLICHE):
-            problems.append("三层排比/对偶")
+        checks = [
+            (len(stats) > habit_limit or any((count >= 3 for count in stats.values())), '口癖分布过密'),
+            (any((re.search(pattern, text) for pattern in cls.CLOSING_CLICHE)), '金句收束'),
+            (any((re.search(pattern, text) for pattern in cls.UNSOURCED_SPECIFIC)), '无来源的假具体'),
+            (any((re.search(pattern, text) for pattern in cls.FAKE_PERSONAL)), '编造的个人琐事'),
+            (any((word in text for word in cls.AI_CONNECTORS)), '模板连接词'),
+            (any((re.search(pattern, text.strip()) for pattern in cls.WEAK_ENDING)), '示弱收尾口癖'),
+            (any((re.search(pattern, text) for pattern in cls.CLAIMED_COMMUNITY)), '认领共同经历'),
+            (any((re.search(pattern, text) for pattern in cls.UNIVERSAL_CLAIM)), '普适经验断言'),
+            (require_course_anchor and (not any((word in text for word in cls.COURSE_ANCHOR))), '没有课程锚点'),
+            (any((re.search(pattern, text) for pattern in cls.STRUCTURE_CLICHE)), '三层排比/对偶'),
+        ]
+        problems.extend(message for matched, message in checks if matched)
         # 句句都是长度接近的长句 = 低突发度，AIGC 检测的高权重特征
         sentences = [s for s in re.split(r"[。！？!?\n]", text) if s.strip()]
         if len(sentences) >= 4:
@@ -348,11 +337,10 @@ class HumanLikeWriter:
 
     def _generate_text(self, user: str, max_chars: int, require_hesitation: bool = False,
                        require_course_anchor: bool = False, **kwargs) -> str:
-        """生成 + 自检：不合格就重写，平台判分话术残留直接报错。
-
-        宁可失败也不能把"回答正确/依据：/本题考核知识点"这类平台判分话术
-        写进要提交给老师的正文里（）。
-        """
+        """生成 + 自检：不合格就重写，平台判分话术残留直接报错."""
+        #
+        # 宁可失败也不能把"回答正确/依据：/本题考核知识点"这类平台判分话术
+        # 写进要提交给老师的正文里（）。
         text = ""
         last_problems = []
         for attempt in range(1, 4):
@@ -388,7 +376,7 @@ class HumanLikeWriter:
 
     def answer(self, question: str, requirement: str = "", references=None,
                max_chars: int = 220) -> str:
-        """给问答题/简答题写一段像真人的回答"""
+        """给问答题/简答题写一段像真人的回答."""
         refs = self.style_reference(references)
         user = (
             "题目：" + question + "\n"
@@ -402,11 +390,10 @@ class HumanLikeWriter:
     def discussion(self, topic: str, requirement: str = "", existing_posts=None,
                    max_chars: int = 180, revision_hint: str = "",
                    previous_reply: str = "") -> str:
-        """给主题讨论写一条回复：目标"班里中等水平"的普通回复，不显眼也不掉队。
-
-        用户实测反馈：太机灵、太有个人风格（"要我说…我甚至觉得…"）反而不像普通同学。
-        所以这里明确要求平实、普通、长度和多数同学接近；不追求语言上的亮点。
-        """
+        """给主题讨论写一条回复：目标"班里中等水平"的普通回复，不显眼也不掉队."""
+        #
+        # 用户实测反馈：太机灵、太有个人风格（"要我说…我甚至觉得…"）反而不像普通同学。
+        # 所以这里明确要求平实、普通、长度和多数同学接近；不追求语言上的亮点。
         refs = self.style_reference(existing_posts)
         user = (
             "讨论主题：" + topic + "\n"
@@ -436,7 +423,7 @@ class HumanLikeWriter:
 
     def practice_answer(self, question: str, requirement: str = "", context: str = "",
                         max_chars: int = 520) -> str:
-        """为 AI 实践的开放题生成更完整的课程回答。"""
+        """为 AI 实践的开放题生成更完整的课程回答."""
         user = (
             "AI 实践题目：" + str(question or "") + "\n"
             + ("实践要求：" + str(requirement) + "\n" if requirement else "")
@@ -454,7 +441,7 @@ class HumanLikeWriter:
     OBJECTIVE_VOTES = 3
 
     def _vote(self, system: str, user: str, parse, votes: int = None, **kwargs):
-        """把一个 parse 函数套在多次采样上，返回票数最多的结果"""
+        """把一个 parse 函数套在多次采样上，返回票数最多的结果."""
         count = max(1, int(votes or self.OBJECTIVE_VOTES))
         tally: dict = {}
         for _ in range(count):
@@ -475,7 +462,7 @@ class HumanLikeWriter:
 
     def choose_options(self, question: str, options, multiple: bool = False,
                        context: str = "", exclude=None) -> str:
-        """为 AI 实践选择题选项，只返回平台需要的 A/B/C... 字母。"""
+        """为 AI 实践选择题选项，只返回平台需要的 A/B/C... 字母."""
         option_lines = []
         for item in options or []:
             if isinstance(item, dict):
@@ -542,12 +529,11 @@ class HumanLikeWriter:
 
     @staticmethod
     def _recent_feedback(data: dict, limit: int = 3, max_chars: int = 600) -> str:
-        """从 AI 实践对话里提取平台最近的解析/判据。
-
-        平台的 preAppendContent 在判错时会直接把正确概念讲出来
-        （例如"公司层战略是企业最高管理层制定的面向企业整体的总体战略，核心是确定经营领域"），
-        把它作为作答依据喂回模型，能显著提高重复题的正确率。
-        """
+        """从 AI 实践对话里提取平台最近的解析/判据."""
+        #
+        # 平台的 preAppendContent 在判错时会直接把正确概念讲出来
+        # （例如"公司层战略是企业最高管理层制定的面向企业整体的总体战略，核心是确定经营领域"），
+        # 把它作为作答依据喂回模型，能显著提高重复题的正确率。
         hints = []
         messages = list((data or {}).get("messageList") or [])[-24:]
         for message in reversed(messages):
@@ -575,7 +561,7 @@ class HumanLikeWriter:
 
     @staticmethod
     def _extract_letters(raw: str, valid: set) -> list:
-        """从模型输出里取选项字母：优先「答案：X」，否则只看最后一行"""
+        """从模型输出里取选项字母：优先「答案：X」，否则只看最后一行."""
         text = str(raw or "")
         marked = re.findall(r"答案\s*[:：]?\s*([A-Ea-e]{1,5})", text)
         if marked:
@@ -590,7 +576,7 @@ class HumanLikeWriter:
         return letters
 
     def choose_judgement(self, question: str, context: str = "", exclude=None) -> str:
-        """为 AI 实践判断题返回平台使用的“对”或“错”。"""
+        """为 AI 实践判断题返回平台使用的“对”或“错”."""
         user = (
             "课程判断题。\n"
             "题目：" + str(question or "") + "\n"

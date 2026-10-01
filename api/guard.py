@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-启动检查（人工确认门禁）
-
-设计目标：零技术基础也能安全使用。
-规则：
-  1. 账号密码是必填项，没有就停止，不存在"跳过"。
-  2. 课程 ID 是必填项，没填就停止，绝不会自动刷全部课程。
-  3. 没配 API Key 时，章节测验不会真的作答 —— 必须人工确认后才继续。
-"""
+"""启动检查（人工确认门禁）."""
+#
+# 设计目标：零技术基础也能安全使用。
+# 规则：
+# 1. 账号密码是必填项，没有就停止，不存在"跳过"。
+# 2. 课程 ID 是必填项，没填就停止，绝不会自动刷全部课程。
+# 3. 没配 API Key 时，章节测验不会真的作答 —— 必须人工确认后才继续。
 
 import os
 import sys
@@ -19,11 +17,11 @@ LINE = "=" * 62
 
 
 class UserAbort(Exception):
-    """用户主动取消 / 未确认"""
+    """用户主动取消 / 未确认."""
 
 
 def _can_prompt():
-    """是否能与用户交互（有终端）"""
+    """是否能与用户交互（有终端）."""
     try:
         return sys.stdin.isatty()
     except Exception:
@@ -31,7 +29,7 @@ def _can_prompt():
 
 
 def _ask_yes(prompt):
-    """询问 y/n，默认 n（安全默认）"""
+    """询问 y/n，默认 n（安全默认）."""
     if not _can_prompt():
         return False
     try:
@@ -43,7 +41,7 @@ def _ask_yes(prompt):
 
 
 def _stop(title, details, how_to_fix):
-    """必填项缺失：直接停止，不给继续选项"""
+    """必填项缺失：直接停止，不给继续选项."""
     print()
     print(LINE)
     print("  ✘  " + title)
@@ -59,12 +57,12 @@ def _stop(title, details, how_to_fix):
 
 
 def hard_stop(title, details, how_to_fix):
-    """必填项/配置错误：直接停止（供其它模块在启动检查之外调用）"""
+    """必填项/配置错误：直接停止（供其它模块在启动检查之外调用）."""
     _stop(title, details, how_to_fix)
 
 
 def _confirm(title, details, how_to_fix):
-    """可继续项：必须人工确认，默认 N"""
+    """可继续项：必须人工确认，默认 N."""
     print()
     print(LINE)
     print("  ⚠️  " + title)
@@ -94,7 +92,7 @@ _PROVIDER_NO_CONFIG = {"TikuGo", "TikuManual"}
 
 
 def _quiz_degraded_confirmed():
-    """用户是否已经确认过"不做测验，只刷非测验部分" """
+    """用户是否已经确认过"不做测验，只刷非测验部分"."""
     try:
         cfg, _broken = read_config_file(paths.config_path())
         if not cfg.has_section("cx"):
@@ -105,7 +103,7 @@ def _quiz_degraded_confirmed():
 
 
 def _check_answer_provider(tiku_config):
-    """按实际选择的答题方式检查配置，返回需要人工确认的问题列表"""
+    """按实际选择的答题方式检查配置，返回需要人工确认的问题列表."""
     provider_str = (tiku_config.get("provider") or "").strip()
 
     # 没选答题方式：用户明确选了"不答题"，或配置缺失
@@ -152,10 +150,8 @@ def _check_answer_provider(tiku_config):
 
 def check_before_run(common_config, tiku_config, notification_config, config_path,
                      skip_confirm=False):
-    """
-    启动前检查。
-    skip_confirm=True（--yes）只对"可继续项"生效；必填项缺失永远停止。
-    """
+    """启动前检查."""
+    # skip_confirm=True（--yes）只对"可继续项"生效；必填项缺失永远停止。
     hard = []      # 必填项缺失 -> 一律停止
     soft = []      # 需要人工确认
 

@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import site
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, IO, Optional, Union
@@ -29,15 +30,13 @@ KX_RADICALS_TAB = str.maketrans(
 
 
 def resource_path(relative_path: str) -> str:
-    """
-    获取资源文件的路径，兼容PyInstaller打包后的环境
-
-    Args:
-        relative_path: 相对路径
-
-    Returns:
-        资源文件的绝对路径
-    """
+    """获取资源文件的路径，兼容PyInstaller打包后的环境."""
+    #
+    # Args:
+    # relative_path: 相对路径
+    #
+    # Returns:
+    # 资源文件的绝对路径
     try:
         # PyInstaller创建临时文件夹，定位路径
         base_path = sys._MEIPASS
@@ -47,25 +46,25 @@ def resource_path(relative_path: str) -> str:
     candidate = os.path.join(base_path, relative_path)
     if os.path.isfile(candidate):
         return candidate
-    return os.path.join(sys.prefix, "share", "chaoxing", os.path.basename(relative_path))
+    for data_root in (base_path, sys.prefix, site.getuserbase()):
+        installed = os.path.join(data_root, "share", "chaoxing", os.path.basename(relative_path))
+        if os.path.isfile(installed):
+            return installed
+    return candidate
 
 
 class FontHashDAO:
-    """
-    字体哈希数据访问对象，负责管理字体哈希映射表
-    """
+    """字体哈希数据访问对象，负责管理字体哈希映射表."""
 
     def __init__(self, file_path: str = "resource/font_map_table.json"):
-        """
-        初始化字体哈希数据访问对象
-
-        Args:
-            file_path: 字体映射表JSON文件路径，相对于资源目录
-        
-        Raises:
-            FileNotFoundError: 当字体映射表文件不存在时
-            json.JSONDecodeError: 当字体映射表JSON格式错误时
-        """
+        """初始化字体哈希数据访问对象."""
+        #
+        # Args:
+        # file_path: 字体映射表JSON文件路径，相对于资源目录
+        #
+        # Raises:
+        # FileNotFoundError: 当字体映射表文件不存在时
+        # json.JSONDecodeError: 当字体映射表JSON格式错误时
         self.char_map: Dict[str, str] = {}  # unicode -> hash
         self.hash_map: Dict[str, str] = {}  # hash -> unicode
 
@@ -78,27 +77,23 @@ class FontHashDAO:
             raise FontDecodeError(f"加载字体映射表失败: {full_path} - {e}") from e
 
     def find_char(self, font_hash: str) -> Optional[str]:
-        """
-        通过字体哈希值查找对应的Unicode字符编码
-
-        Args:
-            font_hash: 字体哈希值
-
-        Returns:
-            对应的Unicode字符编码，如果未找到则返回None
-        """
+        """通过字体哈希值查找对应的Unicode字符编码."""
+        #
+        # Args:
+        # font_hash: 字体哈希值
+        #
+        # Returns:
+        # 对应的Unicode字符编码，如果未找到则返回None
         return self.hash_map.get(font_hash)
 
     def find_hash(self, char: str) -> Optional[str]:
-        """
-        通过Unicode字符编码查找对应的字体哈希值
-
-        Args:
-            char: Unicode字符编码 (如 "uni4E00")
-
-        Returns:
-            对应的字体哈希值，如果未找到则返回None
-        """
+        """通过Unicode字符编码查找对应的字体哈希值."""
+        #
+        # Args:
+        # char: Unicode字符编码 (如 "uni4E00")
+        #
+        # Returns:
+        # 对应的字体哈希值，如果未找到则返回None
         return self.char_map.get(char)
 
 
@@ -113,15 +108,13 @@ except Exception as e:
 
 
 def hash_glyph(glyph: Glyph) -> str:
-    """
-    计算TTF字体字形的哈希值
-    
-    Args:
-        glyph: TTF字体字形对象
-    
-    Returns:
-        字形的MD5哈希值
-    """
+    """计算TTF字体字形的哈希值."""
+    #
+    # Args:
+    # glyph: TTF字体字形对象
+    #
+    # Returns:
+    # 字形的MD5哈希值
     if glyph.numberOfContours <= 0:
         return ""
 
@@ -141,18 +134,16 @@ def hash_glyph(glyph: Glyph) -> str:
 
 
 def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
-    """
-    从字体文件或Base64编码的字体数据中提取字形哈希映射表
-    
-    Args:
-        font_data: 字体文件路径、文件对象或Base64编码的字体数据
-    
-    Returns:
-        字形名称到哈希值的映射字典 ({"uni4E00": "hash值", ...})
-    
-    Raises:
-        ValueError: 当无法解析字体数据时
-    """
+    """从字体文件或Base64编码的字体数据中提取字形哈希映射表."""
+    #
+    # Args:
+    # font_data: 字体文件路径、文件对象或Base64编码的字体数据
+    #
+    # Returns:
+    # 字形名称到哈希值的映射字典 ({"uni4E00": "hash值", ...})
+    #
+    # Raises:
+    # ValueError: 当无法解析字体数据时
     font_hashmap = {}
 
     # 处理Base64编码的字体数据
@@ -177,16 +168,14 @@ def font2map(font_data: Union[IO, Path, str]) -> Dict[str, str]:
 
 
 def decrypt(dst_fontmap: Dict[str, str], encrypted_text: str) -> str:
-    """
-    解密超星学习通加密字体的文本
-    
-    Args:
-        dst_fontmap: 目标字体的字形哈希映射表
-        encrypted_text: 加密的文本
-    
-    Returns:
-        解密后的文本
-    """
+    """解密超星学习通加密字体的文本."""
+    #
+    # Args:
+    # dst_fontmap: 目标字体的字形哈希映射表
+    # encrypted_text: 加密的文本
+    #
+    # Returns:
+    # 解密后的文本
     result = []
 
     for char in encrypted_text:

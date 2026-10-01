@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""
-Cookie 读写（按账号隔离）
-
-【为什么按账号隔离】
-原来所有账号共用一个 cookies.txt，A 登录写的 cookie 会被 B 覆盖，
-一旦启用 cookie 登录，就可能拿着 B 的登录态去刷 A 的课（串号）。
-
-现在每个账号有独立的 cookie 文件，从结构上杜绝串号：
-    accounts/cookies/<手机号>.txt
-
-未指定账号时（老的单人模式）仍回退到项目根目录的 cookies.txt，保持兼容。
-"""
+"""Cookie 读写（按账号隔离）."""
+#
+# 【为什么按账号隔离】
+# 原来所有账号共用一个 cookies.txt，A 登录写的 cookie 会被 B 覆盖，
+# 一旦启用 cookie 登录，就可能拿着 B 的登录态去刷 A 的课（串号）。
+#
+# 现在每个账号有独立的 cookie 文件，从结构上杜绝串号：
+# accounts/cookies/<手机号>.txt
+#
+# 未指定账号时（老的单人模式）仍回退到项目根目录的 cookies.txt，保持兼容。
 
 import os
 import os.path
@@ -38,7 +36,7 @@ def _safe(name):
 
 
 def set_current_account(username):
-    """设置当前账号；之后 cookie 读写都会用这个账号专属的文件"""
+    """设置当前账号；之后 cookie 读写都会用这个账号专属的文件."""
     global _current_account
     _current_account = str(username).strip() if username else None
 
@@ -48,7 +46,7 @@ def current_account():
 
 
 def cookie_path(username=None):
-    """返回该账号的 cookie 文件路径"""
+    """返回该账号的 cookie 文件路径."""
     who = username or _current_account
     if who:
         os.makedirs(COOKIES_DIR, exist_ok=True)
@@ -73,8 +71,9 @@ def save_cookies(session: requests.Session, username=None):
             f.write(buffer)
         try:
             os.chmod(path, 0o600)
-        except Exception:
-            pass
+        except OSError:
+            if os.name != "nt":
+                raise
 
 
 def use_cookies(username=None) -> dict:
@@ -104,7 +103,7 @@ def use_cookies(username=None) -> dict:
 
 
 def clear_cookies(username=None):
-    """清掉某账号的 cookie（用于强制重新登录）"""
+    """清掉某账号的 cookie（用于强制重新登录）."""
     with cookie_lock:
         path = cookie_path(username)
         if os.path.exists(path):

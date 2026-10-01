@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
-AI 生成内容复核（留痕 + 查阅）。
-
-刷课过程中由 AI 生成、最终提交给平台的"实质性文字"——章节测验简答、作业简答、
-主题讨论回复、AI 实践作答——都会在这里留一份可读记录：
-
-    ~/.chaoxing/reviews/YYYY-MM-DD.md   人读（Markdown，可直接打开看）
-    ~/.chaoxing/reviews/index.jsonl     机读（cx review 用它做翻阅）
-
-设计原则：
-  * 只记录"会被平台看到的文字"；客观题的字母答案没有复核价值，不记；
-  * 记录失败阻止本项提交，其他任务可以继续；
-  * 不含账号、密码、cookie 等敏感信息，只有课程名 / 任务名 / 时间 / 正文 / 平台状态。
-"""
+"""AI 生成内容复核（留痕 + 查阅）."""
+#
+# 刷课过程中由 AI 生成、最终提交给平台的"实质性文字"——章节测验简答、作业简答、
+# 主题讨论回复、AI 实践作答——都会在这里留一份可读记录：
+#
+# ~/.chaoxing/reviews/YYYY-MM-DD.md   人读（Markdown，可直接打开看）
+# ~/.chaoxing/reviews/index.jsonl     机读（cx review 用它做翻阅）
+#
+# 设计原则：
+# * 只记录"会被平台看到的文字"；客观题的字母答案没有复核价值，不记；
+# * 记录失败阻止本项提交，其他任务可以继续；
+# * 不含账号、密码、cookie 等敏感信息，只有课程名 / 任务名 / 时间 / 正文 / 平台状态。
 
 import json
 import os
@@ -53,7 +51,7 @@ def _today() -> str:
 
 def record(kind: str, text: str, course: str = "", task: str = "",
            status: str = "待提交", extra: Optional[dict] = None) -> Optional[dict]:
-    """留一条痕。返回记录；失败返回 None，调用方必须阻止本项提交。"""
+    """留一条痕。返回记录；失败返回 None，调用方必须阻止本项提交."""
     body = redact(str(text or "").strip())
     if not body:
         return None
@@ -113,7 +111,7 @@ def _markdown_block(item: dict) -> str:
 
 
 def load(days: Optional[int] = None, limit: Optional[int] = None) -> List[dict]:
-    """读取留痕（新的在前）。days=N 只看最近 N 天。"""
+    """读取留痕（新的在前）。days=N 只看最近 N 天."""
     items: List[dict] = []
     path = index_path()
     if not os.path.exists(path):
@@ -152,7 +150,7 @@ def _wrap(text: str, width: int = 62, indent: str = "  ") -> str:
 
 
 def render_index(items: List[dict]) -> str:
-    """列表视图：每条两行，一眼扫过。"""
+    """列表视图：每条两行，一眼扫过."""
     if not items:
         return "\n  还没有可复核的内容。刷课过程中 AI 写的文字会自动记到这里。\n"
     out = [""]
@@ -169,7 +167,7 @@ def render_index(items: List[dict]) -> str:
     return "\n".join(out)
 
 def render_item(item: dict, position: str = "") -> str:
-    """单条视图：正文按 62 列折行，适合终端阅读。"""
+    """单条视图：正文按 62 列折行，适合终端阅读."""
     lines = [
         "  " + "─" * 46,
         "  " + (position + " " if position else "") + str(item.get("kind", ""))
@@ -192,7 +190,7 @@ def _ask(prompt: str) -> str:
 
 
 def review_cli(argv: Optional[List[str]] = None) -> int:
-    """cx review 的入口：翻阅 AI 生成过的文字。"""
+    """Cx review 的入口：翻阅 AI 生成过的文字."""
     argv = list(argv or [])
     days = None
     limit = None

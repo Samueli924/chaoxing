@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-开始刷课前的自动扫描（默认开启，无需用户勾选）。
-
-每次开始刷课前跑一遍，把"漏刷"的东西一次说清楚：
-  * 章节：共多少节 · 已完成 · 待刷（从哪一节接着刷）；
-  * 教学任务：已完成 / 可学待完成 / 未解锁 / 暂不支持；
-  * 需要人管的：作业等批改、时长类文档平台不计入、新版情景对话未适配。
-
-设计原则：
-  * 全程只读，不提交任何东西；
-  * 失败软着陆：扫描出错只记日志，绝不挡住刷课；
-  * 输出控制在几行以内（结论先行，细节看运行日志）。
-"""
+"""开始刷课前的自动扫描（默认开启，无需用户勾选）."""
+#
+# 每次开始刷课前跑一遍，把"漏刷"的东西一次说清楚：
+# * 章节：共多少节 · 已完成 · 待刷（从哪一节接着刷）；
+# * 教学任务：已完成 / 可学待完成 / 未解锁 / 暂不支持；
+# * 需要人管的：作业等批改、时长类文档平台不计入、新版情景对话未适配。
+#
+# 设计原则：
+# * 全程只读，不提交任何东西；
+# * 失败软着陆：扫描出错只记日志，绝不挡住刷课；
+# * 输出控制在几行以内（结论先行，细节看运行日志）。
 
 from typing import List, Optional
 
@@ -19,7 +17,7 @@ from api.logger import logger
 
 
 def chapter_row(course: dict, all_points: Optional[list], error: str = "") -> dict:
-    """一门课的章节扫描结果（纯计算，不发请求）"""
+    """一门课的章节扫描结果（纯计算，不发请求）."""
     points = list(all_points or [])
     finished = [p for p in points if p.get("has_finished")]
     pending = [p for p in points if not p.get("has_finished")]
@@ -34,9 +32,9 @@ def chapter_row(course: dict, all_points: Optional[list], error: str = "") -> di
 
 
 def scan_task_center(chaoxing, courses: list, config: dict) -> List[dict]:
-    """只读扫描任务中心：每门课的分组 / 任务点状态分类"""
+    """只读扫描任务中心：每门课的分组 / 任务点状态分类."""
     from api.task_center import (TaskCenter, SUPPORTED_PLAN_TYPES,
-                                 PLAN_TYPE_DISCUSS, plan_type_name)
+                                 plan_type_name)
     rows = []
     try:
         tc = TaskCenter(chaoxing, config)
@@ -95,10 +93,39 @@ def _type_text(by_type: dict) -> str:
     return " · ".join(parts)
 
 
+def _task_row_warnings(row, only_discussion, discussion_mode):
+    """Explain pending task types and locked work without implying completion."""
+    lines = []
+    for name in row.get("unsupported") or []:
+        lines.append("    提醒      · " + str(name) + " 暂不支持，需要手动完成")
+    todo_types = row.get("by_type") or {}
+    if todo_types.get("作业"):
+        if only_discussion:
+            lines.append("    提醒      · " + str(todo_types["作业"])
+                         + " 个作业没做（本次只刷讨论，作业要另外选「任务中心」才刷）")
+        else:
+            lines.append("    提醒      · " + str(todo_types["作业"])
+                         + " 个作业没做，本次会自动完成（简答题要等老师批改）")
+    if todo_types.get("主题讨论"):
+        if discussion_mode == "board":
+            lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                         + " 个任务里的主题讨论未做（本次改在讨论区里自己挑）")
+        elif only_discussion:
+            lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                         + " 个讨论还没回复，本次会自动回复")
+        else:
+            lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                         + " 个讨论还没回复，本次会一起回复")
+    if row.get("locked_by_type") and not only_discussion:
+        lines.append("    提醒      · 还有 " + _type_text(row["locked_by_type"])
+                     + " 被前面的分组锁着，完成前面的任务后会自动解锁")
+    return lines
+
+
 def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
            task_center_enabled: bool, only_discussion: bool = False,
            discussion_mode: str = "task") -> str:
-    """扫描报告：结论先行，几行说完"""
+    """扫描报告：结论先行，几行说完."""
     lines = ["  开始前扫描", "  " + "─" * 46]
     for row in chapter_rows or []:
         title = str(row.get("title") or "")
@@ -134,36 +161,14 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
                 lines.append("    本次只刷  任务里的主题讨论（自动，其它类型跳过）")
         elif discussion_mode == "board":
             lines.append("    讨论      走讨论区模式（任务里的主题讨论本次跳过）")
-        for name in row.get("unsupported") or []:
-            lines.append("    提醒      · " + str(name) + " 暂不支持，需要手动完成")
-        todo_types = row.get("by_type") or {}
-        if todo_types.get("作业"):
-            if only_discussion:
-                lines.append("    提醒      · " + str(todo_types["作业"])
-                             + " 个作业没做（本次只刷讨论，作业要另外选「任务中心」才刷）")
-            else:
-                lines.append("    提醒      · " + str(todo_types["作业"])
-                             + " 个作业没做，本次会自动完成（简答题要等老师批改）")
-        if todo_types.get("主题讨论"):
-            if discussion_mode == "board":
-                lines.append("    提醒      · " + str(todo_types["主题讨论"])
-                             + " 个任务里的主题讨论未做（本次改在讨论区里自己挑）")
-            elif only_discussion:
-                lines.append("    提醒      · " + str(todo_types["主题讨论"])
-                             + " 个讨论还没回复，本次会自动回复")
-            else:
-                lines.append("    提醒      · " + str(todo_types["主题讨论"])
-                             + " 个讨论还没回复，本次会一起回复")
-        if row.get("locked_by_type") and not only_discussion:
-            lines.append("    提醒      · 还有 " + _type_text(row["locked_by_type"])
-                         + " 被前面的分组锁着，完成前面的任务后会自动解锁")
+        lines.extend(_task_row_warnings(row, only_discussion, discussion_mode))
     lines.append("  " + "─" * 46)
     return "\n".join(lines)
 
 def run(chaoxing, courses: list, config: dict, chapter_rows: list,
         chapters_enabled: bool, task_center_enabled: bool,
         only_discussion: bool = False, discussion_mode: str = "task") -> str:
-    """执行扫描并返回可直接 print 的报告文本（永不抛异常）"""
+    """执行扫描并返回可直接 print 的报告文本（永不抛异常）."""
     tc_rows = []
     if task_center_enabled:
         try:

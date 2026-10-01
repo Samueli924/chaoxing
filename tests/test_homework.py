@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-任务中心作业任务点（planType=4）离线回归
-
-覆盖：
-  * 新版作业页（mooc2/work/dowork）解析：题型、题干、选项、表单字段、提交地址
-  * study_homework：选择题/填空题作答 + 提交表单字段 + 填空题按空提交
-  * 失败不假装成功：页面无题目 / 简答题无写作器 / confirm 模式无终端
-  * get_job_list 多页解析：num>=1 无 mArg 时按预期跳过，仍能读出 num=0 的任务点
-全部离线，不联网、不碰真实数据。
-"""
+"""任务中心作业任务点（planType=4）离线回归."""
+#
+# 覆盖：
+# * 新版作业页（mooc2/work/dowork）解析：题型、题干、选项、表单字段、提交地址
+# * study_homework：选择题/填空题作答 + 提交表单字段 + 填空题按空提交
+# * 失败不假装成功：页面无题目 / 简答题无写作器 / confirm 模式无终端
+# * get_job_list 多页解析：num>=1 无 mArg 时按预期跳过，仍能读出 num=0 的任务点
+# 全部离线，不联网、不碰真实数据。
 import os
 import sys
 import tempfile
@@ -68,6 +66,7 @@ SHORTANSWER_PAGE = (
 
 class FakeResponse:
     def __init__(self, status_code=200, text="", payload=None):
+        """Initialize configuration and runtime state."""
         self.status_code = status_code
         self.text = text
         self._payload = payload
@@ -80,6 +79,7 @@ class FakeResponse:
 
 class FakeSession:
     def __init__(self, routes):
+        """Initialize configuration and runtime state."""
         self.routes = routes
         self.calls = []
         self.kwargs_calls = []
@@ -103,6 +103,7 @@ class FakeTiku:
     DISABLE = False
 
     def __init__(self, answers):
+        """Initialize configuration and runtime state."""
         self.answers = answers
 
     def query_all(self, questions, query_delay=0.0):
@@ -114,7 +115,7 @@ class FakeTiku:
 
 class HomeworkDecodeTestCase(unittest.TestCase):
     def test_title_survives_invalid_h3_nesting(self):
-        """真实页面把 <p> 嵌在 <h3> 里，lxml 会提前闭合 h3；题干不能丢"""
+        """真实页面把 <p> 嵌在 <h3> 里，lxml 会提前闭合 h3；题干不能丢."""
         page = decode_mod.decode_homework_page(HOMEWORK_PAGE)
         self.assertIn("以下属于战略管理特征的有哪些？", page["questions"][0]["title"])
         self.assertIn("环境分析的内容有", page["questions"][1]["title"])
@@ -180,7 +181,7 @@ class StudyHomeworkTestCase(unittest.TestCase):
         self.assertFalse(tc.study_homework(HOMEWORK_URL, {"name": "作业"}))
 
     def test_recent_submission_is_not_repeated(self):
-        """本地台账里有近期提交记录：不再重复提交（平台状态有延迟）"""
+        """本地台账里有近期提交记录：不再重复提交（平台状态有延迟）."""
         tc = self._tc(HOMEWORK_PAGE, ["AB", ["水", "土"]])
         plan = {"name": "第1章作业", "planId": "plan-ledger-1"}
         tc._mark_submitted(plan)
@@ -245,7 +246,7 @@ class JobListParseTestCase(unittest.TestCase):
         self.assertTrue(info.get("parseError"))
 
     def test_missing_pages_are_summarized_once(self):
-        """逐页无 mArg 不再逐条刷日志，每章汇总成一条"""
+        """逐页无 mArg 不再逐条刷日志，每章汇总成一条."""
         pages = {"0": self.CARD_PAGE}
         for num in "123456":
             pages[num] = "<html>mArg = $mArg;</html>"

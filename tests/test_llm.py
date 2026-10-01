@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-大模型调用策略（api/llm.py）与答题解析/投票回归。
-
-背景：DeepSeek flash 不同版本的 thinking 行为不同——旧版正文为空、新版默认带推理。
-代码不能再写死"永远关 thinking"（会降低正确率），也不能假设一定有 content。
-全部离线，不联网。
-"""
+"""大模型调用策略（api/llm.py）与答题解析/投票回归."""
+#
+# 背景：DeepSeek flash 不同版本的 thinking 行为不同——旧版正文为空、新版默认带推理。
+# 代码不能再写死"永远关 thinking"（会降低正确率），也不能假设一定有 content。
+# 全部离线，不联网。
 import os
 import sys
 import tempfile
@@ -21,24 +19,28 @@ from api.answer import AI, parse_answer_text  # noqa: E402
 
 class FakeMessage:
     def __init__(self, content="", reasoning=""):
+        """Initialize configuration and runtime state."""
         self.content = content
         self.reasoning_content = reasoning
 
 
 class FakeChoice:
     def __init__(self, message):
+        """Initialize configuration and runtime state."""
         self.message = message
 
 
 class FakeResponse:
     def __init__(self, message):
+        """Initialize configuration and runtime state."""
         self.choices = [FakeChoice(message)]
 
 
 class FakeClient:
-    """按脚本依次返回响应或抛错"""
+    """按脚本依次返回响应或抛错."""
 
     def __init__(self, script):
+        """Initialize configuration and runtime state."""
         self.script = list(script)
         self.calls = []
         outer = self

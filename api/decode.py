@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-超星学习通数据解析模块
-
-该模块负责解析超星学习通平台的课程、章节、任务点等各种数据，
-并转换为程序内部使用的结构化数据格式。
-"""
+"""超星学习通数据解析模块."""
+#
+# 该模块负责解析超星学习通平台的课程、章节、任务点等各种数据，
+# 并转换为程序内部使用的结构化数据格式。
 import json
 import re
 from typing import List, Dict, Tuple, Any, Optional
@@ -30,7 +28,7 @@ _EXOTIC_CHARS = {
 
 
 def _sel_text(node, selector, default="") -> str:
-    """安全取选择器命中的文本：页面结构变了也只是取到空，不会抛 NoneType.text"""
+    """安全取选择器命中的文本：页面结构变了也只是取到空，不会抛 NoneType.text."""
     try:
         found = node.select_one(selector)
     except Exception:
@@ -44,7 +42,7 @@ def _sel_text(node, selector, default="") -> str:
 
 
 def _sel_attr(node, selector, attr, default="") -> str:
-    """安全取选择器命中的属性值（同上，不会抛 NoneType.attrs）"""
+    """安全取选择器命中的属性值（同上，不会抛 NoneType.attrs）."""
     try:
         found = node.select_one(selector)
     except Exception:
@@ -61,7 +59,7 @@ def _sel_attr(node, selector, attr, default="") -> str:
 
 
 def clean_text(text) -> str:
-    """清理平台返回文本里的特殊空白字符，并把连续空格压成一个"""
+    """清理平台返回文本里的特殊空白字符，并把连续空格压成一个."""
     if text is None:
         return ""
     text = str(text)
@@ -72,15 +70,13 @@ def clean_text(text) -> str:
 
 
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
-    """
-    解析课程列表页面，提取课程信息
-    
-    Args:
-        html_text: 课程列表页面的HTML内容
-        
-    Returns:
-        课程信息列表，每个课程包含id、title、teacher等信息
-    """
+    """解析课程列表页面，提取课程信息."""
+    #
+    # Args:
+    # html_text: 课程列表页面的HTML内容
+    #
+    # Returns:
+    # 课程信息列表，每个课程包含id、title、teacher等信息
     logger.trace("开始解码课程列表...")
     soup = BeautifulSoup(html_text, "lxml")
     raw_courses = soup.select("div.course")
@@ -119,15 +115,13 @@ def decode_course_list(html_text: str) -> List[Dict[str, str]]:
 
 
 def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
-    """
-    解析二级课程列表页面，提取文件夹信息
-    
-    Args:
-        html_text: 二级课程列表页面的HTML内容
-        
-    Returns:
-        课程文件夹信息列表
-    """
+    """解析二级课程列表页面，提取文件夹信息."""
+    #
+    # Args:
+    # html_text: 二级课程列表页面的HTML内容
+    #
+    # Returns:
+    # 课程文件夹信息列表
     logger.trace("开始解码二级课程列表...")
     soup = BeautifulSoup(html_text, "lxml")
     raw_courses = soup.select("ul.file-list>li")
@@ -154,15 +148,13 @@ def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
 
 
 def decode_course_point(html_text: str) -> Dict[str, Any]:
-    """
-    解析章节列表页面，提取章节点信息
-    
-    Args:
-        html_text: 章节列表页面的HTML内容
-        
-    Returns:
-        章节信息字典，包含是否锁定状态和章节点列表
-    """
+    """解析章节列表页面，提取章节点信息."""
+    #
+    # Args:
+    # html_text: 章节列表页面的HTML内容
+    #
+    # Returns:
+    # 章节信息字典，包含是否锁定状态和章节点列表
     logger.trace("开始解码章节列表...")
     soup = BeautifulSoup(html_text, "lxml")
     course_point = {
@@ -183,15 +175,13 @@ def decode_course_point(html_text: str) -> Dict[str, Any]:
 
 
 def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
-    """
-    从章节单元中提取章节点信息
-    
-    Args:
-        chapter_unit: BeautifulSoup对象，表示一个章节单元
-        
-    Returns:
-        章节点信息列表
-    """
+    """从章节单元中提取章节点信息."""
+    #
+    # Args:
+    # chapter_unit: BeautifulSoup对象，表示一个章节单元
+    #
+    # Returns:
+    # 章节点信息列表
     point_list = []
     raw_points = chapter_unit.find_all("li")
 
@@ -235,15 +225,13 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
 
 
 def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    解析任务点列表页面，提取任务点信息
-    
-    Args:
-        html_text: 任务点列表页面的HTML内容
-        
-    Returns:
-        任务点列表和任务信息的元组
-    """
+    """解析任务点列表页面，提取任务点信息."""
+    #
+    # Args:
+    # html_text: 任务点列表页面的HTML内容
+    #
+    # Returns:
+    # 任务点列表和任务信息的元组
     logger.trace("开始解码任务点列表...")
 
     # 检查章节是否未开放
@@ -284,15 +272,13 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
 
 def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    从卡片数据中提取任务基本信息
-    
-    Args:
-        cards_data: 卡片数据字典
-        
-    Returns:
-        任务基本信息字典
-    """
+    """从卡片数据中提取任务基本信息."""
+    #
+    # Args:
+    # cards_data: 卡片数据字典
+    #
+    # Returns:
+    # 任务基本信息字典
     defaults = cards_data.get("defaults", {})
     if not defaults:
         return {}
@@ -310,19 +296,17 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _process_attachment_cards(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """
-    处理所有附件任务卡片，强化直播任务识别逻辑
-
-    Args:
-        cards: 附件任务卡片列表
-
-    Returns:
-        (处理后的任务列表, 无法识别的卡片类型列表)
-
-    平台新增任务点类型时必须让上层知道：整章卡片都不认识 → 任务列表为空，
-    以前会走"空章节"分支把章节记成完成（假完成）。现在把未知类型带上去，
-    由 get_job_list 按"读取失败"处理。
-    """
+    """处理所有附件任务卡片，强化直播任务识别逻辑."""
+    #
+    # Args:
+    # cards: 附件任务卡片列表
+    #
+    # Returns:
+    # (处理后的任务列表, 无法识别的卡片类型列表)
+    #
+    # 平台新增任务点类型时必须让上层知道：整章卡片都不认识 → 任务列表为空，
+    # 以前会走"空章节"分支把章节记成完成（假完成）。现在把未知类型带上去，
+    # 由 get_job_list 按"读取失败"处理。
     job_list = []
     unknown_types: List[str] = []
 
@@ -392,7 +376,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[st
 
 
 def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """处理直播类型任务，提取所有必要参数"""
+    """处理直播类型任务，提取所有必要参数."""
     try:
         property_data = card.get("property", {})
         return {
@@ -414,7 +398,7 @@ def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """处理阅读类型任务"""
+    """处理阅读类型任务."""
     if not (card.get("type") == "read" and not card.get("property", {}).get("read", False)):
         return None
 
@@ -432,7 +416,7 @@ def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """处理视频类型任务"""
+    """处理视频类型任务."""
     try:
         return {
             "type": "video",
@@ -454,7 +438,7 @@ def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _process_document_task(card: Dict[str, Any]) -> Dict[str, Any]:
-    """处理文档类型任务"""
+    """处理文档类型任务."""
     return {
         "type": "document",
         "jobid": card.get("jobid", ""),
@@ -468,7 +452,7 @@ def _process_document_task(card: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _process_work_task(card: Dict[str, Any]) -> Dict[str, Any]:
-    """处理作业类型任务"""
+    """处理作业类型任务."""
     return {
         "type": "workid",
         "jobid": card.get("jobid", ""),
@@ -480,15 +464,13 @@ def _process_work_task(card: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def decode_questions_info(html_content: str) -> Dict[str, Any]:
-    """
-    解析题目信息，提取表单数据和问题列表
-    
-    Args:
-        html_content: 题目页面HTML内容
-        
-    Returns:
-        包含表单数据和问题列表的字典
-    """
+    """解析题目信息，提取表单数据和问题列表."""
+    #
+    # Args:
+    # html_content: 题目页面HTML内容
+    #
+    # Returns:
+    # 包含表单数据和问题列表的字典
     soup = BeautifulSoup(html_content, "lxml")
     form_data = _extract_form_data(soup)
 
@@ -525,12 +507,12 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
 
 
 def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
-    """从BeautifulSoup对象中提取表单数据"""
+    """从BeautifulSoup对象中提取表单数据."""
     return _extract_form_fields(soup.find("form"))
 
 
 def _extract_form_fields(form_tag) -> Dict[str, Any]:
-    """从 form 标签里提取所有非答案字段的 input"""
+    """从 form 标签里提取所有非答案字段的 input."""
     form_data = {}
     if not form_tag:
         return form_data
@@ -571,18 +553,16 @@ _HOMEWORK_TYPE_CODES = {
 
 
 def decode_homework_page(html_content: str) -> Dict[str, Any]:
-    """
-    解析「任务中心 -> 作业」的作答页（mooc2/work/dowork）。
-
-    和章节测验页（knowledge/cards 里的 TiMu/Zy_TItle）结构不同：
-      * 题型在隐藏 input answertype<题目id> 的 value 里（旧页在 div.TiMu 的 data 上）
-      * 题干在 h3.mark_name，选项在 div.stem_answer 的 div.answerBg（带 aria-label）
-      * 提交地址在 form#submitForm 的 action 上（带 token / totalQuestionNum），
-        提交接口是 addStudentWorkNewWeb，不是章节测验的 addStudentWorkNew
-
-    返回结构和 decode_questions_info 对齐（form 隐藏字段 + questions + answerwqbid），
-    额外带 form_action / form_method，供提交时原样复用。
-    """
+    """解析「任务中心 -> 作业」的作答页（mooc2/work/dowork）."""
+    #
+    # 和章节测验页（knowledge/cards 里的 TiMu/Zy_TItle）结构不同：
+    # * 题型在隐藏 input answertype<题目id> 的 value 里（旧页在 div.TiMu 的 data 上）
+    # * 题干在 h3.mark_name，选项在 div.stem_answer 的 div.answerBg（带 aria-label）
+    # * 提交地址在 form#submitForm 的 action 上（带 token / totalQuestionNum），
+    # 提交接口是 addStudentWorkNewWeb，不是章节测验的 addStudentWorkNew
+    #
+    # 返回结构和 decode_questions_info 对齐（form 隐藏字段 + questions + answerwqbid），
+    # 额外带 form_action / form_method，供提交时原样复用。
     soup = BeautifulSoup(html_content, "lxml")
     form_tag = soup.find("form", id="submitForm") or soup.find("form")
     if form_tag is None:
@@ -612,14 +592,12 @@ def decode_homework_page(html_content: str) -> Dict[str, Any]:
 
 
 def _extract_homework_title(div_tag, font_decoder=None) -> str:
-    """
-    提取作业题干。
-
-    作业页的题干是 "<h3>1.<span>(多选题)</span><p>题干…</p></h3>"，但 <p> 嵌在
-    <h3> 里属于非法 HTML，lxml 会把 <h3> 提前闭合，题干段落变成 h3 的兄弟节点。
-    只取 h3 会丢题干（实测第 1 题、填空题全部丢），所以这里按 DOM 顺序拼到
-    "选项区（div.stem_answer）"之前的所有文本。
-    """
+    """提取作业题干."""
+    #
+    # 作业页的题干是 "<h3>1.<span>(多选题)</span><p>题干…</p></h3>"，但 <p> 嵌在
+    # <h3> 里属于非法 HTML，lxml 会把 <h3> 提前闭合，题干段落变成 h3 的兄弟节点。
+    # 只取 h3 会丢题干（实测第 1 题、填空题全部丢），所以这里按 DOM 顺序拼到
+    # "选项区（div.stem_answer）"之前的所有文本。
     parts = []
     for child in div_tag.children:
         name = getattr(child, "name", None)
@@ -635,7 +613,7 @@ def _extract_homework_title(div_tag, font_decoder=None) -> str:
 
 
 def _process_homework_question(div_tag, form_tag, font_decoder=None) -> Optional[Dict[str, Any]]:
-    """解析作业页里的单道题目（新版结构）"""
+    """解析作业页里的单道题目（新版结构）."""
     question_id = str(div_tag.attrs.get("data") or "").strip()
     if not question_id:
         return None
@@ -678,7 +656,7 @@ def _process_homework_question(div_tag, form_tag, font_decoder=None) -> Optional
 
 
 def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
-    """处理单个问题"""
+    """处理单个问题."""
     # 提取问题ID和题目类型
     question_id = div_tag.attrs.get("data", "")
     timu_tag = div_tag.find("div", class_="TiMu")
@@ -711,7 +689,7 @@ def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
 
 
 def _get_question_type(type_code: str) -> str:
-    """根据题型代码返回题型名称"""
+    """根据题型代码返回题型名称."""
     type_map = {
         "0": "single",  # 单选题
         "1": "multiple",  # 多选题
@@ -729,7 +707,7 @@ def _get_question_type(type_code: str) -> str:
 
 
 def _extract_title(element, font_decoder=None) -> str:
-    """提取标题内容，支持解码加密字体"""
+    """提取标题内容，支持解码加密字体."""
     if not element:
         return ""
 
@@ -753,7 +731,7 @@ def _extract_title(element, font_decoder=None) -> str:
 
 
 def _extract_choices(element, font_decoder=None) -> str:
-    """提取选项内容，支持解码加密字体"""
+    """提取选项内容，支持解码加密字体."""
     if not element:
         return ""
 

@@ -39,7 +39,7 @@ _captcha_cooldown_until = 0.0
 
 
 def _short_title(text, limit: int = 24) -> str:
-    """进度条上的任务名截断：长文件名会把整行撑爆，这里统一收短。"""
+    """进度条上的任务名截断：长文件名会把整行撑爆，这里统一收短."""
     name = str(text or "").strip()
     if len(name) <= limit:
         return name
@@ -64,6 +64,7 @@ class SessionManager:
         # 注意：__new__ 返回单例后 __init__ 仍会被调用，若不拦截，
         # 每次 get_session() 都会重建 Session 并从 cookie 文件重新加载登录态，
         # 导致「cookie 文件丢失 = 登录态丢失 = 抛 Cannot get uid 崩溃」。
+        """Initialize configuration and runtime state."""
         if getattr(self, "_initialized", False):
             return
         self._initialized = True
@@ -84,18 +85,18 @@ class SessionManager:
 
     @classmethod
     def get_session(cls) -> requests.Session:
-        """返回同一个 Session 实例（不会重建）"""
+        """返回同一个 Session 实例（不会重建）."""
         instance = cls.get_instance()
         return instance._session
 
     @classmethod
     def update_cookies(cls):
-        """把磁盘上的 cookie 合并进当前 session（不清空已有的）"""
+        """把磁盘上的 cookie 合并进当前 session（不清空已有的）."""
         cls.get_instance()._session.cookies.update(use_cookies())
 
     @classmethod
     def reset(cls):
-        """显式重置会话（仅在确实需要全新会话时调用）"""
+        """显式重置会话（仅在确实需要全新会话时调用）."""
         inst = cls.get_instance()
         inst._initialized = False
         inst.__init__()
@@ -126,6 +127,7 @@ class Account:
     isSuccess = None
 
     def __init__(self, _username, _password):
+        """Initialize configuration and runtime state."""
         from api.privacy import register_secret
         register_secret(_username)
         register_secret(_password)
@@ -135,6 +137,7 @@ class Account:
 
 class RateLimiter:
     def __init__(self, call_interval):
+        """Initialize configuration and runtime state."""
         self.last_call = time.time()
         self.lock = threading.Lock()
         self.call_interval = call_interval
@@ -191,14 +194,12 @@ def _positive_int(value, default=0) -> int:
 
 
 def split_completion_answer(answer, expected_count=0) -> list:
-    """
-    把填空题答案拆成"每个空一个值"。
-
-    题库返回的多个空一般用 # 或换行分隔，但答案本身也可能含 # （比如 C#），
-    所以：
-      · 网页明确写了空数时，只按这个数量切（1 个空就整段不切）
-      · 没写空数时才按 # / 换行切
-    """
+    """把填空题答案拆成"每个空一个值"."""
+    #
+    # 题库返回的多个空一般用 # 或换行分隔，但答案本身也可能含 # （比如 C#），
+    # 所以：
+    # · 网页明确写了空数时，只按这个数量切（1 个空就整段不切）
+    # · 没写空数时才按 # / 换行切
     if answer is None:
         return []
 
@@ -230,14 +231,12 @@ def split_completion_answer(answer, expected_count=0) -> list:
 
 
 def build_completion_fields(form: dict, question: dict):
-    """
-    填空题按空提交（#615 / #575）。
-
-    学习通要求填空题提交 answerEditor{题目id}{第几空}（从 1 开始），
-    并用 tiankongsize{题目id} 声明空数；只发 answer{题目id} 的话，
-    网页端会显示"答案为空"，测验永远不及格。
-    非填空题原样返回，不做任何改动。
-    """
+    """填空题按空提交（#615 / #575）."""
+    #
+    # 学习通要求填空题提交 answerEditor{题目id}{第几空}（从 1 开始），
+    # 并用 tiankongsize{题目id} 声明空数；只发 answer{题目id} 的话，
+    # 网页端会显示"答案为空"，测验永远不及格。
+    # 非填空题原样返回，不做任何改动。
     question_id = str(question.get("id") or "")
     if not question_id:
         return
@@ -260,9 +259,7 @@ def build_completion_fields(form: dict, question: dict):
 
 
 def multi_cut(answer: str, origin_html_content="", logger=logger):
-    """
-    将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表
-    """
+    """将多选题答案字符串按特定字符进行切割, 并返回切割后的答案列表."""
     res = cut(answer)
     if res is None:
         logger.warning(
@@ -293,15 +290,13 @@ def clean_res(res):
 
 
 def build_multiple_answer(res, options, origin_html_content="") -> str:
-    """
-    把题库返回的多选答案转成"要提交的选项字母串"。
-
-    题库返回的形式很杂：
-      "ABD"                 -> 直接就是字母
-      "A,B,D" / "A、B、D"    -> 带分隔符的字母
-      "选项一的文字#选项二"    -> 只能按文字匹配回字母
-    返回空串表示一个都没匹配上（调用方会退化成随机作答）。
-    """
+    """把题库返回的多选答案转成"要提交的选项字母串"."""
+    #
+    # 题库返回的形式很杂：
+    # "ABD"                 -> 直接就是字母
+    # "A,B,D" / "A、B、D"    -> 带分隔符的字母
+    # "选项一的文字#选项二"    -> 只能按文字匹配回字母
+    # 返回空串表示一个都没匹配上（调用方会退化成随机作答）。
     options_list = multi_cut(options, origin_html_content)
     res_list = multi_cut(res, origin_html_content)
     if res_list is None or options_list is None:
@@ -441,15 +436,13 @@ def random_answer(options: str, q_type: str) -> str:
 
 
 def _parse_work_record_list(html_text: str) -> list[tuple[int, float]]:
-    """
-    解析章节检测作答记录列表页面（/work/record-list）。
-
-    Args:
-        html_text: record-list 页面 HTML
-
-    Returns:
-        作答记录列表，元素为 (作答序号times, 成绩score)，例如 [(0, 80.0), (1, 100.0)]
-    """
+    """解析章节检测作答记录列表页面（/work/record-list）."""
+    #
+    # Args:
+    # html_text: record-list 页面 HTML
+    #
+    # Returns:
+    # 作答记录列表，元素为 (作答序号times, 成绩score)，例如 [(0, 80.0), (1, 100.0)]
     records = []
     times_list = re.findall(r'viewNum">第(\d+)次', html_text)
     scores = re.findall(r'viewScore">([\d.]+)分', html_text)
@@ -466,15 +459,13 @@ def _parse_work_record_list(html_text: str) -> list[tuple[int, float]]:
 
 
 def _parse_work_record_detail(html_text: str) -> list[dict]:
-    """
-    解析章节检测单次作答详情页面（/work/record-detail）。
-
-    Args:
-        html_text: record-detail 页面 HTML
-
-    Returns:
-        每题信息列表：{id, title, type_label, my_answer, correct_answer}
-    """
+    """解析章节检测单次作答详情页面（/work/record-detail）."""
+    #
+    # Args:
+    # html_text: record-detail 页面 HTML
+    #
+    # Returns:
+    # 每题信息列表：{id, title, type_label, my_answer, correct_answer}
     questions = []
     for qm in re.finditer(r'<div class="TiMu[^"]*singleQuesId" data="(\d+)"[^>]*>(.*?)(?=<div class="TiMu|$)', html_text, re.S):
         qid = qm.group(1)
@@ -529,13 +520,12 @@ _FULLWIDTH_MAP = str.maketrans(
 
 
 def capture_student_job_info(owner, payload) -> None:
-    """把平台在任务引擎上下文里下发的章节同步数据暂存到 owner 上（没有就保持原值）
-
-    任务引擎的"章节"任务点在网页上的同步链路是：视频打点 / job/document
-    的响应里带 stuJobInfo，章节页把它 postMessage 给任务中心父页面，
-    父页面再 POST autoPullChapterScore。这里的 stuJobInfo 就是那个
-    唯一真实的请求体来源，不能自己拼 enc。
-    """
+    """把平台在任务引擎上下文里下发的章节同步数据暂存到 owner 上（没有就保持原值）."""
+    #
+    # 任务引擎的"章节"任务点在网页上的同步链路是：视频打点 / job/document
+    # 的响应里带 stuJobInfo，章节页把它 postMessage 给任务中心父页面，
+    # 父页面再 POST autoPullChapterScore。这里的 stuJobInfo 就是那个
+    # 唯一真实的请求体来源，不能自己拼 enc。
     if not isinstance(payload, dict):
         return
     info = payload.get("stuJobInfo")
@@ -544,9 +534,10 @@ def capture_student_job_info(owner, payload) -> None:
 
 
 class _CurlResponse:
-    """curl 重放请求的返回值，接口和 requests.Response 保持最小兼容"""
+    """Curl 重放请求的返回值，接口和 requests.Response 保持最小兼容."""
 
     def __init__(self, status_code: int, text: str, url: str):
+        """Initialize configuration and runtime state."""
         self.status_code = status_code
         self.text = text
         self.url = url
@@ -555,16 +546,23 @@ class _CurlResponse:
         return json.loads(self.text)
 
 
-def _curl_get(session, url, params, headers=None, timeout: int = 20):
-    """用系统 curl 原样重放一次 GET（cookie 走 stdin，不进命令行参数）。
+def _curl_config_value(value):
+    """Escape a single curl config value and reject control characters."""
+    value = str(value)
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("curl config values must not contain control characters")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    存在的意义：部分网络环境下 urllib3/OpenSSL 的 TLS 指纹会被超星风控在
-    mooc 视频打点接口上拒绝，返回 403 错误页；同一时刻用相同的 URL、查询参数、
-    Cookie、User-Agent 走 curl（SecureTransport/LibreSSL）却是 200（）。
-    所以这里只在 requests 拿到 403 时做一次等价重放，不影响正常环境。
-    """
+
+def _curl_get(session, url, params, headers=None, timeout: int = 20):
+    """用系统 curl 原样重放一次 GET（cookie 走 stdin，不进命令行参数）."""
+    #
+    # 存在的意义：部分网络环境下 urllib3/OpenSSL 的 TLS 指纹会被超星风控在
+    # mooc 视频打点接口上拒绝，返回 403 错误页；同一时刻用相同的 URL、查询参数、
+    # Cookie、User-Agent 走 curl（SecureTransport/LibreSSL）却是 200（）。
+    # 所以这里只在 requests 拿到 403 时做一次等价重放，不影响正常环境。
     import shutil
-    import subprocess
+    import subprocess  # nosec B404 - trusted curl, fixed argv, no shell
 
     curl = shutil.which("curl")
     if not curl:
@@ -576,21 +574,25 @@ def _curl_get(session, url, params, headers=None, timeout: int = 20):
         logger.debug("curl 重放前构造 URL 失败: {}", e)
         return None
 
-    config_lines = [
-        'url = "%s"' % prepared_url.replace('"', '\\"'),
-        "silent",
-        "show-error",
-        "max-time = %d" % int(timeout),
-        'write-out = "\\n%{http_code}"',
-    ]
-    for key, value in (headers or {}).items():
-        config_lines.append('header = "%s: %s"' % (key, str(value).replace('"', '\\"')))
-    cookie = "; ".join(f"{k}={v}" for k, v in session.cookies.items())
-    if cookie:
-        config_lines.append('cookie = "%s"' % cookie.replace('"', '\\"'))
+    try:
+        config_lines = [
+            'url = "%s"' % _curl_config_value(prepared_url),
+            "silent",
+            "show-error",
+            "max-time = %d" % int(timeout),
+            'write-out = "\\n%{http_code}"',
+        ]
+        for key, value in (headers or {}).items():
+            config_lines.append('header = "%s"' % _curl_config_value(f"{key}: {value}"))
+        cookie = "; ".join(f"{k}={v}" for k, v in session.cookies.items())
+        if cookie:
+            config_lines.append('cookie = "%s"' % _curl_config_value(cookie))
+    except ValueError:
+        logger.warning("curl 重放参数含控制字符，已拒绝")
+        return None
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 - resolved curl, fixed argv; validated config via stdin
             [curl, "-K", "-"],
             input="\n".join(config_lines),
             capture_output=True,
@@ -615,15 +617,13 @@ def _curl_get(session, url, params, headers=None, timeout: int = 20):
 
 
 def _parse_progress_passed(resp, owner=None) -> bool:
-    """
-    解析视频进度上报响应里的 isPassed。
-
-    上报接口被风控时可能返回 200 + 登录页/验证码页（不是 JSON），
-    或者 JSON 里没有 isPassed；以前直接取下标会抛异常把整个章节中断（#175 / #298），
-    这里统一按"还没通过"处理。
-
-    顺带把平台下发的任务引擎同步数据（stuJobInfo）记到 owner 上。
-    """
+    """解析视频进度上报响应里的 isPassed."""
+    #
+    # 上报接口被风控时可能返回 200 + 登录页/验证码页（不是 JSON），
+    # 或者 JSON 里没有 isPassed；以前直接取下标会抛异常把整个章节中断（#175 / #298），
+    # 这里统一按"还没通过"处理。
+    #
+    # 顺带把平台下发的任务引擎同步数据（stuJobInfo）记到 owner 上。
     try:
         payload = resp.json()
     except ValueError:
@@ -638,7 +638,7 @@ def _parse_progress_passed(resp, owner=None) -> bool:
 
 
 def _clean_answer_text(text) -> str:
-    """去掉答案里的 HTML 标签、实体和特殊空白"""
+    """去掉答案里的 HTML 标签、实体和特殊空白."""
     value = re.sub(r"<[^>]+>", "", str(text or ""))
     value = unescape(value)
     value = value.replace("\u00a0", " ").replace("\u3000", " ")
@@ -646,12 +646,12 @@ def _clean_answer_text(text) -> str:
 
 
 def _letters_key(text) -> str:
-    """多选答案只比较字母集合：ABD / A,B,D / b,a,d 都算一样"""
+    """多选答案只比较字母集合：ABD / A,B,D / b,a,d 都算一样."""
     return "".join(sorted(set(re.findall(r"[A-Za-z]", str(text or "").upper()))))
 
 
 def _judge_key(text) -> str:
-    """判断题归一化成 对/错"""
+    """判断题归一化成 对/错."""
     squeezed = re.sub(r"[\s。.、,，;；:：]", "", _clean_answer_text(text)).lower()
     if squeezed in _TRUE_WORDS:
         return "T"
@@ -661,13 +661,11 @@ def _judge_key(text) -> str:
 
 
 def answers_equal(my_answer, correct_answer, type_label="") -> bool:
-    """
-    判断"我的答案"和"正确答案"是否一致。
-
-    页面上这两种写法的格式经常不一样（判断题 对/√、多选 ABD/A,B,D、
-    填空里空格和分号混用），直接做字符串比较会把答对的判成答错，
-    导致明明通过了还要重做，最后甚至被记成失败（#627）。
-    """
+    """判断"我的答案"和"正确答案"是否一致."""
+    #
+    # 页面上这两种写法的格式经常不一样（判断题 对/√、多选 ABD/A,B,D、
+    # 填空里空格和分号混用），直接做字符串比较会把答对的判成答错，
+    # 导致明明通过了还要重做，最后甚至被记成失败（#627）。
     mine = _clean_answer_text(my_answer)
     right = _clean_answer_text(correct_answer)
     if not mine or not right:
@@ -695,15 +693,13 @@ def answers_equal(my_answer, correct_answer, type_label="") -> bool:
 
 
 def evaluate_work_detail(detail) -> dict:
-    """
-    逐题比较"我的答案"和"正确答案"（写法差异由 answers_equal 归一化）。
-
-    返回 {"all_correct": bool, "feedback": [...], "unjudgeable": bool}
-
-    unjudgeable=True 表示所有"不一致"的题目里，我们这边的答案是空的 ——
-    也就是页面根本没渲染出"我的答案"（可能只给了图标）。这种情况判定不可信，
-    调用方要按"拿不到成绩"处理，不能当成答错去重做（#627）。
-    """
+    """逐题比较"我的答案"和"正确答案"（写法差异由 answers_equal 归一化）."""
+    #
+    # 返回 {"all_correct": bool, "feedback": [...], "unjudgeable": bool}
+    #
+    # unjudgeable=True 表示所有"不一致"的题目里，我们这边的答案是空的 ——
+    # 也就是页面根本没渲染出"我的答案"（可能只给了图标）。这种情况判定不可信，
+    # 调用方要按"拿不到成绩"处理，不能当成答错去重做（#627）。
     feedback = []
     all_correct = True
     mismatched = 0
@@ -741,11 +737,10 @@ _JUDGE_FALSE_SET = {'FALSE', 'F', '0', '错', '错误', '×', 'X', '否', 'NO', 
 
 
 def normalize_answer_text(ans) -> str:
-    """作答详情答案归一化: 消除 对/错与true/false、全半角标点等格式差异.
-
-    归一化是确定性的, 两侧同格式必然相等; 跨格式差异(如字母 vs 选项全文)
-    交由调用方的满分分数兜底处理.
-    """
+    """作答详情答案归一化: 消除 对/错与true/false、全半角标点等格式差异."""
+    #
+    # 归一化是确定性的, 两侧同格式必然相等; 跨格式差异(如字母 vs 选项全文)
+    # 交由调用方的满分分数兜底处理.
     s = re.sub(r'\s+', '', str(ans or '')).upper()
     if s in _JUDGE_TRUE_SET:
         return 'TRUE'
@@ -760,6 +755,7 @@ def normalize_answer_text(ans) -> str:
 
 class Chaoxing:
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
+        """Initialize configuration and runtime state."""
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
@@ -1356,14 +1352,12 @@ class Chaoxing:
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video",
                     engine_info: bool = False) -> StudyResult:
-        """
-        播放视频 / 音频任务。
-
-        serial_video = true 时，同一个进程里一次只播一个视频。
-        超星现在有心跳检测，多个视频同时播放容易被判定异常、把已刷的进度回退（#588），
-        所以遇到"刷完又变回没刷"的用户可以打开它换取稳定；
-        默认仍是并发（保持原来的速度），需要时在 config.ini 里设 serial_video = true。
-        """
+        """播放视频 / 音频任务."""
+        #
+        # serial_video = true 时，同一个进程里一次只播一个视频。
+        # 超星现在有心跳检测，多个视频同时播放容易被判定异常、把已刷的进度回退（#588），
+        # 所以遇到"刷完又变回没刷"的用户可以打开它换取稳定；
+        # 默认仍是并发（保持原来的速度），需要时在 config.ini 里设 serial_video = true。
         # engine_info 只在需要时多传一个参数：社区里有测试/扩展会替换 _study_video，
         # 保持 5 参数调用形态，避免插件式猴子补丁被新参数打断。
         args = (_course, _job, _job_info, _speed, _type)
@@ -1374,12 +1368,8 @@ class Chaoxing:
         with Chaoxing._video_lock:
             return self._study_video(*args)
 
-    def _study_video(self, _course, _job, _job_info, _speed: float = 1.0,
-                     _type: Literal["Video", "Audio"] = "Video",
-                     engine_info: bool = False) -> StudyResult:
-        _session = SessionManager.get_session()
-
-        headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
+    def _video_metadata(self, _session, _job, headers):
+        """Fetch and validate video tokens and duration before playback."""
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
         # 视频信息接口偶尔会返回非 JSON（登录页 / 错误页），或者 status=failed 时
         # 干脆不带 dtoken、duration 这些字段。以前直接取键会抛 KeyError 把整个任务
@@ -1388,20 +1378,20 @@ class Chaoxing:
             _video_info = _session.get(_info_url, headers=headers).json()
         except Exception as e:
             logger.error(f"读取视频信息失败（{type(e).__name__}），跳过该任务点: {e}")
-            return StudyResult.ERROR
+            return None
 
         if not isinstance(_video_info, dict):
             logger.error("视频信息格式异常（不是 JSON 对象），跳过该任务点")
-            return StudyResult.ERROR
+            return None
 
         if _video_info.get("status") != "success":
             logger.error(f"视频信息状态异常（status={_video_info.get('status', '缺失')}），跳过该任务点")
-            return StudyResult.ERROR
+            return None
 
         _dtoken = _video_info.get("dtoken")
         if not _dtoken:
             logger.error("视频信息缺少 dtoken，跳过该任务点")
-            return StudyResult.ERROR
+            return None
 
         # Time in the real world: last_iter, gc.THRESHOLD
         # Time in the video (can be scaled with the speed factor): duration, play_time, last_log_time, wait_time
@@ -1412,7 +1402,38 @@ class Chaoxing:
             duration = 0
         if duration <= 0:
             logger.error("视频信息缺少时长（视频可能还没转码完成），跳过该任务点")
+            return None
+        return _dtoken, duration
+
+    def _refresh_video_bar(self, pbar, duration, play_time, _job):
+        """Refresh playback output only when manual answering does not own stdin."""
+        # 检查手动模式锁是否被锁定
+        manual_locked = False
+        try:
+            manual_locked = TikuManual._manual_lock.locked()
+        except Exception as e:
+            logger.trace(f"无法检查手动锁状态: {e}")
+
+        if manual_locked:
+            pbar = self._close_pbar_safe(pbar)
+        else:
+            if pbar is None:
+                pbar = tqdm(total=duration, initial=int(play_time), desc=_short_title(_job.get("name")),
+                            unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', leave=False)
+            pbar.n = int(play_time)
+            pbar.refresh()
+        return pbar
+
+    def _study_video(self, _course, _job, _job_info, _speed: float = 1.0,
+                     _type: Literal["Video", "Audio"] = "Video",
+                     engine_info: bool = False) -> StudyResult:
+        _session = SessionManager.get_session()
+
+        headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
+        metadata = self._video_metadata(_session, _job, headers)
+        if metadata is None:
             return StudyResult.ERROR
+        _dtoken, duration = metadata
         play_time = int(_job["playTime"]) // 1000
         last_log_time = 0
         last_iter = time.time()
@@ -1515,21 +1536,7 @@ class Chaoxing:
                 last_iter = time.time()
                 play_time = min(duration, play_time + dt)
 
-                # 检查手动模式锁是否被锁定
-                manual_locked = False
-                try:
-                    manual_locked = TikuManual._manual_lock.locked()
-                except Exception as e:
-                    logger.trace(f"无法检查手动锁状态: {e}")
-
-                if manual_locked:
-                    pbar = self._close_pbar_safe(pbar)
-                else:
-                    if pbar is None:
-                        pbar = tqdm(total=duration, initial=int(play_time), desc=_short_title(_job.get("name")),
-                                    unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', leave=False)
-                    pbar.n = int(play_time)
-                    pbar.refresh()
+                pbar = self._refresh_video_bar(pbar, duration, play_time, _job)
 
                 time.sleep(gc.THRESHOLD)
         finally:
@@ -1539,32 +1546,30 @@ class Chaoxing:
         return StudyResult.SUCCESS
 
     def study_document(self, _course, _job, engine_info: bool = False) -> StudyResult:
-        """
-        Study a document in Chaoxing platform.
-
-        This method makes a GET request to fetch document information for a given course and job.
-
-        Args:
-            _course (dict): Dictionary containing course information with keys:
-                - courseId: ID of the course
-                - clazzId: ID of the class
-            _job (dict): Dictionary containing job information with keys:
-                - jobid: ID of the job
-                - otherinfo: String containing node information
-                - jtoken: Authentication token for the job
-            engine_info (bool): 是否处于任务引擎的"章节"任务点上下文。为 True 时，
-                额外走一次引擎的 job/document 接口，平台可能因此下发 stuJobInfo
-                （章节同步数据），由上层调用 autoPullChapterScore。
-
-        Returns:
-            requests.Response: Response object from the GET request
-
-        Note:
-            This method requires the following helper functions:
-            - init_session(): To initialize a new session
-            - get_timestamp(): To get current timestamp
-            - re module for regular expression matching
-        """
+        """Study a document in Chaoxing platform."""
+        #
+        # This method makes a GET request to fetch document information for a given course and job.
+        #
+        # Args:
+        # _course (dict): Dictionary containing course information with keys:
+        # - courseId: ID of the course
+        # - clazzId: ID of the class
+        # _job (dict): Dictionary containing job information with keys:
+        # - jobid: ID of the job
+        # - otherinfo: String containing node information
+        # - jtoken: Authentication token for the job
+        # engine_info (bool): 是否处于任务引擎的"章节"任务点上下文。为 True 时，
+        # 额外走一次引擎的 job/document 接口，平台可能因此下发 stuJobInfo
+        # （章节同步数据），由上层调用 autoPullChapterScore。
+        #
+        # Returns:
+        # requests.Response: Response object from the GET request
+        #
+        # Note:
+        # This method requires the following helper functions:
+        # - init_session(): To initialize a new session
+        # - get_timestamp(): To get current timestamp
+        # - re module for regular expression matching
         _session = SessionManager.get_session()
         # otherinfo 里没有 nodeId 时不能直接 [0] 取（#22 / #374 这类 IndexError）
         node_ids = re.findall(r"nodeId_(.*?)-", str(_job.get("otherinfo", "")))
@@ -1595,13 +1600,12 @@ class Chaoxing:
         return StudyResult.SUCCESS
 
     def finish_engine_document_job(self, _course, _job) -> Optional[dict]:
-        """任务引擎上下文的文档完成接口，返回并暂存平台下发的 stuJobInfo。
-
-        网页端（ananas/ueditor/documentJob.js 的 finishJob）在文档读完时请求
-        /mooc-ans/job/document?...&courseEngineInfo=true，响应里的
-        allowSendStuJobInfoMsg / stuJobInfo 会被回传给任务中心父页面，
-        父页面再 POST autoPullChapterScore。这里是 CLI 侧等价复现。
-        """
+        """任务引擎上下文的文档完成接口，返回并暂存平台下发的 stuJobInfo."""
+        #
+        # 网页端（ananas/ueditor/documentJob.js 的 finishJob）在文档读完时请求
+        # /mooc-ans/job/document?...&courseEngineInfo=true，响应里的
+        # allowSendStuJobInfoMsg / stuJobInfo 会被回传给任务中心父页面，
+        # 父页面再 POST autoPullChapterScore。这里是 CLI 侧等价复现。
         node_ids = re.findall(r"nodeId_(.*?)-", str(_job.get("otherinfo", "")))
         if not node_ids:
             return None
@@ -1961,19 +1965,17 @@ class Chaoxing:
         return StudyResult.ERROR
 
     def _check_work_result(self, _session, _course, _job, _job_info, questions) -> Optional[dict]:
-        """
-        章节检测提交后，查询最新一次作答的成绩与对错详情，供判断是否需要重做。
-
-        Args:
-            _session: 当前会话
-            _course: 课程信息
-            _job: 任务点信息
-            questions: 提交时使用的表单数据（含 workId / workAnswerId 等）
-
-        Returns:
-            {"all_correct": bool, "feedback": list[str], "score": float, "times": int}
-            或 None（无法获取成绩详情时返回 None）
-        """
+        """章节检测提交后，查询最新一次作答的成绩与对错详情，供判断是否需要重做."""
+        #
+        # Args:
+        # _session: 当前会话
+        # _course: 课程信息
+        # _job: 任务点信息
+        # questions: 提交时使用的表单数据（含 workId / workAnswerId 等）
+        #
+        # Returns:
+        # {"all_correct": bool, "feedback": list[str], "score": float, "times": int}
+        # 或 None（无法获取成绩详情时返回 None）
         work_id = str(
             questions.get("workId", "")
             or questions.get("workRelationId", "")
@@ -2121,9 +2123,7 @@ class Chaoxing:
         }
 
     def study_read(self, _course, _job, _job_info) -> StudyResult:
-        """
-        阅读任务学习, 仅完成任务点, 并不增长时长
-        """
+        """阅读任务学习, 仅完成任务点, 并不增长时长."""
         _session = SessionManager.get_session()
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/ananas/job/readv2",
@@ -2151,15 +2151,13 @@ class Chaoxing:
         return StudyResult.SUCCESS
 
     def _send_monitor_heartbeat(self, course, point):
-        """
-        发送章节监控心跳包到 detect.chaoxing.com。
-
-        模拟真实浏览器的 JSONP 打点请求，佐证访问行为的真人属性。
-
-        Args:
-            course: 课程信息字典
-            point: 当前章节信息字典
-        """
+        """发送章节监控心跳包到 detect.chaoxing.com."""
+        #
+        # 模拟真实浏览器的 JSONP 打点请求，佐证访问行为的真人属性。
+        #
+        # Args:
+        # course: 课程信息字典
+        # point: 当前章节信息字典
         version = get_timestamp()
         callback = f"jsonp{secrets.randbelow(10**21 - 10**20) + 10**20}"
         params = {
@@ -2236,14 +2234,12 @@ class Chaoxing:
             return _resp.text
 
     def _extract_and_send_setlog(self, html_text):
-        """
-        从 studentstudyAjax 返回的 HTML 中提取 setlog URL 并执行。
-
-        该 URL 包含服务端生成的 encode 参数，是记录章节学习次数的关键 API。
-
-        Args:
-            html_text: studentstudyAjax 返回的 HTML 内容
-        """
+        """从 studentstudyAjax 返回的 HTML 中提取 setlog URL 并执行."""
+        #
+        # 该 URL 包含服务端生成的 encode 参数，是记录章节学习次数的关键 API。
+        #
+        # Args:
+        # html_text: studentstudyAjax 返回的 HTML 内容
         match = re.search(
             r'<script[^>]+src="(https://fystat-ans\.chaoxing\.com/log/setlog[^"]+)"',
             html_text
@@ -2261,25 +2257,23 @@ class Chaoxing:
             logger.trace(f"Setlog failed (non-critical): {e}")
 
     def increase_chapter_learning_count(self, course, points, target_count):
-        """
-        增加课程章节学习次数。
-
-        循环遍历课程的所有章节，每访问一个章节页面：
-        1. 调 studentstudyAjax 获取页面 HTML（含服务端生成的 setlog URL）
-        2. 提取并执行 setlog URL（记录学习次数）
-        3. 立即发送 monitor 心跳包（模拟 fn() 首次心跳）
-        4. 停留 30 秒（模拟前端 setInterval(fn, 30000) 的间隔）
-        5. 再次发送 monitor 心跳包（模拟 30s 后的第二次心跳）
-        6. 计数器 +1，继续下一个章节
-
-        Args:
-            course: 课程信息字典
-            points: 课程所有章节列表
-            target_count: 目标总次数
-
-        Returns:
-            StudyResult: 操作结果
-        """
+        """增加课程章节学习次数."""
+        #
+        # 循环遍历课程的所有章节，每访问一个章节页面：
+        # 1. 调 studentstudyAjax 获取页面 HTML（含服务端生成的 setlog URL）
+        # 2. 提取并执行 setlog URL（记录学习次数）
+        # 3. 立即发送 monitor 心跳包（模拟 fn() 首次心跳）
+        # 4. 停留 30 秒（模拟前端 setInterval(fn, 30000) 的间隔）
+        # 5. 再次发送 monitor 心跳包（模拟 30s 后的第二次心跳）
+        # 6. 计数器 +1，继续下一个章节
+        #
+        # Args:
+        # course: 课程信息字典
+        # points: 课程所有章节列表
+        # target_count: 目标总次数
+        #
+        # Returns:
+        # StudyResult: 操作结果
         total = 0
         consecutive_failures = 0
         max_consecutive_failures = 10

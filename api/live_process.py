@@ -8,12 +8,10 @@ from api.logger import logger
 class LiveProcessor:
     @staticmethod
     def run_live(live: Live, speed: float = 1.0):
-        """按真实时间提交直播时长，直到达到总时长。
-
-        直播是实时流：这里强制 1 倍速（忽略配置倍速），并响应 q 终止；
-        任何一次时长提交失败都会返回 False，不再无条件报成功。
-        """
-        speed = 1.0
+        """按真实时间提交直播时长，直到达到总时长."""
+        #
+        # 直播是实时流：这里强制 1 倍速（忽略配置倍速），并响应 q 终止；
+        # 任何一次时长提交失败都会返回 False，不再无条件报成功。
         live_status = live.get_status()
         if not live_status:
             logger.error("直播状态获取失败，无法继续")

@@ -3,7 +3,8 @@
 import argparse
 from pathlib import Path, PurePosixPath
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404: invokes only Git with an argument list, never a shell
 import sys
 
 
@@ -41,7 +42,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=str(Path(__file__).resolve().parents[2]))
     args = parser.parse_args(argv)
-    paths = subprocess.check_output(["git", "-C", args.root, "ls-files", "-z"]).decode().split("\0")
+    executable = shutil.which("git")
+    if executable is None:
+        parser.error("Git is required to audit tracked files")
+    root = str(Path(args.root).resolve())
+    paths = subprocess.check_output([executable, "-C", root, "ls-files", "-z"]).decode().split("\0")  # nosec B603: fixed Git subcommand; root is a separate argument
     problems = audit_paths(args.root, [name for name in paths if name])
     for problem in problems:
         print(problem)

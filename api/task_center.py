@@ -1,33 +1,31 @@
 # -*- coding: utf-8 -*-
-"""
-任务中心「教学任务」支持（task.chaoxing.com 任务引擎）
-
-【为什么需要单独一套逻辑】
-新版泛雅课程首页的「任务中心」里，老师可以发布"教学任务"。它和「章节」是
-两套互相独立的学习入口：
-    * 章节   -> mooc1.chaoxing.com/mooc-ans/knowledge/cards（老接口）
-    * 教学任务 -> task.chaoxing.com 的任务引擎，任务点按"分组"解锁，
-                  完成上一组才允许学下一组
-
-教学任务的每个任务点（plan）有自己的类型：
-    4  作业        8  章节        9  思考题      10 视频
-    11 文档        14 主题讨论    15 AI实践
-本模块能自动完成其中的 视频 / 文档 / AI实践 / 作业；章节同步见 main.py 的编排：
-    * 视频：任务引擎自带播放器，上报接口 /videoDataLog/dataLog/{总时长}/{当前秒}/{状态}
-            有"观看时长"要求（enableVideoWatchDuration + N 分钟）时按 1 倍速真实播放，
-            不够就回看；只要求"播完"时可用配置倍速。
-    * 文档：阅读器每 30 秒向 data-xxt 上报一次 readPoint，服务端据此累计阅读时长，
-            凑够 documentWatchDuration 分钟后按需调 /documentStudy/readEnd。
-    * 章节：任务点里带 knowledgeId，但通过平台返回的 stuJobInfo 同步完成状态。
-    * 作业：任务引擎的学习页是 mooc2/work/dowork（新版结构），提交接口
-            addStudentWorkNewWeb；选择题/判断题/填空题走题库，简答题走 ai_writer，
-            提交前走统一确认门禁（章节测验的 api/work 接口对课程级作业返回 403，不能复用）。
-    * 主题讨论：groupweb 话题详情页 → 读已有回复做风格参考 → ai_writer 生成回复 →
-            POST /pc/invitation/{topicUuid}/addReplys；文本有硬伤（编造经历等）直接不提交。
-其余类型（思考题）目前不做，会明确写日志提示手动完成，绝不会假装成功。
-
-接口全部是只读探测出来的，任何一步失败都只影响该任务点，不会影响章节刷课。
-"""
+"""任务中心「教学任务」支持（task.chaoxing.com 任务引擎）."""
+#
+# 【为什么需要单独一套逻辑】
+# 新版泛雅课程首页的「任务中心」里，老师可以发布"教学任务"。它和「章节」是
+# 两套互相独立的学习入口：
+# * 章节   -> mooc1.chaoxing.com/mooc-ans/knowledge/cards（老接口）
+# * 教学任务 -> task.chaoxing.com 的任务引擎，任务点按"分组"解锁，
+# 完成上一组才允许学下一组
+#
+# 教学任务的每个任务点（plan）有自己的类型：
+# 4  作业        8  章节        9  思考题      10 视频
+# 11 文档        14 主题讨论    15 AI实践
+# 本模块能自动完成其中的 视频 / 文档 / AI实践 / 作业；章节同步见 main.py 的编排：
+# * 视频：任务引擎自带播放器，上报接口 /videoDataLog/dataLog/{总时长}/{当前秒}/{状态}
+# 有"观看时长"要求（enableVideoWatchDuration + N 分钟）时按 1 倍速真实播放，
+# 不够就回看；只要求"播完"时可用配置倍速。
+# * 文档：阅读器每 30 秒向 data-xxt 上报一次 readPoint，服务端据此累计阅读时长，
+# 凑够 documentWatchDuration 分钟后按需调 /documentStudy/readEnd。
+# * 章节：任务点里带 knowledgeId，但通过平台返回的 stuJobInfo 同步完成状态。
+# * 作业：任务引擎的学习页是 mooc2/work/dowork（新版结构），提交接口
+# addStudentWorkNewWeb；选择题/判断题/填空题走题库，简答题走 ai_writer，
+# 提交前走统一确认门禁（章节测验的 api/work 接口对课程级作业返回 403，不能复用）。
+# * 主题讨论：groupweb 话题详情页 → 读已有回复做风格参考 → ai_writer 生成回复 →
+# POST /pc/invitation/{topicUuid}/addReplys；文本有硬伤（编造经历等）直接不提交。
+# 其余类型（思考题）目前不做，会明确写日志提示手动完成，绝不会假装成功。
+#
+# 接口全部是只读探测出来的，任何一步失败都只影响该任务点，不会影响章节刷课。
 
 import hashlib
 import json
@@ -148,7 +146,7 @@ SUBMIT_MODES = ("confirm", "auto")
 
 
 class TaskOutcome(str, Enum):
-    """任务中心任务点的明确状态，避免把跳过/等待显示成完成。"""
+    """任务中心任务点的明确状态，避免把跳过/等待显示成完成."""
 
     COMPLETED = "completed"
     WAITING_CONFIRMATION = "waiting_confirmation"
@@ -158,24 +156,23 @@ class TaskOutcome(str, Enum):
 
 
 def normalize_submit_mode(value: Any) -> str:
-    """提交模式只允许 confirm/auto；默认 auto（后台自动提交），错误值也回到 auto。
-
-    auto = 作答完成后直接提交（适合挂后台刷课，用户要求默认值）；
-    confirm = 提交前显示预览并询问（需要人工盯着时显式配置）。
-    """
+    """提交模式只允许 confirm/auto；默认 auto（后台自动提交），错误值也回到 auto."""
+    #
+    # auto = 作答完成后直接提交（适合挂后台刷课，用户要求默认值）；
+    # confirm = 提交前显示预览并询问（需要人工盯着时显式配置）。
     mode = str(value or "auto").strip().lower()
     return mode if mode in SUBMIT_MODES else "auto"
 
 
 def _api_success(value: Any) -> bool:
-    """兼容泛雅接口常见的 true / 1 / "1" 成功表示，拒绝任意非空字符串。"""
+    """兼容泛雅接口常见的 true / 1 / "1" 成功表示，拒绝任意非空字符串."""
     if value is True or value == 1:
         return True
     return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}
 
 
 def _browser_timestamp(now: Optional[float] = None) -> str:
-    """生成阅读器使用的本地时间戳：yyyyMMddHHmmssSSS。"""
+    """生成阅读器使用的本地时间戳：yyyyMMddHHmmssSSS."""
     if now is None:
         now = time.time()
     second_part = time.strftime("%Y%m%d%H%M%S", time.localtime(now))
@@ -184,28 +181,27 @@ def _browser_timestamp(now: Optional[float] = None) -> str:
 
 
 def _encode_uri_component(value: str) -> str:
-    """等价于浏览器的 encodeURIComponent（包括其安全字符集合）。"""
+    """等价于浏览器的 encodeURIComponent（包括其安全字符集合）."""
     return quote(value, safe="-_.!~*'()")
 
 
 def _read_point_enc(params: dict) -> str:
-    """按云盘阅读器 addPoint.js 的规则计算 ac_mark.enc。
-
-    浏览器先对 d 做 encodeURIComponent，再按参数名排序拼接所有字符串参数，
-    最后追加固定盐并取 MD5。requests 收到未编码的 d 后会在发送时编码一次，
-    因而这里不能把已编码的 d 再放回 params，否则会在网络层双重编码。
-    """
+    """按云盘阅读器 addPoint.js 的规则计算 ac_mark.enc."""
+    #
+    # 浏览器先对 d 做 encodeURIComponent，再按参数名排序拼接所有字符串参数，
+    # 最后追加固定盐并取 MD5。requests 收到未编码的 d 后会在发送时编码一次，
+    # 因而这里不能把已编码的 d 再放回 params，否则会在网络层双重编码。
     values = {
         key: (_encode_uri_component(value) if key == "d" else value)
         for key, value in params.items()
         if key != "enc" and isinstance(value, str)
     }
     material = "".join(values[key] for key in sorted(values))
-    return hashlib.md5((material + READ_POINT_ENC_SALT).encode("utf-8")).hexdigest()
+    return hashlib.md5((material + READ_POINT_ENC_SALT).encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def _extract_json_object(text: str, marker: str) -> Optional[dict]:
-    """从网页里抠出 "const xxx = {...}" 这种内嵌 JSON（页面里往往一整个对象都在）"""
+    """从网页里抠出 "const xxx = {...}" 这种内嵌 JSON（页面里往往一整个对象都在）."""
     start = text.find(marker)
     if start < 0:
         return None
@@ -213,7 +209,6 @@ def _extract_json_object(text: str, marker: str) -> Optional[dict]:
     if brace < 0:
         return None
     try:
-        import json
 
         obj, _ = json.JSONDecoder().raw_decode(text[brace:])
         return obj if isinstance(obj, dict) else None
@@ -222,13 +217,11 @@ def _extract_json_object(text: str, marker: str) -> Optional[dict]:
 
 
 def _extract_discussion_topic(page_html: str) -> dict:
-    """
-    从话题详情页里取 urlToken / 标题 / 正文。
-
-    window.obj.topic 是 JS 字面量（不是严格 JSON，带注释和未加引号的键），
-    所以先定位 topic:{ 片段再用正则取字段，不做整段 JSON 解析。
-    """
-    info = {"url_token": "", "title": "", "content": "", "user_puid": ""}
+    """从话题详情页里取 urlToken / 标题 / 正文."""
+    #
+    # window.obj.topic 是 JS 字面量（不是严格 JSON，带注释和未加引号的键），
+    # 所以先定位 topic:{ 片段再用正则取字段，不做整段 JSON 解析。
+    info = dict.fromkeys(("url_token", "title", "content", "user_puid"), str())
     matched = re.search(r"urlToken\s*:\s*['\"]([^'\"]+)['\"]", page_html or "")
     if matched:
         info["url_token"] = matched.group(1)
@@ -248,14 +241,47 @@ def _extract_discussion_topic(page_html: str) -> dict:
     return info
 
 
-class TaskCenter:
-    """任务中心客户端：读取教学任务 + 完成任务点。
+def _sse_events(lines, report=False):
+    """Yield JSON events while accepting report events split across lines."""
+    pending = ""
+    for raw_line in lines:
+        line = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else str(raw_line)
+        line = line.strip()
+        if not line or (not report and not line.startswith("data:")):
+            continue
+        payload = line[5:].strip() if line.startswith("data:") else line
+        if payload == "[DONE]":
+            if report:
+                break
+            continue
+        payload = pending + payload if report else payload
+        if not payload:
+            continue
+        try:
+            event = json.loads(payload)
+        except (TypeError, ValueError):
+            pending = payload if report else ""
+            continue
+        pending = ""
+        if isinstance(event, dict):
+            yield event
 
-    ``study_video`` / ``study_document`` 保持历史 bool 返回值，供旧调用方继续使用。
-    新增任务类型会同时更新 ``last_outcome``，编排层据此区分失败、锁定和等待确认。
-    ``writer`` 与 ``confirm_callback`` 可注入，既方便离线测试，也避免把提交确认和
-    具体终端耦合在网络客户端里。
-    """
+
+def _sse_content(event):
+    """Normalize event content without dropping numeric or structured values."""
+    content = event.get("content", "")
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+
+
+class TaskCenter:
+    """任务中心客户端：读取教学任务 + 完成任务点."""
+    #
+    # ``study_video`` / ``study_document`` 保持历史 bool 返回值，供旧调用方继续使用。
+    # 新增任务类型会同时更新 ``last_outcome``，编排层据此区分失败、锁定和等待确认。
+    # ``writer`` 与 ``confirm_callback`` 可注入，既方便离线测试，也避免把提交确认和
+    # 具体终端耦合在网络客户端里。
 
     def __init__(
         self,
@@ -264,6 +290,7 @@ class TaskCenter:
         writer: Optional[HumanLikeWriter] = None,
         confirm_callback=None,
     ):
+        """Initialize configuration and runtime state."""
         self.chaoxing = chaoxing
         self.config = config or {}
         try:
@@ -306,11 +333,10 @@ class TaskCenter:
             self.waiting_confirmation = True
 
     def confirm_submission(self, kind: str, preview: str = "") -> bool:
-        """提交前的统一门禁。
-
-        confirm 模式在无交互终端中直接安全停止；只有明确输入 y/yes 才会继续。
-        该门禁只用于会改变课程记录的提交动作，视频/文档打点和状态读取不受影响。
-        """
+        """提交前的统一门禁."""
+        #
+        # confirm 模式在无交互终端中直接安全停止；只有明确输入 y/yes 才会继续。
+        # 该门禁只用于会改变课程记录的提交动作，视频/文档打点和状态读取不受影响。
         if self.submit_mode == "auto":
             return True
 
@@ -358,7 +384,7 @@ class TaskCenter:
     # ------------------------------------------------------------------ 读取
 
     def get_course_tasks(self, course: dict) -> list:
-        """课程的教学任务列表（任务中心 -> 教学任务）"""
+        """课程的教学任务列表（任务中心 -> 教学任务）."""
         self.last_read_failed = False
         params = {
             "courseId": course.get("courseId", ""),
@@ -405,7 +431,7 @@ class TaskCenter:
         return items
 
     def open_task(self, task: dict) -> Optional[dict]:
-        """进入教学任务，拿到 encryTaskUserId / encryTaskId（后续接口都要带）"""
+        """进入教学任务，拿到 encryTaskUserId / encryTaskId（后续接口都要带）."""
         try:
             resp = self.session.get(
                 f"{TASK_BASE}/api/v1/middlePageApi/jumpStudyPlanList",
@@ -432,7 +458,7 @@ class TaskCenter:
         }
 
     def get_groups(self, encry_task_user_id: str) -> Optional[list]:
-        """任务分组：只有 groupAllowStudy=True 的分组才允许学习（顺序解锁）"""
+        """任务分组：只有 groupAllowStudy=True 的分组才允许学习（顺序解锁）."""
         try:
             resp = self.session.post(
                 f"{TASK_BASE}/userStudyPlan/getGroupData",
@@ -464,7 +490,7 @@ class TaskCenter:
         return items
 
     def get_plans(self, encry_task_user_id: str, encry_group_id: str) -> list:
-        """分组里的任务点"""
+        """分组里的任务点."""
         self.last_plan_read_failed = False
         try:
             resp = self.session.post(
@@ -504,7 +530,7 @@ class TaskCenter:
         return items
 
     def get_study_url(self, encry_task_user_id: str, encrypt_plan_id: str) -> Optional[str]:
-        """任务点的学习地址；未解锁时接口会返回「任务点未解锁，不允许学习」"""
+        """任务点的学习地址；未解锁时接口会返回「任务点未解锁，不允许学习」."""
         try:
             resp = self.session.post(
                 f"{TASK_BASE}/userStudyPlan/getToStudyUrl",
@@ -549,7 +575,7 @@ class TaskCenter:
 
     @staticmethod
     def plan_finished(plan: dict) -> bool:
-        """任务点是否已完成"""
+        """任务点是否已完成."""
         if not isinstance(plan, dict):
             return False
         if _api_success(plan.get("isFinish")):
@@ -560,7 +586,7 @@ class TaskCenter:
     def is_plan_finished(
         self, encry_task_user_id: str, encry_group_id: str, plan_id: Any
     ) -> bool:
-        """重新拉一次任务点，确认是否真的完成了"""
+        """重新拉一次任务点，确认是否真的完成了."""
         for plan in self.get_plans(encry_task_user_id, encry_group_id):
             if str(plan.get("planId")) == str(plan_id):
                 return self.plan_finished(plan)
@@ -568,12 +594,11 @@ class TaskCenter:
 
     @staticmethod
     def chapter_sync_payload(encry_task_user_id: str, chapter_data: dict) -> dict:
-        """按任务中心网页格式组装章节成绩同步请求体。
-
-    任务中心页面在查询参数里会使用编码后的变量，但
-    ``autoPullChapterScore`` 的 JSON 体实际使用原始 ``eTaskUserId``。
-    这里必须保留 ``open_task`` 返回的原值；requests 会负责 HTTP 层编码。
-        """
+        """按任务中心网页格式组装章节成绩同步请求体."""
+        #
+        # 任务中心页面在查询参数里会使用编码后的变量，但
+        # ``autoPullChapterScore`` 的 JSON 体实际使用原始 ``eTaskUserId``。
+        # 这里必须保留 ``open_task`` 返回的原值；requests 会负责 HTTP 层编码。
         return {
             "encryTaskUserId": str(encry_task_user_id or ""),
             "uid": chapter_data.get("uid", ""),
@@ -586,11 +611,10 @@ class TaskCenter:
         }
 
     def sync_chapter_plan(self, encry_task_user_id: str, chapter_data: dict) -> bool:
-        """把已完成的章节成绩交给任务引擎。
-
-        HTTP 200 只代表请求到达服务器；只有 JSON 明确返回 ``result=true``
-        才算同步请求被接受。任务点最终是否完成仍必须由调用方重新读取确认。
-        """
+        """把已完成的章节成绩交给任务引擎."""
+        #
+        # HTTP 200 只代表请求到达服务器；只有 JSON 明确返回 ``result=true``
+        # 才算同步请求被接受。任务点最终是否完成仍必须由调用方重新读取确认。
         payload = self.chapter_sync_payload(encry_task_user_id, chapter_data)
         try:
             resp = self.session.post(
@@ -626,7 +650,7 @@ class TaskCenter:
         tries: int = 6,
         interval: float = 5.0,
     ) -> bool:
-        """完成动作之后服务端可能有一点延迟（阅读/观看时长要等它结算），等一下再确认"""
+        """完成动作之后服务端可能有一点延迟（阅读/观看时长要等它结算），等一下再确认."""
         for i in range(max(1, tries)):
             if self.is_plan_finished(encry_task_user_id, encry_group_id, plan_id):
                 return True
@@ -637,7 +661,7 @@ class TaskCenter:
     # ------------------------------------------------------------------ 完成
 
     def _video_dot(self, encry_id: str, duration: int, current_time: int, status: int) -> bool:
-        """视频打点：status 0=开始 1=心跳 2=暂停/结束"""
+        """视频打点：status 0=开始 1=心跳 2=暂停/结束."""
         url = f"{TASK_BASE}/videoDataLog/dataLog/{int(duration)}/{int(current_time)}/{int(status)}"
         try:
             resp = self.session.get(
@@ -662,26 +686,24 @@ class TaskCenter:
         return True
 
     def _save_schedule(self, encry_id: str, current_time: int):
-        """记录播放位置（网页播放器每 30 秒一次的进度保存）"""
+        """记录播放位置（网页播放器每 30 秒一次的进度保存）."""
         try:
             self.session.get(
                 f"{TASK_BASE}/planUserSchedule/lastCurrentTime/{int(current_time)}",
                 params={"encryId": encry_id},
                 timeout=TASK_CENTER_TIMEOUT,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("播放位置保存失败（{}）", type(exc).__name__)
 
     @staticmethod
     def need_seconds(plan: Optional[dict], enable_key: str, value_key: str) -> int:
-        """
-        任务点的"时长型"完成条件（读 planBreakthroughSet）。
-
-        平台把它写成"开关 + 分钟数"，例如：
-            enableVideoWatchDuration=1 + videoWatchDuration=2.0      -> 要看够 2 分钟
-            enableDocumentWatchDuration=1 + documentWatchDuration=5.0 -> 要读够 5 分钟
-        返回需要的秒数；没有该要求时返回 0。
-        """
+        """任务点的"时长型"完成条件（读 planBreakthroughSet）."""
+        #
+        # 平台把它写成"开关 + 分钟数"，例如：
+        # enableVideoWatchDuration=1 + videoWatchDuration=2.0      -> 要看够 2 分钟
+        # enableDocumentWatchDuration=1 + documentWatchDuration=5.0 -> 要读够 5 分钟
+        # 返回需要的秒数；没有该要求时返回 0。
         bt = (plan or {}).get("planBreakthroughSet") or {}
         try:
             enabled = int(bt.get(enable_key) or 0)
@@ -695,29 +717,32 @@ class TaskCenter:
             minutes = 0.0
         return int(round(minutes * 60)) if minutes > 0 else 0
 
-    def study_video(self, study_url: str, plan: Optional[dict] = None) -> bool:
-        """
-        按真实播放节奏完成任务引擎的视频任务点。
+    def _task_page(self, study_url, label):
+        """Load an engine task page and require a successful HTTP response."""
+        try:
+            resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
+        except Exception as exc:
+            logger.warning("{}任务页打开失败: {}", label, exc)
+            return None
+        if resp.status_code != 200:
+            logger.warning("{}任务页打开失败: HTTP {}", label, resp.status_code)
+            return None
+        return resp
 
-        完成条件有两种：
-          * enableVideoComplated=1              -> 播完就行
-          * enableVideoWatchDuration=1 + N 分钟 -> 要累计观看够 N 分钟
-
-        有"观看时长"要求时必须按 1 倍速真实播放：服务端按真实时间判定有效观看
-        时长（实测 2 倍速打点只算一半、原地心跳不算），一遍不够就回看一遍。
-        """
+    def _video_task_metadata(self, study_url):
+        """Validate video metadata before starting the paced playback loop."""
         try:
             resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
         except Exception as e:
             logger.warning("视频任务页打开失败: {}", e)
-            return False
+            return None
         if resp.status_code != 200:
             logger.warning("视频任务页打开失败: HTTP {}", resp.status_code)
-            return False
+            return None
         vo = _extract_json_object(resp.text, "videoLearnVo")
         if not vo:
             logger.warning("视频任务页结构变化，未取到 videoLearnVo")
-            return False
+            return None
         encry_id = vo.get("encryId")
         info = vo.get("videoInfo") or {}
         try:
@@ -726,7 +751,23 @@ class TaskCenter:
             duration = 0
         if not encry_id or duration <= 0:
             logger.warning("视频任务信息不完整（encryId/duration 缺失），跳过")
+            return None
+
+        return vo, encry_id, info, duration
+
+    def study_video(self, study_url: str, plan: Optional[dict] = None) -> bool:
+        """按真实播放节奏完成任务引擎的视频任务点."""
+        #
+        # 完成条件有两种：
+        # * enableVideoComplated=1              -> 播完就行
+        # * enableVideoWatchDuration=1 + N 分钟 -> 要累计观看够 N 分钟
+        #
+        # 有"观看时长"要求时必须按 1 倍速真实播放：服务端按真实时间判定有效观看
+        # 时长（实测 2 倍速打点只算一半、原地心跳不算），一遍不够就回看一遍。
+        metadata = self._video_task_metadata(study_url)
+        if metadata is None:
             return False
+        vo, encry_id, info, duration = metadata
 
         required = self.need_seconds(plan, "enableVideoWatchDuration", "videoWatchDuration")
         # 有时长要求 -> 1 倍速，保证"有效观看时长"和真实时间一致
@@ -784,7 +825,7 @@ class TaskCenter:
 
     @staticmethod
     def _parse_reader_mark(html: str) -> Optional[dict]:
-        """从云盘阅读器页面取出打点信息 markDataStr（资源ID、页数、ext 等）"""
+        """从云盘阅读器页面取出打点信息 markDataStr（资源ID、页数、ext 等）."""
         matched = re.search(r'id="markDataStr"[^>]*>(.*?)</div>', html, re.S)
         if not matched:
             return None
@@ -795,12 +836,10 @@ class TaskCenter:
         return data
 
     def _send_read_point(self, mark: dict, seq: int) -> bool:
-        """
-        上报一个阅读点（真实阅读器每 30 秒一次）。
-
-        请求形态和签名与阅读器 addPoint.js 对齐：d 在 params 中保留原始 JSON，
-        交给 requests 在网络层编码一次；enc 则使用 d 的 encodeURIComponent 形式计算。
-        """
+        """上报一个阅读点（真实阅读器每 30 秒一次）."""
+        #
+        # 请求形态和签名与阅读器 addPoint.js 对齐：d 在 params 中保留原始 JSON，
+        # 交给 requests 在网络层编码一次；enc 则使用 d 的 encodeURIComponent 形式计算。
         payload = {
             "r": mark.get("resourceID", ""),
             "t": mark.get("resourceType", "doc"),
@@ -843,7 +882,7 @@ class TaskCenter:
             return False
 
     def _read_document_points(self, mark: dict, required_seconds: int) -> bool:
-        """按真实时间打点，凑够任务点要求的阅读时长"""
+        """按真实时间打点，凑够任务点要求的阅读时长."""
         started = time.time()
         seq = 0
         total_points = max(1, int(required_seconds / READ_POINT_INTERVAL))
@@ -864,23 +903,16 @@ class TaskCenter:
             time.sleep(min(READ_POINT_INTERVAL, max(1.0, required_seconds - elapsed)))
 
     def study_document(self, study_url: str, plan: Optional[dict] = None) -> bool:
-        """
-        完成任务引擎的文档任务点。
-
-        文档的完成条件是"阅读时长 >= N 分钟"（planBreakthroughSet.documentWatchDuration），
-        阅读时长由云盘阅读器的 readPoint 打点累计，所以流程是：
-          1. 打开任务引擎文档页，取出云盘阅读器地址
-          2. 打开阅读器页，取出打点信息 markDataStr
-          3. 每 30 秒打一个点，凑够要求的分钟数
-          4. 页面明确要求"完成阅读"（enableCompleteRead）时再调 readEnd
-        """
-        try:
-            resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
-        except Exception as e:
-            logger.warning("文档任务页打开失败: {}", e)
-            return False
-        if resp.status_code != 200:
-            logger.warning("文档任务页打开失败: HTTP {}", resp.status_code)
+        """完成任务引擎的文档任务点."""
+        #
+        # 文档的完成条件是"阅读时长 >= N 分钟"（planBreakthroughSet.documentWatchDuration），
+        # 阅读时长由云盘阅读器的 readPoint 打点累计，所以流程是：
+        # 1. 打开任务引擎文档页，取出云盘阅读器地址
+        # 2. 打开阅读器页，取出打点信息 markDataStr
+        # 3. 每 30 秒打一个点，凑够要求的分钟数
+        # 4. 页面明确要求"完成阅读"（enableCompleteRead）时再调 readEnd
+        resp = self._task_page(study_url, "文档")
+        if resp is None:
             return False
         page = resp.text
         matched = re.search(r'encryPlanUserId\s*=\s*"([^"]+)"', page)
@@ -937,7 +969,7 @@ class TaskCenter:
 
     @staticmethod
     def _breakthrough_enabled(plan: Optional[dict], key: str) -> bool:
-        """读取 planBreakthroughSet 中的开关，拒绝把非空字符串当成功。"""
+        """读取 planBreakthroughSet 中的开关，拒绝把非空字符串当成功."""
         breakthrough = (plan or {}).get("planBreakthroughSet") or {}
         if not isinstance(breakthrough, dict):
             return False
@@ -951,7 +983,7 @@ class TaskCenter:
 
     @staticmethod
     def _ai_page_params(url: str, html: str = "") -> Optional[dict]:
-        """从 AI 实践 302 后的 SPA 地址取出平台实际发给接口的参数。"""
+        """从 AI 实践 302 后的 SPA 地址取出平台实际发给接口的参数."""
         parsed = urlparse(url or "")
         query = {
             key: values[-1]
@@ -1051,10 +1083,9 @@ class TaskCenter:
         return result
 
     def _ai_init(self, params: dict) -> Optional[dict]:
-        """初始化一次新的作答；已存在未完成记录时返回空字典，交给调用方续接。
-
-        前端 helper 会把该 POST 序列化成 form-urlencoded，而不是 JSON。
-        """
+        """初始化一次新的作答；已存在未完成记录时返回空字典，交给调用方续接."""
+        #
+        # 前端 helper 会把该 POST 序列化成 form-urlencoded，而不是 JSON。
         payload = {
             "type": 2,
             "courseid": params.get("courseid", ""),
@@ -1096,7 +1127,7 @@ class TaskCenter:
 
     @staticmethod
     def parse_ai_sse(lines) -> dict:
-        """解析 main-talk 的 SSE 行，保留前端使用的题目字段和特殊标记。"""
+        """解析 main-talk 的 SSE 行，保留前端使用的题目字段和特殊标记."""
         result = {
             "content": "",
             "preAppendContent": "",
@@ -1113,33 +1144,12 @@ class TaskCenter:
         }
         option_map = {}
         try:
-            for raw_line in lines:
-                if isinstance(raw_line, bytes):
-                    line = raw_line.decode("utf-8", errors="replace")
-                else:
-                    line = str(raw_line)
-                line = line.strip()
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if not payload or payload == "[DONE]":
-                    continue
-                try:
-                    event = json.loads(payload)
-                except (TypeError, ValueError):
-                    # SSE 中可能混入心跳或服务端提示；保留已解析内容，最终仍要求有有效题目/结束标记。
-                    continue
-                if not isinstance(event, dict):
-                    continue
+            for event in _sse_events(lines):
                 result["had_data"] = True
                 if "status" in event and not _api_success(event.get("status")):
                     result["error"] = str(event.get("msg") or event.get("message") or "SSE业务失败")
                     continue
-                content = event.get("content", "")
-                if content is None:
-                    content = ""
-                if not isinstance(content, str):
-                    content = json.dumps(content, ensure_ascii=False)
+                content = _sse_content(event)
                 if content:
                     result["content"] += content
 
@@ -1150,18 +1160,9 @@ class TaskCenter:
                     result["special_marks"].append(content)
 
                 event_type = str(event.get("type") or "")
-                if event_type == "preAppendContent":
-                    result["preAppendContent"] += content
-                elif event_type == "questionType":
-                    result["questionType"] += content
-                elif event_type == "questionTypeInt":
-                    result["questionTypeInt"] += content
-                elif event_type == "dimension":
-                    result["dimension"] += content
-                elif event_type == "knowledgePoint":
-                    result["knowledgePoint"] += content
-                elif event_type == "questionStem":
-                    result["questionStem"] += content
+                if event_type in {"preAppendContent", "questionType", "questionTypeInt",
+                                  "dimension", "knowledgePoint", "questionStem"}:
+                    result[event_type] += content
                 elif event_type.startswith("option-"):
                     option = event_type.split("-", 1)[1].strip().upper()
                     if option:
@@ -1179,12 +1180,11 @@ class TaskCenter:
 
     @staticmethod
     def parse_ai_report_sse(lines) -> dict:
-        """解析"学习质量评估报告"的 SSE：成绩是 id=score 的那条事件。
-
-        平台**不会**在提交后自动评估：实测提交后 10 分钟 answerRecords 里仍然没有分数，
-        必须请求 end-report（页面上就是"学习质量评估报告"按钮）才会现算成绩。
-        这个流会把同一条 JSON 拆到多行（中文 key 更长），所以按"拼接后能解析就算一条"处理。
-        """
+        """解析"学习质量评估报告"的 SSE：成绩是 id=score 的那条事件."""
+        #
+        # 平台**不会**在提交后自动评估：实测提交后 10 分钟 answerRecords 里仍然没有分数，
+        # 必须请求 end-report（页面上就是"学习质量评估报告"按钮）才会现算成绩。
+        # 这个流会把同一条 JSON 拆到多行（中文 key 更长），所以按"拼接后能解析就算一条"处理。
         result = {
             "score": None,
             "sections": {},
@@ -1192,36 +1192,10 @@ class TaskCenter:
             "stream_closed": False,
             "error": "",
         }
-        pending = ""
         try:
-            for raw_line in lines:
-                if isinstance(raw_line, bytes):
-                    line = raw_line.decode("utf-8", errors="replace")
-                else:
-                    line = str(raw_line)
-                line = line.strip()
-                if not line:
-                    continue
-                payload = line[5:].strip() if line.startswith("data:") else line
-                if payload == "[DONE]":
-                    break
-                payload = pending + payload
-                if not payload:
-                    continue
-                try:
-                    event = json.loads(payload)
-                except (TypeError, ValueError):
-                    pending = payload
-                    continue
-                pending = ""
-                if not isinstance(event, dict):
-                    continue
+            for event in _sse_events(lines, report=True):
                 result["had_data"] = True
-                content = event.get("content", "")
-                if content is None:
-                    content = ""
-                if not isinstance(content, str):
-                    content = json.dumps(content, ensure_ascii=False)
+                content = _sse_content(event)
                 key = str(event.get("id") or "").strip()
                 if key:
                     result["sections"][key] = result["sections"].get(key, "") + content
@@ -1239,7 +1213,7 @@ class TaskCenter:
         return result
 
     def _ai_end_report(self, params: dict, record_uuid: str) -> Optional[float]:
-        """请求"学习质量评估报告"，让平台把这一局的成绩算出来。"""
+        """请求"学习质量评估报告"，让平台把这一局的成绩算出来."""
         query = {
             "courseId": params.get("courseid", ""),
             "clazzId": params.get("clazzid", ""),
@@ -1417,12 +1391,11 @@ class TaskCenter:
 
     @classmethod
     def _ai_pending_turn(cls, data: dict) -> Optional[dict]:
-        """取当前还没作答的题。
-
-        注意：从后往前扫时，一旦先遇到平台的结束总结，就必须返回 None。
-        实测踩过坑：总结之后还留着上一条题目，旧实现会把那条**过期题目**当成 pending，
-        于是对着它反复作答、平台根本不再收录，一路空转到轮数上限（23 分钟白跑）。
-        """
+        """取当前还没作答的题."""
+        #
+        # 注意：从后往前扫时，一旦先遇到平台的结束总结，就必须返回 None。
+        # 实测踩过坑：总结之后还留着上一条题目，旧实现会把那条**过期题目**当成 pending，
+        # 于是对着它反复作答、平台根本不再收录，一路空转到轮数上限（23 分钟白跑）。
         messages = data.get("messageList") or []
         if not isinstance(messages, list):
             return None
@@ -1445,7 +1418,7 @@ class TaskCenter:
 
     @staticmethod
     def _ai_completion_state(data: dict) -> Optional[bool]:
-        """返回 True=明确完成、False=明确未完成、None=平台未给出足够证据。"""
+        """返回 True=明确完成、False=明确未完成、None=平台未给出足够证据."""
         if not isinstance(data, dict):
             return None
         pending = data.get("unCompleteTopic")
@@ -1474,11 +1447,10 @@ class TaskCenter:
 
     def _ai_wait_for_score(self, params: dict, record_uuid: str,
                            tries: int = 20, interval: float = 30.0):
-        """提交后等平台出评估结果。
-
-        平台不是立刻出分：实测提交后要几分钟，`answerRecords` 里才会出现
-        statusMsg=已评估。这里轮询 load-data，等到就返回分数。
-        """
+        """提交后等平台出评估结果."""
+        #
+        # 平台不是立刻出分：实测提交后要几分钟，`answerRecords` 里才会出现
+        # statusMsg=已评估。这里轮询 load-data，等到就返回分数。
         data = None
         for attempt in range(max(1, tries)):
             if interrupt.should_stop():
@@ -1535,7 +1507,7 @@ class TaskCenter:
 
     @staticmethod
     def _ai_record_scores(data: dict) -> list:
-        """平台已经评估过的每一次练习成绩（answerRecords）"""
+        """平台已经评估过的每一次练习成绩（answerRecords）."""
         scores = []
         for record in (data or {}).get("answerRecords") or []:
             if not isinstance(record, dict):
@@ -1549,23 +1521,22 @@ class TaskCenter:
 
     @classmethod
     def _ai_average_score(cls, data: dict) -> Optional[float]:
-        """练习平均分。
-
-        页面上写的达标口径是"学生多次练习平均分达到 N 分"，所以历史低分记录会拖后腿；
-        单次满分并不等于这项练习的最终成绩够看。
-        """
+        """练习平均分."""
+        #
+        # 页面上写的达标口径是"学生多次练习平均分达到 N 分"，所以历史低分记录会拖后腿；
+        # 单次满分并不等于这项练习的最终成绩够看。
         scores = cls._ai_record_scores(data)
         return sum(scores) / len(scores) if scores else None
 
     @staticmethod
     def _ai_question_key(turn: dict) -> str:
-        """同一道题（含追问）在平台里是同一段题干，用它来记住试过哪些答案"""
+        """同一道题（含追问）在平台里是同一段题干，用它来记住试过哪些答案."""
         stem = str((turn or {}).get("questionStem") or (turn or {}).get("content") or "")
         return re.sub(r"\s+", "", stem)[:100]
 
     @staticmethod
     def _ai_answer_core(answer: str) -> str:
-        """从作答文本里取出"核心答案"（选项字母 / 对错），用于判断这题试过什么"""
+        """从作答文本里取出"核心答案"（选项字母 / 对错），用于判断这题试过什么."""
         text = str(answer or "").strip()
         matched = re.match(r"选\s*([A-Ea-e]+)", text)
         if matched:
@@ -1699,12 +1670,11 @@ class TaskCenter:
 
     def _load_discussion_replies(self, bbsid: str, topic_uuid: str, user_puid: str = "",
                                  limit: int = 8) -> tuple:
-        """读讨论已有回复。
-
-        返回 (回复正文列表, 自己是否已经回复过)。
-        正文供 ai_writer 模仿语气；"已回复过"用来避免重复运行同一任务时反复发帖。
-        读取失败就当没有参考、也没回复过（上层仍会走正常的提交路径）。
-        """
+        """读讨论已有回复."""
+        #
+        # 返回 (回复正文列表, 自己是否已经回复过)。
+        # 正文供 ai_writer 模仿语气；"已回复过"用来避免重复运行同一任务时反复发帖。
+        # 读取失败就当没有参考、也没回复过（上层仍会走正常的提交路径）。
         try:
             resp = self.session.get(
                 f"{DISCUSSION_BASE}/pc/invitation/getReplyList",
@@ -1733,20 +1703,18 @@ class TaskCenter:
 
     def study_discussion(self, study_url: str, plan: Optional[dict] = None,
                          course: Optional[dict] = None) -> bool:
-        """
-        完成「任务中心 -> 主题讨论」任务点（planType=14）。
-
-        真实接口（groupweb.chaoxing.com，）：
-          * 话题详情页：GET study_url（302 到 .../replysList?courseId=&classId=），
-            页面里的 window.obj 带 urlToken / topic.title / topic.content；
-          * 已有回复：GET /pc/invitation/getReplyList?bbsid=&uuid=&order=2；
-          * 发回复：POST /pc/invitation/{topicUuid}/addReplys
-            （replyId=-1 一级回复、topic_content=encodeURIComponent(正文)、urlToken、bbsid）。
-
-        回复文本统一走 api/ai_writer.HumanLikeWriter.discussion（模仿已有回复、去 AI 味）；
-        生成器判定有硬伤（编造个人经历/平台话术）时直接放弃，不提交。
-        是否算完成仍由上层 wait_plan_finished 复查任务引擎状态裁定。
-        """
+        """完成「任务中心 -> 主题讨论」任务点（planType=14）."""
+        #
+        # 真实接口（groupweb.chaoxing.com，）：
+        # * 话题详情页：GET study_url（302 到 .../replysList?courseId=&classId=），
+        # 页面里的 window.obj 带 urlToken / topic.title / topic.content；
+        # * 已有回复：GET /pc/invitation/getReplyList?bbsid=&uuid=&order=2；
+        # * 发回复：POST /pc/invitation/{topicUuid}/addReplys
+        # （replyId=-1 一级回复、topic_content=encodeURIComponent(正文)、urlToken、bbsid）。
+        #
+        # 回复文本统一走 api/ai_writer.HumanLikeWriter.discussion（模仿已有回复、去 AI 味）；
+        # 生成器判定有硬伤（编造个人经历/平台话术）时直接放弃，不提交。
+        # 是否算完成仍由上层 wait_plan_finished 复查任务引擎状态裁定。
         name = (plan or {}).get("name") or "主题讨论"
         query = parse_qs(urlparse(study_url).query)
         bbsid = (query.get("bbsid") or [""])[0]
@@ -1759,7 +1727,7 @@ class TaskCenter:
 
     def reply_topic(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
                     name: str = "", referer: str = "") -> bool:
-        """模式 1：任务里的主题讨论——生成草稿后按提交模式提交。"""
+        """模式 1：任务里的主题讨论——生成草稿后按提交模式提交."""
         draft = self.draft_reply(bbsid, topic_uuid, course=course, name=name, referer=referer)
         if draft is None:
             return False
@@ -1774,7 +1742,7 @@ class TaskCenter:
 
     @staticmethod
     def _topic_detail_url(bbsid: str, topic_uuid: str, course: Optional[dict] = None) -> str:
-        """帖子详情页地址（讨论区模式没有现成的 study_url 时用它）"""
+        """帖子详情页地址（讨论区模式没有现成的 study_url 时用它）."""
         course = course or {}
         class_id = str(course.get("classId") or course.get("clazzId") or "")
         return (f"{DISCUSSION_BASE}/pc/topic/jumpToTopicDetail?bbsid={quote(str(bbsid))}"
@@ -1783,11 +1751,10 @@ class TaskCenter:
     def draft_reply(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
                     name: str = "", referer: str = "", revision_hint: str = "",
                     previous_reply: str = "") -> Optional[dict]:
-        """只生成回复草稿，**不提交**。
-
-        讨论区模式（自己挑帖子）要先给用户看草稿、确认之后再发，所以拆出这一步。
-        返回 {topic_info, title, reply, has_replied, referer}；失败返回 None。
-        """
+        """只生成回复草稿，**不提交**."""
+        #
+        # 讨论区模式（自己挑帖子）要先给用户看草稿、确认之后再发，所以拆出这一步。
+        # 返回 {topic_info, title, reply, has_replied, referer}；失败返回 None。
         course = course or {}
         name = name or "主题讨论"
         study_url = referer or self._topic_detail_url(bbsid, topic_uuid, course)
@@ -1850,7 +1817,7 @@ class TaskCenter:
     def submit_reply(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
                      name: str = "", topic_info: Optional[dict] = None, reply: str = "",
                      referer: str = "", echo: bool = True) -> bool:
-        """把已经确认的草稿提交给平台（含实时留痕与复核记录）。"""
+        """把已经确认的草稿提交给平台（含实时留痕与复核记录）."""
         course = course or {}
         name = name or "主题讨论"
         topic_info = topic_info or {}
@@ -1928,7 +1895,7 @@ class TaskCenter:
 
     def _recently_submitted(self, plan: Optional[dict], kind: str = "homework",
                             ttl: Optional[float] = None) -> bool:
-        """本地台账里这个任务点最近提交/尝试过吗（避免状态延迟导致重复提交）"""
+        """本地台账里这个任务点最近提交/尝试过吗（避免状态延迟导致重复提交）."""
         key = self._ledger_key(plan, kind)
         if not key:
             return False
@@ -1947,7 +1914,7 @@ class TaskCenter:
         return submitted_at > 0 and (time.time() - submitted_at) < window
 
     def _mark_submitted(self, plan: Optional[dict], kind: str = "homework") -> None:
-        """记下"这个任务点刚提交/尝试过"；写失败不影响本次提交"""
+        """记下"这个任务点刚提交/尝试过"；写失败不影响本次提交."""
         key = self._ledger_key(plan, kind)
         if not key:
             return
@@ -1976,11 +1943,9 @@ class TaskCenter:
 
     def _fill_homework_answers(self, questions: list, course: Optional[dict] = None,
                                task_name: str = "") -> Optional[str]:
-        """
-        给作业题目填答案（选择题/判断题/填空题走题库，简答题走去 AI 味写作器）。
-
-        返回 None 表示全部填好；返回字符串表示失败原因（此时绝不提交）。
-        """
+        """给作业题目填答案（选择题/判断题/填空题走题库，简答题走去 AI 味写作器）."""
+        #
+        # 返回 None 表示全部填好；返回字符串表示失败原因（此时绝不提交）。
         tiku = getattr(self.chaoxing, "tiku", None)
         if tiku is None or getattr(tiku, "DISABLE", False):
             return "没有可用题库，选择题/判断题无法作答"
@@ -2056,16 +2021,14 @@ class TaskCenter:
 
     def study_homework(self, study_url: str, plan: Optional[dict] = None,
                        course: Optional[dict] = None) -> bool:
-        """
-        完成「任务中心 -> 作业」任务点（planType=4）。
-
-        与章节测验的区别：学习页是新版 mooc2/work/dowork，提交接口是
-        addStudentWorkNewWeb（表单 action 自带 token / totalQuestionNum）；
-        章节测验用的 mooc-ans/api/work 对课程级作业返回 403，不能复用。
-
-        这里只负责"作答并被接口接受"；是否算完成由上层 wait_plan_finished
-        重新读任务引擎状态裁定，接口 200 / status=true 单独不算完成。
-        """
+        """完成「任务中心 -> 作业」任务点（planType=4）."""
+        #
+        # 与章节测验的区别：学习页是新版 mooc2/work/dowork，提交接口是
+        # addStudentWorkNewWeb（表单 action 自带 token / totalQuestionNum）；
+        # 章节测验用的 mooc-ans/api/work 对课程级作业返回 403，不能复用。
+        #
+        # 这里只负责"作答并被接口接受"；是否算完成由上层 wait_plan_finished
+        # 重新读任务引擎状态裁定，接口 200 / status=true 单独不算完成。
         name = (plan or {}).get("name") or "作业"
 
         if self._recently_submitted(plan):
@@ -2167,12 +2130,11 @@ class TaskCenter:
                 review.update(item, review_status)
 
     def study_ai_practice(self, study_url: str, plan: Optional[dict] = None) -> bool:
-        """续接/完成一次 AI 实践，并在达到最低分后才返回 True。
-
-        对话请求本身不是最终提交；只有确认模式通过后调用 ``answer/submit``，
-        并且提交后的 load-data 读回分数，才会进入完成状态。任务中心的 isFinish
-        仍由上层 ``wait_plan_finished`` 再次确认。
-        """
+        """续接/完成一次 AI 实践，并在达到最低分后才返回 True."""
+        #
+        # 对话请求本身不是最终提交；只有确认模式通过后调用 ``answer/submit``，
+        # 并且提交后的 load-data 读回分数，才会进入完成状态。任务中心的 isFinish
+        # 仍由上层 ``wait_plan_finished`` 再次确认。
         self._set_outcome(TaskOutcome.FAILED)
         try:
             page = self.session.get(

@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-离线回归测试：平台文本 / 填空题提交 / 大模型连接检查 / 视频并发开关
-
-对应上游 issue：
-  #602 课程名含 &nbsp;(\xa0) 时控制台编码崩溃
-  #615 #575 填空题答案保存后为空
-  #603 思考模型连接检查误判失败
-  #588 视频并发导致进度回退（提供串行开关）
-全部测试不联网、不读写用户真实数据。
-"""
+"""离线回归测试：平台文本 / 填空题提交 / 大模型连接检查 / 视频并发开关."""
+#
+# 对应上游 issue：
+# #602 课程名含 &nbsp;( ) 时控制台编码崩溃
+# #615 #575 填空题答案保存后为空
+# #603 思考模型连接检查误判失败
+# #588 视频并发导致进度回退（提供串行开关）
+# 全部测试不联网、不读写用户真实数据。
 import json
 import os
 import sys
@@ -16,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+from uuid import uuid4
 
 import requests
 from bs4 import BeautifulSoup
@@ -56,7 +55,7 @@ from api.decode import (  # noqa: E402
 
 
 class CleanTextTestCase(unittest.TestCase):
-    """#602：特殊空白字符在 GBK 控制台会直接把程序打崩"""
+    """#602：特殊空白字符在 GBK 控制台会直接把程序打崩."""
 
     def test_nbsp_becomes_space(self):
         self.assertEqual(clean_text("数据\xa0结构"), "数据 结构")
@@ -85,7 +84,7 @@ class CleanTextTestCase(unittest.TestCase):
 
 
 class DecodeRobustnessTestCase(unittest.TestCase):
-    """平台改版导致字段缺失时不能直接崩（#58 / #293 / #392 / #593 这类报错）"""
+    """平台改版导致字段缺失时不能直接崩（#58 / #293 / #392 / #593 这类报错）."""
 
     GOOD_COURSE = (
         '<div class="course" id="1" info="i" roleid="2">'
@@ -179,7 +178,7 @@ class DecodeRobustnessTestCase(unittest.TestCase):
 
 
 class AnswerEqualityTestCase(unittest.TestCase):
-    """#627：判断题/多选题/填空题的答案写法不同，不能被判成答错"""
+    """#627：判断题/多选题/填空题的答案写法不同，不能被判成答错."""
 
     def test_identical(self):
         self.assertTrue(answers_equal("A", "A"))
@@ -215,7 +214,7 @@ class AnswerEqualityTestCase(unittest.TestCase):
 
 
 class MultipleChoiceAnswerTestCase(unittest.TestCase):
-    """#427 #502：题库返回字母串（"AC"/"ABD"）时不能漏选或退化成随机"""
+    """#427 #502：题库返回字母串（"AC"/"ABD"）时不能漏选或退化成随机."""
 
     OPTIONS = "A 甲选项\nB 乙选项\nC 丙选项\nD 丁选项"
 
@@ -243,7 +242,7 @@ class MultipleChoiceAnswerTestCase(unittest.TestCase):
 
 
 class OptionImageTestCase(unittest.TestCase):
-    """#457：选项本身是图片时要把图片地址带上，否则题库只看到一串字母"""
+    """#457：选项本身是图片时要把图片地址带上，否则题库只看到一串字母."""
 
     def test_image_option_keeps_url(self):
         element = BeautifulSoup('<li aria-label="A"><img src="https://x/a.png"></li>', "lxml").li
@@ -265,7 +264,7 @@ class OptionImageTestCase(unittest.TestCase):
 
 
 class WorkDetailEvaluationTestCase(unittest.TestCase):
-    """#627：页面没渲染出「我的答案」时判定不可信，不能当成答错去重做"""
+    """#627：页面没渲染出「我的答案」时判定不可信，不能当成答错去重做."""
 
     def test_empty_my_answer_is_unjudgeable(self):
         detail = [{"title": "题1", "type_label": "判断题", "my_answer": "", "correct_answer": "√"}]
@@ -297,7 +296,7 @@ class WorkDetailEvaluationTestCase(unittest.TestCase):
 
 
 class CompletionAnswerTestCase(unittest.TestCase):
-    """#615 / #575：填空题必须按空提交，否则网页端显示答案为空"""
+    """#615 / #575：填空题必须按空提交，否则网页端显示答案为空."""
 
     def test_split_two_blanks(self):
         self.assertEqual(split_completion_answer("并发#线程", 2), ["并发", "线程"])
@@ -374,6 +373,7 @@ class _FakeResponse:
     text = "ok"
 
     def __init__(self, payload):
+        """Initialize configuration and runtime state."""
         self._payload = payload
 
     def json(self):
@@ -381,10 +381,11 @@ class _FakeResponse:
 
 
 class VideoProgressParseTestCase(unittest.TestCase):
-    """#175 #298：视频进度上报接口返回非 JSON 时不能抛异常打断整章"""
+    """#175 #298：视频进度上报接口返回非 JSON 时不能抛异常打断整章."""
 
     class _Resp:
         def __init__(self, payload=None, raw=False):
+            """Initialize configuration and runtime state."""
             self._payload = payload
             self._raw = raw
 
@@ -402,7 +403,7 @@ class VideoProgressParseTestCase(unittest.TestCase):
 
 
 class ChapterReadFailureTestCase(unittest.TestCase):
-    """#223 #357：任务点读取失败不能被当成"章节已完成"静默打勾"""
+    """#223 #357：任务点读取失败不能被当成"章节已完成"静默打勾."""
 
     class _Cx:
         class _Limiter:
@@ -431,7 +432,7 @@ class ChapterReadFailureTestCase(unittest.TestCase):
 
 
 class LlmConnectionTestCase(unittest.TestCase):
-    """#603：思考模型只返回 reasoning_content 时不能误判为连接失败"""
+    """#603：思考模型只返回 reasoning_content 时不能误判为连接失败."""
 
     def setUp(self):
         self._orig_post = answer_mod.requests.post
@@ -466,7 +467,7 @@ class LlmConnectionTestCase(unittest.TestCase):
 
 
 class CacheDAOTestCase(unittest.TestCase):
-    """#552：CacheDAO 每次查询都新建实例，锁必须是类级的，否则并发写会互相覆盖"""
+    """#552：CacheDAO 每次查询都新建实例，锁必须是类级的，否则并发写会互相覆盖."""
 
     def setUp(self):
         self.path = os.path.join(tempfile.mkdtemp(prefix="cx-cache-"), "cache.json")
@@ -500,9 +501,9 @@ class CacheDAOTestCase(unittest.TestCase):
 
 
 class StartupGuardTestCase(unittest.TestCase):
-    """#567：纯命令行模式没有 -c 配置文件，不能被启动检查拦死"""
+    """#567：纯命令行模式没有 -c 配置文件，不能被启动检查拦死."""
 
-    CONFIG = {"username": "13800000000", "password": "pw", "course_list": ["111"]}
+    CONFIG = {"username": "13800000000", "password": uuid4().hex, "course_list": ["111"]}
     TIKU = {"provider": "TikuManual"}
 
     def test_cli_mode_without_config_file_is_allowed(self):
@@ -515,7 +516,7 @@ class StartupGuardTestCase(unittest.TestCase):
 
 
 class CliModeConfigTestCase(unittest.TestCase):
-    """命令行模式（不带 -c）也要能读到用户配置里的题库设置，否则会被误拦"""
+    """命令行模式（不带 -c）也要能读到用户配置里的题库设置，否则会被误拦."""
 
     def test_reads_tiku_from_default_config(self):
         config_path = paths.config_path()
@@ -540,7 +541,7 @@ class CliModeConfigTestCase(unittest.TestCase):
 
 
 class NetworkRetryTestCase(unittest.TestCase):
-    """#124 #166 #192 #226：主流程网络抖动要重试，重试耗尽给友好提示"""
+    """#124 #166 #192 #226：主流程网络抖动要重试，重试耗尽给友好提示."""
 
     def test_retries_then_succeeds(self):
         state = {"n": 0}
@@ -563,13 +564,14 @@ class NetworkRetryTestCase(unittest.TestCase):
 
 
 class LoginRobustnessTestCase(unittest.TestCase):
-    """#163 #164 #220：登录接口没超时 / 返回非 JSON 时不能崩或挂死"""
+    """#163 #164 #220：登录接口没超时 / 返回非 JSON 时不能崩或挂死."""
 
     class _FakeResponse:
         status_code = 200
         text = "blocked"
 
         def __init__(self, payload=None, raw=False):
+            """Initialize configuration and runtime state."""
             self._payload = payload
             self._raw = raw
 
@@ -611,7 +613,7 @@ class LoginRobustnessTestCase(unittest.TestCase):
 
 
 class VideoSerialTestCase(unittest.TestCase):
-    """#588：serial_video = true 时同一个进程一次只播一个视频"""
+    """#588：serial_video = true 时同一个进程一次只播一个视频."""
 
     def setUp(self):
         self._orig = Chaoxing._study_video
@@ -657,7 +659,7 @@ class VideoSerialTestCase(unittest.TestCase):
 
 
 class VideoReplayTestCase(unittest.TestCase):
-    """进度已到结尾但平台未通过时，必须从头回看（决 D3：不够就回看）"""
+    """进度已到结尾但平台未通过时，必须从头回看（决 D3：不够就回看）."""
 
     def test_full_but_unpassed_video_replays_from_start(self):
         from unittest import mock

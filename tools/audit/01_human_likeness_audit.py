@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
-"""真人化审计：检查"发给老师/同学看"的文本与作答行为是否像真人
-
-协议约束：
-  为了"提高判分通过率"，AI实践的选择题被拼成了
-  "选 D。D：……。依据：回答正确！你的回答正确。本题考核知识点为业务层战略……"
-  —— 选择题本该只回选项字母，而且把平台的反馈原文当"依据"回显，
-  既是自曝 AI，也确实不像人在答题。这个审计器就是防止同类问题再出现。
-
-用法：
-  python tools/audit/01_human_likeness_audit.py                    # 审计内置样例文件
-  python tools/audit/01_human_likeness_audit.py --samples x.json    # 审计指定样例
-  python tools/audit/01_human_likeness_audit.py --selftest          # 只跑规则自检
-
-样例 JSON：[{"kind": "思考题|作业简答|主题讨论|AI实践开放题|AI实践客观题", "prompt": "...", "text": "..."}]
-"""
+"""真人化审计：检查"发给老师/同学看"的文本与作答行为是否像真人."""
+#
+# 协议约束：
+# 为了"提高判分通过率"，AI实践的选择题被拼成了
+# "选 D。D：……。依据：回答正确！你的回答正确。本题考核知识点为业务层战略……"
+# —— 选择题本该只回选项字母，而且把平台的反馈原文当"依据"回显，
+# 既是自曝 AI，也确实不像人在答题。这个审计器就是防止同类问题再出现。
+#
+# 用法：
+# python tools/audit/01_human_likeness_audit.py                    # 审计内置样例文件
+# python tools/audit/01_human_likeness_audit.py --samples x.json    # 审计指定样例
+# python tools/audit/01_human_likeness_audit.py --selftest          # 只跑规则自检
+#
+# 样例 JSON：[{"kind": "思考题|作业简答|主题讨论|AI实践开放题|AI实践客观题", "prompt": "...", "text": "..."}]
 import argparse
 import json
 import os
@@ -122,6 +121,14 @@ CHOICE_RE = re.compile(r"^[A-E]{1,5}$")
 JUDGE_RE = re.compile(r"^[对错]$")
 
 
+def _first_pattern_issue(text, patterns, category):
+    """Return the first matching warning in a pattern category."""
+    for pattern, name in patterns:
+        if re.search(pattern, text):
+            return [(category, name)]
+    return []
+
+
 def audit_sample(sample: dict) -> list:
     kind = str(sample.get("kind") or "")
     text = str(sample.get("text") or "")
@@ -155,25 +162,13 @@ def audit_sample(sample: dict) -> list:
     if len(habit) > habit_limit or any(count >= 3 for count in habit.values()):
         issues.append(("口癖分布过密", f"不同口癖 {len(habit)} 种 > 上限 {habit_limit}: {habit}"))
     # 金句：全篇扫描（"说到底"在首句、比喻收尾都要算）
-    for pattern, name in CLOSING_CLICHE:
-        if re.search(pattern, text):
-            issues.append(("金句", name))
-            break
+    issues.extend(_first_pattern_issue(text, CLOSING_CLICHE, '金句'))
     # 无来源的假具体
-    for pattern, name in UNSOURCED_SPECIFIC:
-        if re.search(pattern, text):
-            issues.append(("无来源的假具体", name))
-            break
+    issues.extend(_first_pattern_issue(text, UNSOURCED_SPECIFIC, '无来源的假具体'))
     # 编造的第一人称琐事
-    for pattern, name in FAKE_PERSONAL:
-        if re.search(pattern, text):
-            issues.append(("编造的个人琐事", name))
-            break
+    issues.extend(_first_pattern_issue(text, FAKE_PERSONAL, '编造的个人琐事'))
     # 三层排比/对偶：全篇扫描（只看结尾会被"金句位移"绕过，第四、五轮审计都指出）
-    for pattern, name in STRUCTURE_CLICHE:
-        if re.search(pattern, text):
-            issues.append(("三层排比/对偶", name))
-            break
+    issues.extend(_first_pattern_issue(text, STRUCTURE_CLICHE, '三层排比/对偶'))
     # 讨论里引用前文：必须真的带上了被引用的原文（context_refs 是列表），
     # 之前用 has_context=True 就整条跳过是个后门——生成侧自己申报可不算数
     refs = sample.get("context_refs")
@@ -181,20 +176,11 @@ def audit_sample(sample: dict) -> list:
     if kind == "主题讨论" and not has_refs and re.search(DANGLING_REFERENCE, text):
         issues.append(("引用不存在的前文", "没有提供被引用的原文，孤立提交时会露馅"))
     # 认领共同经历：context_refs 只能豁免"引用已有回复"，豁免不了新的共同经历声明
-    for pattern, name in CLAIMED_COMMUNITY:
-        if re.search(pattern, text):
-            issues.append(("认领共同经历", name))
-            break
+    issues.extend(_first_pattern_issue(text, CLAIMED_COMMUNITY, '认领共同经历'))
     # 示弱收尾口癖
-    for pattern, name in WEAK_ENDING:
-        if re.search(pattern, text.strip()):
-            issues.append(("示弱收尾口癖", name))
-            break
+    issues.extend(_first_pattern_issue(text.strip(), WEAK_ENDING, '示弱收尾口癖'))
     # 普适经验断言
-    for pattern, name in UNIVERSAL_CLAIM:
-        if re.search(pattern, text):
-            issues.append(("普适经验断言", name))
-            break
+    issues.extend(_first_pattern_issue(text, UNIVERSAL_CLAIM, '普适经验断言'))
     # 思考题/作业简答要有课程锚点（题目常写"结合课程内容"）
     if kind in {"思考题", "作业简答"} and len(text) >= 60 \
             and not any(word in text for word in COURSE_ANCHOR):
@@ -203,7 +189,7 @@ def audit_sample(sample: dict) -> list:
 
 
 def audit_warnings(sample: dict) -> list:
-    """软提醒：不构成"一眼假"，但独立审计时值得看的信号"""
+    """软提醒：不构成"一眼假"，但独立审计时值得看的信号."""
     kind = str(sample.get("kind") or "")
     text = str(sample.get("text") or "")
     warnings = []
@@ -223,6 +209,43 @@ def audit_warnings(sample: dict) -> list:
 
 # 开头骨架：把"课上…讲过"这类归一化后再统计，避免换个知识点就绕过雷同检测
 OPENING_SKELETON = re.compile(r"^(课上|我们课上|这门课|课堂上)[^，。；]{0,20}(讲|说|提|把|拆)")
+
+
+def _pattern_counts(samples, patterns, window):
+    """Count matching patterns in each sample's final characters."""
+    counts = {}
+    for sample in samples:
+        tail = str(sample.get("text") or "").strip()[-window:]
+        for pattern, name in patterns:
+            if re.search(pattern, tail):
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def _batch_audit(report, samples, skeleton_hits):
+    """Add warnings for structures repeated across an entire batch."""
+    # 跨样例指纹：同一批次里结尾都是同一种收束/同一个口癖，整批就很可疑
+    ending_hits = _pattern_counts(samples, CLOSING_CLICHE, 30)
+    habit_hits = {word: sum(word in str(sample.get("text") or "") for sample in samples)
+                  for word in MARKED_HABIT}
+    total = max(1, len(samples))
+    for name, count in ending_hits.items():
+        if count >= max(2, total // 2 + 1):
+            report["items"][0]["issues"].append(
+                ("整批收尾雷同", f"{count}/{total} 条都用「{name}」收尾"))
+    # 跨篇结构雷同：同一套排比/递进公式在多篇里复用
+    structure_hits = _pattern_counts(samples, STRUCTURE_CLICHE, 80)
+    for name, count in structure_hits.items():
+        if count >= 2:
+            report["items"][0]["issues"].append(
+                ("整批结构雷同", f"{count}/{total} 条共用「{name}」"))
+    if len(skeleton_hits) >= 2:
+        report["items"][0]["issues"].append(
+            ("整批开头骨架雷同", f"{len(skeleton_hits)}/{total} 条都用「课上+讲/把+知识点」开头"))
+    repeated = {word: count for word, count in habit_hits.items() if total >= 2 and count >= total}
+    if repeated:
+        report["items"][0]["issues"].append(
+            ("整批口癖雷同", f"每条都用了 {list(repeated.keys())}"))
 
 
 def audit_all(samples: list) -> dict:
@@ -256,41 +279,7 @@ def audit_all(samples: list) -> dict:
             for item in report["items"]:
                 if str(item.get("text") or "").startswith(opening):
                     item["issues"].append(("开头雷同", f"有 {count} 条样例用同样的开头"))
-    # 跨样例指纹：同一批次里结尾都是同一种收束/同一个口癖，整批就很可疑
-    ending_hits = {}
-    habit_hits = {}
-    for sample in samples:
-        text = str(sample.get("text") or "")
-        tail = text.strip()[-30:]
-        for pattern, name in CLOSING_CLICHE:
-            if re.search(pattern, tail):
-                ending_hits[name] = ending_hits.get(name, 0) + 1
-        for word in MARKED_HABIT:
-            if word in text:
-                habit_hits[word] = habit_hits.get(word, 0) + 1
-    total = max(1, len(samples))
-    for name, count in ending_hits.items():
-        if count >= max(2, total // 2 + 1):
-            report["items"][0]["issues"].append(
-                ("整批收尾雷同", f"{count}/{total} 条都用「{name}」收尾"))
-    # 跨篇结构雷同：同一套排比/递进公式在多篇里复用
-    structure_hits = {}
-    for sample in samples:
-        tail = str(sample.get("text") or "").strip()[-80:]
-        for pattern, name in STRUCTURE_CLICHE:
-            if re.search(pattern, tail):
-                structure_hits[name] = structure_hits.get(name, 0) + 1
-    for name, count in structure_hits.items():
-        if count >= 2:
-            report["items"][0]["issues"].append(
-                ("整批结构雷同", f"{count}/{total} 条共用「{name}」"))
-    if len(skeleton_hits) >= 2:
-        report["items"][0]["issues"].append(
-            ("整批开头骨架雷同", f"{len(skeleton_hits)}/{total} 条都用「课上+讲/把+知识点」开头"))
-    repeated = {word: count for word, count in habit_hits.items() if total >= 2 and count >= total}
-    if repeated:
-        report["items"][0]["issues"].append(
-            ("整批口癖雷同", f"每条都用了 {list(repeated.keys())}"))
+    _batch_audit(report, samples, skeleton_hits)
     report["problems"] = sum(len(item["issues"]) for item in report["items"])
     report["warnings_total"] = sum(len(item.get("warnings") or []) for item in report["items"])
     return report
@@ -300,7 +289,7 @@ def print_report(report: dict) -> None:
     print(f"审计样例 {report['samples']} 条，硬伤 {report['problems']} 处，"
           f"软提醒 {report.get('warnings_total', 0)} 处")
     print("（硬伤必须改；软提醒交给第二遍独立审计判断，不能只看这一份报告）")
-    for index, item in enumerate(report["items"], 1):
+    for item in report["items"]:
         flag = "✗" if item["issues"] else "✓"
         print(f"  {flag} [{item['kind']}] {item['text'][:60]}")
         for rule, detail in item["issues"]:
@@ -328,18 +317,24 @@ def selftest() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--samples", default="/tmp/human_audit_samples.json")
+    parser.add_argument("--samples", help="JSON samples to audit")
+    parser.add_argument("--report", help="Optional JSON report destination")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
     if args.selftest:
         return selftest()
+    if not args.samples:
+        parser.error("--samples is required unless --selftest is selected")
     if not os.path.exists(args.samples):
         print("找不到样例文件:", args.samples)
         return 2
-    samples = json.load(open(args.samples, encoding="utf-8"))
+    with open(args.samples, encoding="utf-8") as source:
+        samples = json.load(source)
     report = audit_all(samples)
     print_report(report)
-    json.dump(report, open("/tmp/human_audit_report.json", "w"), ensure_ascii=False, indent=1)
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as destination:
+            json.dump(report, destination, ensure_ascii=False, indent=1)
     return 1 if report["problems"] else 0
 
 

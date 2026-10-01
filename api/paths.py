@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-数据目录统一管理
-
-用户数据（配置、账号、cookie）存放在用户主目录，而不是项目目录。
-这样升级代码、git 操作、清理项目目录都不会影响用户配置。
-
-默认位置：~/.chaoxing/
-可用环境变量 CX_DATA_HOME 覆盖。
-
-首次使用时会自动从项目目录迁移旧文件（config.ini / accounts/ / cookies.txt）。
-"""
+"""数据目录统一管理."""
+#
+# 用户数据（配置、账号、cookie）存放在用户主目录，而不是项目目录。
+# 这样升级代码、git 操作、清理项目目录都不会影响用户配置。
+#
+# 默认位置：~/.chaoxing/
+# 可用环境变量 CX_DATA_HOME 覆盖。
+#
+# 首次使用时会自动从项目目录迁移旧文件（config.ini / accounts/ / cookies.txt）。
 
 import os
 import shutil
@@ -18,15 +16,16 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def data_dir():
-    """用户数据根目录（不存在则创建）"""
+    """用户数据根目录（不存在则创建）."""
     d = os.environ.get("CX_DATA_HOME") or os.path.join(
         os.path.expanduser("~"), ".chaoxing"
     )
     os.makedirs(d, exist_ok=True)
     try:
         os.chmod(d, 0o700)
-    except Exception:
-        pass
+    except OSError:
+        if os.name != "nt":
+            raise
     return d
 
 
@@ -51,12 +50,12 @@ def legacy_cookies_path():
 
 
 def reviews_dir():
-    """AI 生成内容的复核记录目录（Markdown + JSONL 索引）"""
+    """AI 生成内容的复核记录目录（Markdown + JSONL 索引）."""
     return os.path.join(data_dir(), "reviews")
 
 
 def submissions_path():
-    """已提交任务点记录：用于本地去重，避免平台完成状态延迟导致重复提交"""
+    """已提交任务点记录：用于本地去重，避免平台完成状态延迟导致重复提交."""
     return os.path.join(data_dir(), "submissions.json")
 
 
@@ -65,22 +64,20 @@ def log_path():
 
 
 def cache_path():
-    """题库答案缓存文件"""
+    """题库答案缓存文件."""
     return os.path.join(data_dir(), "cache.json")
 
 
 def backups_dir():
-    """配置备份目录"""
+    """配置备份目录."""
     d = os.path.join(data_dir(), "backups")
     os.makedirs(d, exist_ok=True)
     return d
 
 
 def backup_config(keep=15):
-    """
-    写入配置前先备份，保留最近 keep 份。
-    这样即使被误覆盖（比如被测试脚本写坏），也能从 backups/ 恢复。
-    """
+    """写入配置前先备份，保留最近 keep 份."""
+    # 这样即使被误覆盖（比如被测试脚本写坏），也能从 backups/ 恢复。
     try:
         import time
         src = config_path()
@@ -108,7 +105,7 @@ def backup_config(keep=15):
 
 
 def _migrate_once():
-    """把项目目录里的旧数据搬到数据目录（只搬一次，不覆盖已有）"""
+    """把项目目录里的旧数据搬到数据目录（只搬一次，不覆盖已有）."""
     try:
         # config.ini
         old_cfg = os.path.join(PROJECT_DIR, "config.ini")
@@ -147,7 +144,7 @@ def _migrate_once():
 
 
 def init():
-    """启动时调用：确保数据目录存在并完成一次迁移"""
+    """启动时调用：确保数据目录存在并完成一次迁移."""
     d = data_dir()
     _migrate_once()
     return d

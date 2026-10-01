@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-任务中心「主题讨论」（planType=14）离线回归
-
-覆盖：
-  * 话题页解析（urlToken/标题/正文，window.obj.topic 是 JS 字面量）
-  * study_discussion：读已有回复 → 写作器生成 → 提交 addReplys（参数与网页端一致）
-  * 失败不假装成功：缺 urlToken / 写作器不可用 / 生成器报错 / 平台拒绝 / confirm 无终端
-全部离线，不联网、不碰真实数据。
-"""
+"""任务中心「主题讨论」（planType=14）离线回归."""
+#
+# 覆盖：
+# * 话题页解析（urlToken/标题/正文，window.obj.topic 是 JS 字面量）
+# * study_discussion：读已有回复 → 写作器生成 → 提交 addReplys（参数与网页端一致）
+# * 失败不假装成功：缺 urlToken / 写作器不可用 / 生成器报错 / 平台拒绝 / confirm 无终端
+# 全部离线，不联网、不碰真实数据。
 import os
 import sys
 import tempfile
 import unittest
 from unittest import mock
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import unquote
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("CX_DATA_HOME", tempfile.mkdtemp(prefix="cx-discuss-"))
@@ -52,6 +50,7 @@ POST_OK = {"status": True, "msg": "回复成功", "datas": {"urlToken": "new-tok
 
 class FakeResponse:
     def __init__(self, status_code=200, text="", payload=None):
+        """Initialize configuration and runtime state."""
         self.status_code = status_code
         self.text = text
         self._payload = payload
@@ -64,6 +63,7 @@ class FakeResponse:
 
 class FakeSession:
     def __init__(self, routes):
+        """Initialize configuration and runtime state."""
         self.routes = routes
         self.calls = []
         self.kwargs_calls = []
@@ -87,6 +87,7 @@ class FakeWriter:
     available = True
 
     def __init__(self):
+        """Initialize configuration and runtime state."""
         self.existing = None
         self.error = None
 
@@ -141,7 +142,7 @@ class StudyDiscussionTestCase(unittest.TestCase):
         self.assertIn("/pc/invitation/topic-uuid-1/addReplys", post_urls[0])
 
     def test_already_replied_does_not_post_again(self):
-        """自己已经回复过：不再重复发帖（重复运行不能刷讨论区）"""
+        """自己已经回复过：不再重复发帖（重复运行不能刷讨论区）."""
         replies = {
             "status": True,
             "datas": [

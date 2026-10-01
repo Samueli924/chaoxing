@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-任务中心（教学任务）离线测试
-
-覆盖：
-  * 教学任务列表 / 分组 / 任务点的解析与失败处理
-  * 任务引擎视频打点节奏（0=开始 / 1=心跳 / 2=结束）
-  * 文档任务 readEnd
-  * 分组顺序解锁：上一组完成后才继续下一组
-  * 不支持的类型（作业/思考题/讨论/未完成证据的章节）不会被假装成已完成
-
-全部测试不联网、不读写用户真实数据。
-"""
+"""任务中心（教学任务）离线测试."""
+#
+# 覆盖：
+# * 教学任务列表 / 分组 / 任务点的解析与失败处理
+# * 任务引擎视频打点节奏（0=开始 / 1=心跳 / 2=结束）
+# * 文档任务 readEnd
+# * 分组顺序解锁：上一组完成后才继续下一组
+# * 不支持的类型（作业/思考题/讨论/未完成证据的章节）不会被假装成已完成
+#
+# 全部测试不联网、不读写用户真实数据。
 import json
 import os
 from contextlib import contextmanager
-from pathlib import Path
 import sys
 import tempfile
 import unittest
@@ -32,6 +29,7 @@ from api.task_center import TaskCenter  # noqa: E402
 
 class FakeResponse:
     def __init__(self, status_code=200, text="", payload=None, url=None, lines=None):
+        """Initialize configuration and runtime state."""
         self.status_code = status_code
         self.text = text
         self._payload = payload
@@ -50,9 +48,10 @@ class FakeResponse:
 
 
 class FakeSession:
-    """按 URL 关键字路由的假 session，记录所有请求"""
+    """按 URL 关键字路由的假 session，记录所有请求."""
 
     def __init__(self, routes):
+        """Initialize configuration and runtime state."""
         self.routes = routes
         self.calls = []
         self.kwargs_calls = []
@@ -280,81 +279,105 @@ class DocumentTestCase(unittest.TestCase):
         ))
 
 
+class FakeGroupEngine:
+    """Simulate sequential group unlocks without contacting a server."""
+    def __init__(self, plans_by_group):
+        """Initialize configuration and runtime state."""
+        self.plans_by_group = plans_by_group
+        self.finished = set()
+        self.studied = []
+        self.round = 0
+        self.last_outcome = None
+        self.waiting_confirmation = False
+
+    def open_task(self, task):
+        self.round += 1
+        return {"encryTaskUserId": "u", "encryTaskId": "t"}
+
+    def get_groups(self, etui):
+        groups = []
+        for index in range(len(self.plans_by_group)):
+            allow = index == 0 or all(
+                p["planId"] in self.finished for p in self.plans_by_group[index - 1]
+            )
+            groups.append({
+                "encryptGroupId": f"g{index}",
+                "groupAllowStudy": allow,
+                "taskGroup": {"id": index, "name": f"分组{index}"},
+            })
+        return groups
+
+    def get_plans(self, etui, group_id):
+        index = int(group_id[1:])
+        return self.plans_by_group[index]
+
+    def plan_finished(self, plan):
+        return plan["planId"] in self.finished
+
+    def get_study_url(self, etui, encrypt_plan_id):
+        return f"https://task.chaoxing.com/videoStudy/learnPage?enc={encrypt_plan_id}"
+
+    def _finish(self, url):
+        """按 encryptPlanId 找到对应任务点并标记完成（模拟服务端同步）."""
+        enc = url.rsplit("=", 1)[-1]
+        for plans in self.plans_by_group:
+            for plan in plans:
+                if plan["encryptPlanId"] == enc:
+                    self.studied.append(plan["planId"])
+                    self.finished.add(plan["planId"])
+
+    def study_video(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_document(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_ai_practice(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_homework(self, url, plan=None, course=None):
+        self._finish(url)
+        return True
+
+    def study_discussion(self, url, plan=None, course=None):
+        self._finish(url)
+        return True
+
+    def wait_plan_finished(self, etui, group_id, plan_id, tries=3, interval=2.0):
+        return plan_id in self.finished
+
+
 class GroupUnlockTestCase(unittest.TestCase):
-    """任务点按分组解锁：只有做完当前组，下一组才会允许学习"""
+    """任务点按分组解锁：只有做完当前组，下一组才会允许学习."""
 
     def setUp(self):
         main.logger.remove()
 
     def _make_fake_tc(self, plans_by_group):
-        class FakeTC:
-            def __init__(self):
-                self.finished = set()
-                self.studied = []
-                self.round = 0
-                self.last_outcome = None
-                self.waiting_confirmation = False
+        return FakeGroupEngine(plans_by_group)
 
-            def open_task(self, task):
-                self.round += 1
-                return {"encryTaskUserId": "u", "encryTaskId": "t"}
-
-            def get_groups(self, etui):
-                groups = []
-                for index, plans in enumerate(plans_by_group):
-                    allow = index == 0 or all(
-                        p["planId"] in self.finished for p in plans_by_group[index - 1]
-                    )
-                    groups.append({
-                        "encryptGroupId": f"g{index}",
-                        "groupAllowStudy": allow,
-                        "taskGroup": {"id": index, "name": f"分组{index}"},
-                    })
-                return groups
-
-            def get_plans(self, etui, group_id):
-                index = int(group_id[1:])
-                return plans_by_group[index]
-
-            def plan_finished(self, plan):
-                return plan["planId"] in self.finished
-
-            def get_study_url(self, etui, encrypt_plan_id):
-                return f"https://task.chaoxing.com/videoStudy/learnPage?enc={encrypt_plan_id}"
-
-            def _finish(self, url):
-                """按 encryptPlanId 找到对应任务点并标记完成（模拟服务端同步）"""
-                enc = url.rsplit("=", 1)[-1]
-                for plans in plans_by_group:
-                    for plan in plans:
-                        if plan["encryptPlanId"] == enc:
-                            self.studied.append(plan["planId"])
-                            self.finished.add(plan["planId"])
-
-            def study_video(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_document(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_ai_practice(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_homework(self, url, plan=None, course=None):
-                self._finish(url)
-                return True
-
-            def study_discussion(self, url, plan=None, course=None):
-                self._finish(url)
-                return True
-
-            def wait_plan_finished(self, etui, group_id, plan_id, tries=3, interval=2.0):
-                return plan_id in self.finished
-
-        return FakeTC()
+    def test_cancelled_homework_stops_before_next_plan(self):
+        """A cancelled submission cannot continue with another task in the group."""
+        tc = self._make_fake_tc([[{
+            "planId": "p1", "planType": 4, "name": "作业",
+            "encryptPlanId": "e1", "encryptGroupId": "g0",
+        }, {
+            "planId": "p2", "planType": 10, "name": "视频",
+            "encryptPlanId": "e2", "encryptGroupId": "g0",
+        }]])
+        def cancel(*args, **kwargs):
+            tc.last_outcome = tc_mod.TaskOutcome.WAITING_CONFIRMATION
+            return False
+        tc.study_homework = cancel
+        with mock.patch.object(main.interrupt, "should_stop", return_value=False):
+            ok, _ = main._process_teaching_task(tc, object(), self._course(),
+                    {"name": "教学任务"}, {"speed": 1}, {})
+        self.assertFalse(ok)
+        self.assertEqual(tc.last_outcome, tc_mod.TaskOutcome.WAITING_CONFIRMATION)
+        self.assertEqual(tc.studied, [])
 
     def _course(self):
         return {"title": "示例课程", "courseId": "1", "clazzId": "2", "cpi": "3"}
@@ -392,7 +415,7 @@ class GroupUnlockTestCase(unittest.TestCase):
             return main.run_task_center_phase(object(), [self._course()], config)
 
     def test_max_tasks_limits_pending_teaching_tasks(self):
-        """max_tasks_per_course=1：只刷第 1 个待完成教学任务，其余不算失败"""
+        """Max_tasks_per_course=1：只刷第 1 个待完成教学任务，其余不算失败."""
         stats = self._two_task_case({"speed": 1.0, "max_tasks_per_course": 1})
         self.assertEqual(stats["tasks"], 1)
         self.assertEqual(stats["done"], 1)
@@ -414,7 +437,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(stats_other["limited"], 0)
 
     def test_homework_plan_runs_through_orchestration(self):
-        """planType=4 必须走 study_homework，并在引擎复查通过后才算完成"""
+        """PlanType=4 必须走 study_homework，并在引擎复查通过后才算完成."""
         plans = [[{"planId": "p1", "planType": 4, "name": "第1章作业", "encryptPlanId": "e1",
                    "encryptGroupId": "g0", "isFinish": False}]]
         fake = self._make_fake_tc(plans)
@@ -428,7 +451,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(fake.studied, ["p1"])
 
     def test_task_center_phase_quiets_console(self):
-        """任务中心阶段的内部日志只进文件，控制台交还给 print 的结果行"""
+        """任务中心阶段的内部日志只进文件，控制台交还给 print 的结果行."""
         calls = []
         with mock.patch("main.set_console_quiet", side_effect=calls.append), \
              mock.patch("main.run_task_center_phase", return_value={"ok": 1}) as inner:
@@ -438,7 +461,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         inner.assert_called_once()
 
     def test_unsupported_plan_is_not_retried(self):
-        """暂不支持的 task point 只尝试一次，不跟着解锁轮次反复重试/刷日志"""
+        """暂不支持的 task point 只尝试一次，不跟着解锁轮次反复重试/刷日志."""
         plans = [
             [{"planId": "p1", "planType": 10, "name": "视频1", "encryptPlanId": "e1",
               "encryptGroupId": "g0", "isFinish": False}],
@@ -460,7 +483,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(spy.call_count, 2)   # p1 + p2 各一次；p2 不跟着轮次重试
 
     def test_result_lines_are_concise(self):
-        """结果行不再重复教学任务名（名字已在 ▸ 行展示）"""
+        """结果行不再重复教学任务名（名字已在 ▸ 行展示）."""
         plans = [[{"planId": "p1", "planType": 10, "name": "视频1", "encryptPlanId": "e1",
                    "encryptGroupId": "g0", "isFinish": False}]]
         fake = self._make_fake_tc(plans)
@@ -476,7 +499,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertFalse([line for line in printed if "✓ 完成：" in line])
 
     def test_discussion_plan_runs_through_orchestration(self):
-        """planType=14 必须走 study_discussion，并在引擎复查通过后才算完成"""
+        """PlanType=14 必须走 study_discussion，并在引擎复查通过后才算完成."""
         plans = [[{"planId": "p1", "planType": 14, "name": "主题讨论", "encryptPlanId": "e1",
                    "encryptGroupId": "g0", "isFinish": False}]]
         fake = self._make_fake_tc(plans)
@@ -490,7 +513,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(fake.studied, ["p1"])
 
     def test_already_finished_task_is_reported_as_completed(self):
-        """全部任务点都已完成时是"完成"，last_outcome 不能停在 FAILED"""
+        """全部任务点都已完成时是"完成"，last_outcome 不能停在 FAILED."""
         plans = [[{"planId": "p1", "planType": 15, "name": "AI实践", "encryptPlanId": "e1",
                    "encryptGroupId": "g0", "isFinish": True}]]
         fake = self._make_fake_tc(plans)
@@ -557,7 +580,7 @@ class GroupUnlockTestCase(unittest.TestCase):
             return main.run_task_center_phase(object(), [self._course()], {"speed": 1.0})
 
     def test_ai_practice_plan_runs_through_orchestration(self):
-        """planType=15 必须真的走 study_ai_practice，并在引擎复查通过后才算完成"""
+        """PlanType=15 必须真的走 study_ai_practice，并在引擎复查通过后才算完成."""
         plans = [[{"planId": "p1", "planType": 15, "name": "AI实践", "encryptPlanId": "e1",
                    "encryptGroupId": "g0", "isFinish": False}]]
         fake = self._make_fake_tc(plans)
@@ -568,7 +591,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(fake.last_outcome, tc_mod.TaskOutcome.COMPLETED)
 
     def test_failed_plan_is_not_retried_within_run(self):
-        """同一个任务点失败后不再借"等解锁"的轮次反复重试（AI实践一局要几分钟）"""
+        """同一个任务点失败后不再借"等解锁"的轮次反复重试（AI实践一局要几分钟）."""
         plans = [[
             {"planId": "p1", "planType": 15, "name": "AI实践", "encryptPlanId": "e1",
              "encryptGroupId": "g0", "isFinish": False},
@@ -605,7 +628,7 @@ class GroupUnlockTestCase(unittest.TestCase):
             return main.run_task_center_phase(chaoxing, [self._course()], {"speed": 1.0})
 
     def test_chapter_type_target_missing_is_failed_not_unsupported(self):
-        """章节点在目录里找不到对应章节：算失败，不能算"暂不支持"或假装完成"""
+        """章节点在目录里找不到对应章节：算失败，不能算"暂不支持"或假装完成."""
         fake = self._make_fake_tc([[self._chapter_plan()]])
         stats = self._run_chapter_case(fake, point_map={})
         self.assertEqual(stats["done"], 0)
@@ -614,7 +637,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(fake.studied, [])
 
     def test_chapter_type_syncs_platform_stujobinfo(self):
-        """章节刷完 + 平台下发 stuJobInfo → 必须调 sync_chapter_plan 且带引擎标记"""
+        """章节刷完 + 平台下发 stuJobInfo → 必须调 sync_chapter_plan 且带引擎标记."""
         fake = self._make_fake_tc([[self._chapter_plan()]])
         synced = []
         stu_job_info = {
@@ -655,7 +678,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         self.assertEqual(stats["done"], 1)
 
     def test_chapter_type_without_stujobinfo_does_not_fake_sync(self):
-        """平台没下发同步数据：不能自己拼 enc，也不能报完成"""
+        """平台没下发同步数据：不能自己拼 enc，也不能报完成."""
         fake = self._make_fake_tc([[self._chapter_plan()]])
         synced = []
         fake.sync_chapter_plan = lambda etui, data: synced.append(data) or True
@@ -735,7 +758,7 @@ class SwitchTestCase(unittest.TestCase):
 
     def test_cli_submit_mode_overrides_config_file(self):
         args = type("Args", (), {
-            "config": "/tmp/config.ini",
+            "config": os.path.join(tempfile.gettempdir(), 'config.ini'),
             "task_center": None,
             "task_center_submit_mode": "auto",
         })()
@@ -749,7 +772,7 @@ class SwitchTestCase(unittest.TestCase):
 
 
 class VideoWatchDurationTestCase(unittest.TestCase):
-    """有时长要求的视频：按 1 倍速播完还不够时要回看"""
+    """有时长要求的视频：按 1 倍速播完还不够时要回看."""
 
     def setUp(self):
         main.logger.remove()
@@ -807,7 +830,7 @@ DOC_READER_PAGE = (
 
 
 class DocumentWatchDurationTestCase(unittest.TestCase):
-    """文档：按阅读时长打点，凑够时间再收尾"""
+    """文档：按阅读时长打点，凑够时间再收尾."""
 
     def setUp(self):
         main.logger.remove()
@@ -844,7 +867,7 @@ class DocumentWatchDurationTestCase(unittest.TestCase):
         self.assertEqual([c for c in tc.session.calls if "readEnd" in c[1]][0][2]["encryPlanUserId"], "BEDC@planuser")
 
     def test_requires_reader_mark(self):
-        """拿不到打点信息时不能假装完成"""
+        """拿不到打点信息时不能假装完成."""
         tc = make_task_center([
             ("documentStudy/learnPage", FakeResponse(text='<script>const encryPlanUserId = "X";</script>')),
             ("documentStudy/readEnd", FakeResponse(payload={"result": True})),
@@ -904,7 +927,7 @@ class DocumentWatchDurationTestCase(unittest.TestCase):
 
 class SubmitModeTestCase(unittest.TestCase):
     def test_default_mode_is_auto(self):
-        """默认自动提交（挂后台刷课）；只有显式 confirm 才逐次询问"""
+        """默认自动提交（挂后台刷课）；只有显式 confirm 才逐次询问."""
         self.assertEqual(tc_mod.normalize_submit_mode(None), "auto")
         self.assertEqual(tc_mod.normalize_submit_mode(""), "auto")
         self.assertEqual(tc_mod.normalize_submit_mode("unexpected"), "auto")
@@ -929,12 +952,11 @@ class SubmitModeTestCase(unittest.TestCase):
 
 
 class ConfirmPromptStdinTestCase(unittest.TestCase):
-    """确认提示必须先让键盘监听让出 stdin
-
-    终端并发约束：章节阶段起的键盘监听线程会把终端设成
-    cbreak 并一直 os.read(stdin,1)，与 input() 抢字符——逐字敲 "yes" 会被
-    吃成 "ye"/"ys"（按取消处理），甚至让 input() 永久挂住且看不到回显。
-    """
+    """确认提示必须先让键盘监听让出 stdin."""
+    #
+    # 终端并发约束：章节阶段起的键盘监听线程会把终端设成
+    # cbreak 并一直 os.read(stdin,1)，与 input() 抢字符——逐字敲 "yes" 会被
+    # 吃成 "ye"/"ys"（按取消处理），甚至让 input() 永久挂住且看不到回显。
 
     def test_confirm_prompt_runs_inside_stdin_guard(self):
         events = []
@@ -959,13 +981,12 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
         self.assertEqual(events, ["pause", "input", "resume"])
 
     def test_paused_watcher_leaves_stdin_for_input(self):
-        """暂停期间监听线程不再消费 stdin；恢复后又能按 q 终止"""
-        import os as _os
+        """暂停期间监听线程不再消费 stdin；恢复后又能按 q 终止."""
         import select as _select
         import termios as _termios
         import time as _time
 
-        if _os.name == "nt":
+        if os.name == "nt":
             self.skipTest("termios 只测 POSIX")
         try:
             import pty
@@ -978,22 +999,22 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
         attrs = _termios.tcgetattr(slave)
         attrs[3] = attrs[3] & ~_termios.ECHO
         _termios.tcsetattr(slave, _termios.TCSANOW, attrs)
-        fake_stdin = _os.fdopen(_os.dup(slave), "rb", buffering=0)
+        fake_stdin = os.fdopen(os.dup(slave), "rb", buffering=0)
         old_stdin = sys.stdin
         sys.stdin = fake_stdin
         try:
             self.assertTrue(tc_mod.interrupt.start_watcher())
             self.assertTrue(tc_mod.interrupt.pause_watcher(2.0))
             # 监听让开以后，写进终端的内容应该原样被读到
-            _os.write(master, b"hello\n")
+            os.write(master, b"hello\n")
             ready, _, _ = _select.select([slave], [], [], 2.0)
             self.assertTrue(ready, "暂停期间 stdin 仍被监听线程消费")
-            with _os.fdopen(_os.dup(slave), "rb", buffering=0) as reader:
+            with os.fdopen(os.dup(slave), "rb", buffering=0) as reader:
                 self.assertEqual(reader.readline(), b"hello\n")
             # 恢复监听后按 q 依旧能终止
             tc_mod.interrupt.resume_watcher()
             _time.sleep(0.2)
-            _os.write(master, b"q")
+            os.write(master, b"q")
             deadline = _time.time() + 3.0
             while _time.time() < deadline and not tc_mod.interrupt.should_stop():
                 _time.sleep(0.05)
@@ -1002,8 +1023,8 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
             sys.stdin = old_stdin
             tc_mod.interrupt.reset()
             fake_stdin.close()
-            _os.close(master)
-            _os.close(slave)
+            os.close(master)
+            os.close(slave)
 
 
 class AIPracticeTestCase(unittest.TestCase):
@@ -1242,7 +1263,7 @@ class AIPracticeTestCase(unittest.TestCase):
 
 
 class ChapterEngineInfoTestCase(unittest.TestCase):
-    """任务引擎「章节」上下文：打点带 courseEngineInfo，平台的 stuJobInfo 要暂存"""
+    """任务引擎「章节」上下文：打点带 courseEngineInfo，平台的 stuJobInfo 要暂存."""
 
     def setUp(self):
         main.logger.remove()
@@ -1296,7 +1317,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         self.assertEqual(cx.last_student_job_info, stu)
 
     def test_forbidden_request_falls_back_to_curl(self):
-        """requests 被客户端指纹拦截（403）时，用 curl 原样重放并采用其结果"""
+        """Requests 被客户端指纹拦截（403）时，用 curl 原样重放并采用其结果."""
         from api import base as base_mod
         cx = self._chaoxing()
         calls = []
@@ -1336,7 +1357,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
 
     def test_plain_log_has_no_engine_param_and_no_capture(self):
         cx = self._chaoxing()
-        passed, state, calls = self._run_log(
+        passed, _state, calls = self._run_log(
             cx, False, {"isPassed": True, "stuJobInfo": {"enc": "不应被暂存"}}
         )
         self.assertTrue(passed)
@@ -1345,7 +1366,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
 
 
 class EngineDocumentSyncTestCase(unittest.TestCase):
-    """文档在任务引擎上下文里：完成后要请求 /mooc-ans/job/document 并暂存 stuJobInfo"""
+    """文档在任务引擎上下文里：完成后要请求 /mooc-ans/job/document 并暂存 stuJobInfo."""
 
     def setUp(self):
         main.logger.remove()
@@ -1401,7 +1422,7 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
         self.assertIsNone(cx.last_student_job_info)
 
 class AIPendingTurnTestCase(unittest.TestCase):
-    """过期题目不能当成 pending：平台出总结后，局已经结束"""
+    """过期题目不能当成 pending：平台出总结后，局已经结束."""
 
     def _msg(self, role, payload):
         return {"role": role, "content": json.dumps(payload, ensure_ascii=False)}
@@ -1426,7 +1447,7 @@ class AIPendingTurnTestCase(unittest.TestCase):
 
 
 class AIReportScoreTestCase(unittest.TestCase):
-    """成绩是"学习质量评估报告"现算出来的：提交后必须请求它，否则永远不出分"""
+    """成绩是"学习质量评估报告"现算出来的：提交后必须请求它，否则永远不出分."""
 
     PAGE_URL = AIPracticeTestCase.PAGE_URL
 
@@ -1535,7 +1556,7 @@ class AIReportScoreTestCase(unittest.TestCase):
 
 
 class AIObjectiveAnswerTestCase(unittest.TestCase):
-    """客观题必须有客观题的作答形态：平台没给题型也不能写成小作文"""
+    """客观题必须有客观题的作答形态：平台没给题型也不能写成小作文."""
 
     def test_options_without_type_are_answered_as_choice(self):
         class Writer:
@@ -1558,7 +1579,7 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
         self.assertEqual(tc._ai_answer(turn, {}), "B")
 
     def test_unknown_numeric_type_with_options_is_still_choice(self):
-        """题型编码没见过（如 "2"）但题目给了选项：按客观题作答，不写小作文"""
+        """题型编码没见过（如 "2"）但题目给了选项：按客观题作答，不写小作文."""
 
         class Writer:
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
@@ -1598,10 +1619,9 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
 
 class AIPracticeLoopGuardTestCase(unittest.TestCase):
-    """平台拿自己的大模型判分，会把标准答案判错并反复推回同一题；
-
-    实测被推回 15 次、整局拖到 112 题。知识点答完后必须及时收手。
-    """
+    """平台拿自己的大模型判分，会把标准答案判错并反复推回同一题."""
+    #
+    # 实测被推回 15 次、整局拖到 112 题。知识点答完后必须及时收手。
 
     PAGE_URL = AIPracticeTestCase.PAGE_URL
     QUESTION = [
@@ -1653,7 +1673,7 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
         return tc, ok, answers
 
     def test_rejected_question_is_not_retried_forever(self):
-        """平台每答一次都记一条消息（messageList 变长）但继续推回同一题：按次数收手"""
+        """平台每答一次都记一条消息（messageList 变长）但继续推回同一题：按次数收手."""
         state = {"loads": 0, "msgs": 0, "submitted": False}
 
         def load_data(method, url, params):
@@ -1694,11 +1714,10 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
         self.assertEqual(tc.last_outcome, tc_mod.TaskOutcome.COMPLETED)
 
     def test_stale_question_after_last_topic_is_not_answered_forever(self):
-        """知识点答完后平台把最后一道题推回来、又不收录作答：连续两次无新消息就收手
-
-        真实踩坑：一整局 9 道题都答对了、unCompleteTopic 也空了，平台却继续把
-        最后那道判断题推回来，本地"错/对"来回换了十几次，记录里一条都没多。
-        """
+        """知识点答完后平台把最后一道题推回来、又不收录作答：连续两次无新消息就收手."""
+        #
+        # 真实踩坑：一整局 9 道题都答对了、unCompleteTopic 也空了，平台却继续把
+        # 最后那道判断题推回来，本地"错/对"来回换了十几次，记录里一条都没多。
         SUMMARY = b'data:' + json.dumps(
             {"content": "# 知识点解析\n\n## 一、战略管理"}, ensure_ascii=False
         ).encode("utf-8")
@@ -1741,7 +1760,7 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
 
 
 class AIAverageScoreTestCase(unittest.TestCase):
-    """页面写的达标口径是"多次练习平均分"：单次满分不够，历史低分要补回来"""
+    """页面写的达标口径是"多次练习平均分"：单次满分不够，历史低分要补回来."""
 
     PAGE_URL = AIPracticeTestCase.PAGE_URL
 
@@ -1821,7 +1840,7 @@ class AIAverageScoreTestCase(unittest.TestCase):
         self.assertEqual(len([c for c in tc.session.calls if "end-report" in c[1]]), 2)
 
     def test_already_submitted_record_is_never_submitted_twice(self):
-        """平台把同一条已提交记录再交回来时，绝不能对同一条记录二次 submit"""
+        """平台把同一条已提交记录再交回来时，绝不能对同一条记录二次 submit."""
         records = [
             {"recordUuid": "old-1", "score": 30},
             {"recordUuid": "old-2", "score": 60},
@@ -1865,7 +1884,7 @@ class AIAverageScoreTestCase(unittest.TestCase):
         )
 
     def test_score_never_falls_back_to_another_record(self):
-        """问"这一条记录多少分"时，本条还没评估就必须返回 None，不能拿旧分顶替"""
+        """问"这一条记录多少分"时，本条还没评估就必须返回 None，不能拿旧分顶替."""
         data = {
             "answerScore": 90,
             "answerRecords": [{"recordUuid": "old", "score": 90}],
