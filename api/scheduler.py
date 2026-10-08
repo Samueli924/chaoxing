@@ -31,7 +31,7 @@ class ChapterResult(enum.Enum):
     NOT_OPEN = 2
     PENDING = 3
     CANCELLED = 4
-    BLOCKED = 5  # A bounded media attempt failed; do not replay it automatically.
+    BLOCKED = 5  # A bounded task attempt failed; do not replay it automatically.
 
 
 def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, speed: float) -> StudyResult:
@@ -93,7 +93,7 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
         return ChapterResult.NOT_OPEN
 
     failed = False
-    media_blocked = False
+    replay_blocked = False
     for job in jobs:
         if runtime.should_stop():
             return ChapterResult.CANCELLED
@@ -108,9 +108,9 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
             return ChapterResult.CANCELLED
         if result.is_failure():
             failed = True
-            media_blocked = media_blocked or job.get("type") == "video"
+            replay_blocked = replay_blocked or job.get("type") in ("video", "document", "read")
 
-    if media_blocked:
+    if replay_blocked:
         return ChapterResult.BLOCKED
     return ChapterResult.ERROR if failed else ChapterResult.SUCCESS
 

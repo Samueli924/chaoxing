@@ -115,12 +115,15 @@ def _build_session() -> requests.Session:
     adapter = CompatibleHTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=32)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    # Playback owns its bounded retries; never multiply them in the HTTP adapter.
+    # Playback owns its bounded retries; completion writes must not be replayed
+    # by the HTTP adapter, even though the platform exposes them as GET.
     media_adapter = CompatibleHTTPAdapter(max_retries=0, pool_connections=10, pool_maxsize=32)
     for prefix in ("https://mooc1.chaoxing.com/ananas/status/",
                    "https://mooc1.chaoxing.com/mooc-ans/multimedia/log/",
                    "https://mooc1.chaoxing.com/multimedia/log/"):
         session.mount(prefix, media_adapter)
+    for endpoint in (*DOCUMENT_URLS, *READ_URLS):
+        session.mount(endpoint, media_adapter)
     session.headers.update(gc.HEADERS)
     apply_cookies(session, use_cookies())
     return session
@@ -973,20 +976,33 @@ class Chaoxing:
     def _finish_job_via(self, urls, params: dict, what: str) -> StudyResult:
         session = SessionManager.get_session()
         for url in urls:
+            if runtime.should_stop():
+                return StudyResult.CANCELLED
             try:
                 resp = session.get(url, params=params)
-            except RequestException as e:
-                logger.warning(f"{what}请求失败: {e}")
+            except RequestException as exc:
+                # The server may have processed this request. Do not repeat it
+                # through another endpoint when its outcome is unknown.
+                logger.warning("{}结果未确认: {}；请先回读任务状态", what, type(exc).__name__)
+                return StudyResult.TIMEOUT if isinstance(exc, requests.Timeout) else StudyResult.ERROR
+            if resp.status_code in (404, 405):
+                logger.debug("{}接口不可用 (HTTP {})，尝试兼容接口", what, resp.status_code)
                 continue
+            if resp.status_code != 200:
+                logger.warning("{}未确认完成: HTTP {}", what, resp.status_code)
+                return StudyResult.FORBIDDEN if resp.status_code == 403 else StudyResult.ERROR
             data = _json_or_none(resp)
             if not isinstance(data, dict):
-                logger.debug(f"{what}接口 {url} 返回非JSON内容 (HTTP {resp.status_code}), 尝试备用接口")
-                continue
-            if data.get("status"):
-                logger.info(f"{what}完成 -> {data.get('msg', '')}")
+                logger.warning("{}响应格式异常；不重复提交，请先回读任务状态", what)
+                return StudyResult.ERROR
+            status = data.get("status")
+            if status is True or (type(status) is int and status == 1) or (
+                    isinstance(status, str) and status.strip().lower() in ("true", "1")):
+                logger.info("{}接口确认成功，仍需独立核对任务状态", what)
                 return StudyResult.SUCCESS
-            logger.error(f"{what}失败 -> {data.get('msg', data)}")
+            logger.warning("{}未返回明确成功状态", what)
             return StudyResult.ERROR
+        logger.warning("{}无可用接口", what)
         return StudyResult.ERROR
 
     def study_document(self, _course, _job, _job_info=None) -> StudyResult:
