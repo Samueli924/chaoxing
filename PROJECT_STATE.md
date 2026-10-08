@@ -1,5 +1,13 @@
 # Project State
 
+## Current status — 2026-10-08
+
+**Historical completion is not accepted as current evidence.** Later authenticated readback contradicted the dated acceptance. The underlying cause has not been established. Do not treat the previous concurrency profile as proof of durable acceptance, or replay an entire course merely to conceal a mismatch. Reconcile the same account/course/task with current native records first. Account-specific diagnostic evidence is retained privately and excluded from this public repository.
+
+The original receipts below are historical and establish only their dated observations. Immediate task-card and aggregate confirmation cannot guarantee later platform state. No runtime fix for the underlying regression is claimed.
+
+## Historical state — 2026-09-27 (superseded by current status above)
+
 Last updated: 2026-09-27 UTC
 Canonical source: https://github.com/ieduer/chaoxing main; checkout /Users/ylsuen/chaoxing/chaoxing.
 

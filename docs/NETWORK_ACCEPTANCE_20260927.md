@@ -1,5 +1,7 @@
 # Connection repair and course acceptance
 
+> Current-status correction — 2026-10-08: the following acceptance is historical only and has been superseded by [PROJECT_STATE](../PROJECT_STATE.md). Later state contradicted the dated completion; cause unresolved. Preserve this evidence, but do not use it as current or durable acceptance.
+
 The local environment's Python socket connect intermittently raises EBADF before sending a request, including on unrelated public HTTPS sites. System curl reaches the same sites. The OS-level cause remains unproven.
 
 `CHAOXING_HTTP_TRANSPORT` supports `auto` (default), `requests`, and `curl`. Auto switches only when the exception chain proves an EBADF while opening a connection; it does not replay timeouts, read failures or ambiguous failed submissions. The fallback uses the installed curl executable, verified TLS and bounded timeouts. Requests retains cookie scope and redirect handling. Credentials, query parameters and bodies are passed through stdin, never command arguments or temporary files. It supports buffered HTTP(S) and UTF-8 form/JSON requests, not streaming uploads/downloads. Response errors expose exit codes instead of private URLs.

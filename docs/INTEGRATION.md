@@ -1,5 +1,7 @@
 # 本机整合与功能核验
 
+> Current-status correction — 2026-10-08: the following acceptance is historical only and has been superseded by [PROJECT_STATE](../PROJECT_STATE.md). Later state contradicted the dated completion; cause unresolved. Preserve this evidence, but do not use it as current or durable acceptance.
+
 日期：2026-09-27 UTC。基线：`ieduer/chaoxing` main `2089f7e5a51faab180c3ac5bb7220cd69037b737`。
 
 ## 本机恢复

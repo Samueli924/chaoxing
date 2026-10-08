@@ -1,5 +1,7 @@
 # Video efficiency: acceptance before throughput
 
+> Current-status correction — 2026-10-08: the following acceptance is historical only and has been superseded by [PROJECT_STATE](../PROJECT_STATE.md). Later state contradicted the dated completion; cause unresolved. Preserve this evidence, but do not use it as current or durable acceptance.
+
 As of 2026-09-27, independent full-course acceptance passed at 118/118. The sections below retain the experiment history; the final result supersedes pending checkpoints. No globally optimal speed is claimed.
 
 ## Measured constraint
