@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 import requests
-from api.base import Chaoxing, StudyResult, _build_session, DOCUMENT_URLS, READ_URLS
+from api.base import Chaoxing, StudyResult, _build_session, DOCUMENT_URLS, READ_URLS, WORK_RETEST_URL
 from api.runtime import runtime
 from api.scheduler import process_chapter, ChapterResult, ChapterTask, JobProcessor
 
@@ -61,17 +61,17 @@ class ResourceCompletionTest(unittest.TestCase):
         session.get.assert_not_called()
 
     def test_resource_failure_cannot_restart_chapter(self):
-        for kind in ('document', 'read'):
+        for kind in ('document', 'read', 'workid'):
             cx = Mock()
             cx.get_job_list.return_value = ([{'type': kind, 'jobid': 'synthetic'}], {})
-            getattr(cx, 'study_' + kind).return_value = StudyResult.TIMEOUT
+            getattr(cx, 'study_' + ('work' if kind == 'workid' else kind)).return_value = StudyResult.TIMEOUT
             self.assertEqual(process_chapter(cx, {'title': 'synthetic'}, {'title': 'synthetic'}, 1), ChapterResult.BLOCKED)
 
     def test_transport_does_not_retry_completion_gets(self):
         with patch('api.base.use_cookies', return_value={}):
             session = _build_session()
         self.addCleanup(session.close)
-        for endpoint in (*DOCUMENT_URLS, *READ_URLS):
+        for endpoint in (*DOCUMENT_URLS, *READ_URLS, WORK_RETEST_URL):
             self.assertEqual(session.get_adapter(endpoint + '?jobid=test').max_retries.total, 0)
 
     def test_failed_resource_is_not_requeued_and_downshifts(self):

@@ -122,11 +122,17 @@ def _build_session() -> requests.Session:
                    "https://mooc1.chaoxing.com/mooc-ans/multimedia/log/",
                    "https://mooc1.chaoxing.com/multimedia/log/"):
         session.mount(prefix, media_adapter)
-    for endpoint in (*DOCUMENT_URLS, *READ_URLS):
+    for endpoint in (*DOCUMENT_URLS, *READ_URLS, WORK_RETEST_URL):
         session.mount(endpoint, media_adapter)
     session.headers.update(gc.HEADERS)
     apply_cookies(session, use_cookies())
     return session
+
+
+def _positive_status(value: Any) -> bool:
+    """Only documented boolean-like success values are affirmative."""
+    return value is True or (type(value) is int and value == 1) or (
+        isinstance(value, str) and value.strip().lower() in ("true", "1"))
 
 
 def _json_or_none(resp: requests.Response) -> Optional[Any]:
@@ -995,9 +1001,7 @@ class Chaoxing:
             if not isinstance(data, dict):
                 logger.warning("{}响应格式异常；不重复提交，请先回读任务状态", what)
                 return StudyResult.ERROR
-            status = data.get("status")
-            if status is True or (type(status) is int and status == 1) or (
-                    isinstance(status, str) and status.strip().lower() in ("true", "1")):
+            if _positive_status(data.get("status")):
                 logger.info("{}接口确认成功，仍需独立核对任务状态", what)
                 return StudyResult.SUCCESS
             logger.warning("{}未返回明确成功状态", what)
@@ -1126,8 +1130,8 @@ class Chaoxing:
             "Referer": graded.url,
         })
         data = _json_or_none(resp)
-        if not isinstance(data, dict) or not data.get("status"):
-            reason = (data.get("msg") if isinstance(data, dict) else "") or f"HTTP {resp.status_code}"
+        if resp.status_code != 200 or not isinstance(data, dict) or not _positive_status(data.get("status")):
+            reason = f"重做接口未确认成功 (HTTP {resp.status_code})"
             raise WorkRedoUnavailable(reason)
         if data.get("url"):
             page = session.get(urljoin(resp.url, str(data["url"])))
@@ -1395,16 +1399,16 @@ class Chaoxing:
                     },
                 )
             except RequestException as e:
-                logger.error(f"{action}答题失败 -> {e}")
+                logger.error("{}答题结果未确认: {}", action, type(e).__name__)
                 return StudyResult.SUCCESS if submitted else StudyResult.ERROR
             res_json = _json_or_none(res)
             if res.status_code != 200 or not isinstance(res_json, dict):
-                logger.error(f'{action}答题失败 -> HTTP {res.status_code} {res.text[:200]}')
+                logger.error('{}答题结果未确认: HTTP {} 或响应格式异常', action, res.status_code)
                 return StudyResult.SUCCESS if submitted else StudyResult.ERROR
-            if not res_json.get("status"):
-                logger.error(f'{action}答题失败 -> {res_json.get("msg")}')
+            if not _positive_status(res_json.get("status")):
+                logger.error('{}答题接口未返回明确成功状态', action)
                 return StudyResult.SUCCESS if submitted else StudyResult.ERROR
-            logger.info(f'{action}答题成功 -> {res_json.get("msg", "")}')
+            logger.info('{}答题接口确认成功，继续核对任务状态', action)
 
             if py_flag == "1":
                 return StudyResult.SUCCESS

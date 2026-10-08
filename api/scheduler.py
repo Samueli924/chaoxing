@@ -108,7 +108,7 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
             return ChapterResult.CANCELLED
         if result.is_failure():
             failed = True
-            replay_blocked = replay_blocked or job.get("type") in ("video", "document", "read")
+            replay_blocked = replay_blocked or job.get("type") in ("video", "document", "read", "workid")
 
     if replay_blocked:
         return ChapterResult.BLOCKED

@@ -195,6 +195,23 @@ class WorkRedoTestCase(unittest.TestCase):
         job = {"type": "workid", "jobid": "work-abc", "enc": "encv", "name": "测验"}
         return cx.study_work(course, job, {"knowledgeid": 11, "cpi": "5"})
 
+    def test_string_false_submission_is_rejected_without_retry(self):
+        server = _FakeWorkServer()
+        from unittest.mock import Mock
+        server.post = Mock(return_value=_Resp('{"status":"false","msg":"rejected"}'))
+        self.assertEqual(self._run(server, max_redo=0), StudyResult.ERROR)
+        server.post.assert_called_once()
+
+    def test_redo_rejects_http_error_even_with_positive_body(self):
+        from unittest.mock import Mock
+        server = Mock()
+        server.get.side_effect = [_Resp(GRADED_TEMPLATE.format(score=50, questions='')),
+                                  _Resp('{"status":true}', status=500)]
+        with self.assertRaises(base.WorkRedoUnavailable):
+            Chaoxing()._open_redo(server, {'courseId':'2','clazzId':'1','cpi':'5'},
+                                 {'jobid':'work-abc'}, {'knowledgeid':11})
+        self.assertEqual(server.get.call_count, 2)
+
     def test_redo_until_full_marks(self):
         server = _FakeWorkServer()
         result = self._run(server)
