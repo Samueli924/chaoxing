@@ -527,11 +527,28 @@ def _extract_choices(element, font_decoder=None) -> str:
         return ""
 
     # 提取aria-label属性值作为选项，解决#474
-    choice = element.get("aria-label") or element.get_text()
-    if not choice:
+    choice = element.get("aria-label")
+    if choice:
+        cleaned_content = str(choice)
+        # aria-label 可能只包含选项字母，仍需保留同一选项中的图片。
+        for image in element.find_all("img"):
+            img_url = image.get("src", "")
+            cleaned_content += f'<img src="{img_url}">'
+    else:
+        # 选项本身可能是图片。保留 img 标签，供支持视觉能力的题库使用。
+        content = []
+        for item in element.descendants:
+            if isinstance(item, NavigableString):
+                content.append(item.string or "")
+            elif item.name == "img":
+                img_url = item.get("src", "")
+                content.append(f'<img src="{img_url}">')
+        cleaned_content = "".join(content)
+
+    if not cleaned_content:
         return ""
 
-    cleaned_content = re.sub(r"[\r\t\n]", "", choice)
+    cleaned_content = re.sub(r"[\r\t\n]", "", cleaned_content)
 
     if font_decoder:
         cleaned_content = font_decoder.decode(cleaned_content)
