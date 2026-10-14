@@ -16,7 +16,7 @@ from api.logger import logger
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
-from api.process import increase_learning_count_for_course
+from api.process import increase_learning_count_for_course, sign_in_course
 
 try:
     from queue import PriorityQueue, ShutDown
@@ -156,6 +156,10 @@ def load_config_from_file(config_path):
             common_config["work_redo_enabled"] = str_to_bool(common_config["work_redo_enabled"])
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
+        if "auto_sign" in common_config:
+            common_config["auto_sign"] = str_to_bool(common_config["auto_sign"])
+        else:
+            common_config["auto_sign"] = False
         if "add_learning_count" in common_config:
             common_config["add_learning_count"] = str_to_bool(common_config["add_learning_count"])
         if "target_count" in common_config:
@@ -191,6 +195,7 @@ def build_config_from_args(args):
         "jobs": args.jobs,
         "notopen_action": args.notopen_action or "retry",
         "retry_interval": args.retry_interval or 1.0,
+        "auto_sign": args.auto_sign,
         "add_learning_count": args.add_learning_count,
         "target_count": args.target_count,
     }
@@ -583,6 +588,12 @@ def main():
 
         # 开始学习
         logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+
+        # 签到有时效性, 所以在刷课开始前先处理当前进行中的签到
+        if common_config.get("auto_sign"):
+            logger.info("已开启自动签到, 开始检查签到活动...")
+            for course in course_task:
+                sign_in_course(chaoxing, course)
 
         _old_format_sizeof = tqdm.format_sizeof
         tqdm.format_sizeof = format_time
