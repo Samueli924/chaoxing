@@ -6,7 +6,7 @@ on:
       - codex/gui-exe-20261014-a4f2
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-gui:
@@ -58,3 +58,15 @@ jobs:
           path: dist/ChaoxingDesktop.exe
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create gui-v3.1.3-win64-20261014
+          dist/ChaoxingDesktop.exe LICENSE
+          --repo PaleVerge/chaoxing-gui
+          --title "Chaoxing GUI 3.1.3 for Windows x64"
+          --notes "GUI executable built with PyInstaller from source commit 03ffdc3daf9089c1f2d5255fa63978842515f57a. Source is available under GPL-3.0."
+          --target 03ffdc3daf9089c1f2d5255fa63978842515f57a
+          --latest
