@@ -1163,6 +1163,19 @@ class TikuAdapter(Tiku):
         self.api = self._conf['url']
 
 
+def message_answer_text(message) -> str:
+    """
+    取出模型的回答正文.
+
+    推理型模型(如 DeepSeek V4 系列的 thinking 模式)可能 message.content 为空,
+    真正的答案只出现在 reasoning_content 里, 这里做统一兜底.
+    """
+    content = getattr(message, 'content', None) or ''
+    if content.strip():
+        return content
+    return getattr(message, 'reasoning_content', None) or ''
+
+
 class AI(Tiku):
     # AI大模型答题实现
     def __init__(self, config_path: Optional[str] = None) -> None:
@@ -1309,12 +1322,17 @@ class AI(Tiku):
                 )
             ))
 
+        answer_text = ''
         try:
-            response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
+            answer_text = message_answer_text(completion.choices[0].message)
+            response = json.loads(remove_md_json_wrapper(answer_text))
             sep = "\n"
             return sep.join(response['Answer']).strip()
-        except:
-            logger.error("无法解析大模型输出内容")
+        except Exception as e:
+            # 只记长度不记原文: 模型输出里可能带有题干与个人信息, 长度足以区分空响应和格式不符
+            logger.error(
+                f"无法解析大模型输出内容: {type(e).__name__}: {e}; 待解析文本长度 {len(answer_text)} 字符"
+            )
             return None
 
     def _init_tiku(self):
@@ -1358,7 +1376,7 @@ class AI(Tiku):
                 # 统一检查响应
                 if completion.choices:
                     msg = completion.choices[0].message
-                    if msg.content or getattr(msg, 'reasoning_content', None):
+                    if message_answer_text(msg):
                         logger.info(f'{self.name} 连接检查成功')
                         return True
 
