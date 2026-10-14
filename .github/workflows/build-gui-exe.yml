@@ -40,33 +40,42 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pywebview pyinstaller
 
-      - name: Package GUI executable
+      - name: Package GUI application
         run: >-
-          pyinstaller --noconfirm --clean --onefile --noconsole
+          pyinstaller --noconfirm --clean --onedir --noconsole --noupx
           --name ChaoxingDesktop
           --add-data "gui_dist;gui_dist"
           --add-data "resource;resource"
           --collect-all webview
           --collect-all pythonnet
+          --collect-all cv2
           --hidden-import=chardet
           gui_main.py
 
-      - name: Upload Windows executable
+      - name: Prepare ZIP package
+        run: |
+          Copy-Item LICENSE "dist/ChaoxingDesktop/LICENSE" -Force
+          @(
+            "请先完整解压此 ZIP 包，再运行 ChaoxingDesktop.exe。"
+            "不要单独移动 EXE；它需要同目录下的 _internal 运行库文件夹。"
+          ) | Set-Content "dist/ChaoxingDesktop/使用说明.txt" -Encoding utf8
+          Compress-Archive -Path "dist/ChaoxingDesktop/*" -DestinationPath "dist/ChaoxingDesktop-win64.zip" -CompressionLevel Optimal
+
+      - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: ChaoxingDesktop-win64
-          path: dist/ChaoxingDesktop.exe
+          path: dist/ChaoxingDesktop-win64.zip
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish GitHub Release
+      - name: Replace GitHub Release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create gui-v3.1.3-win64-20261014
-          dist/ChaoxingDesktop.exe LICENSE
-          --repo PaleVerge/chaoxing-gui
-          --title "Chaoxing GUI 3.1.3 for Windows x64"
-          --notes "GUI executable built with PyInstaller from source commit 03ffdc3daf9089c1f2d5255fa63978842515f57a. Source is available under GPL-3.0."
-          --target 03ffdc3daf9089c1f2d5255fa63978842515f57a
-          --latest
+        run: |
+          gh release upload gui-v3.1.3-win64-20261014 dist/ChaoxingDesktop-win64.zip --repo PaleVerge/chaoxing-gui --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release delete-asset gui-v3.1.3-win64-20261014 ChaoxingDesktop.exe --repo PaleVerge/chaoxing-gui --yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit gui-v3.1.3-win64-20261014 --repo PaleVerge/chaoxing-gui --title "Chaoxing GUI 3.1.3 for Windows x64 (ZIP package)" --notes "下载并完整解压 ZIP 包后运行 ChaoxingDesktop.exe，保留同目录下的 _internal 运行库文件夹。此包采用 PyInstaller onedir，避免单文件启动时 cv2.pyd 解压失败。包含 GPL-3.0 许可证。"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
