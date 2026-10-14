@@ -68,7 +68,8 @@ def parse_args():
     parser.add_argument("-u", "--username", type=str, default=None, help="手机号账号")
     parser.add_argument("-p", "--password", type=str, default=None, help="登录密码")
     parser.add_argument(
-        "-l", "--list", type=str, default=None, help="要学习的课程ID列表, 以 , 分隔"
+        "-l", "--list", type=str, default=None,
+        help="要学习的课程ID列表, 以 , 分隔(填 all 表示全部课程)",
     )
     parser.add_argument(
         "-s", "--speed", type=float, default=1.0, help="视频播放倍速 (默认1, 最大2)"
@@ -503,6 +504,26 @@ def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
     tqdm.format_sizeof = _old_format_sizeof
 
 
+def _dedupe_courses(courses):
+    """同一 (courseId, clazzId) 只保留一条."""
+    course_task = []
+    seen_keys = set()
+    for course in courses:
+        key = (course["courseId"], course["clazzId"])
+        if key not in seen_keys:
+            course_task.append(course)
+            seen_keys.add(key)
+    return course_task
+
+
+def _format_course_list(all_course):
+    """生成可读的课程列表, 用于提示或报错."""
+    return "\n".join(
+        f"  ID: {course['courseId']} 班级ID: {course['clazzId']} 课程名: {course['title']}"
+        for course in all_course
+    )
+
+
 def filter_courses(all_course, course_list):
     """过滤要学习的课程"""
     if not course_list:
@@ -513,24 +534,48 @@ def filter_courses(all_course, course_list):
         print("*" * 28)
         print("提示: 同一 courseId 下若存在多个班级, 将分别完成。")
         try:
-            course_list = input(
-                "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
-            ).split(",")
+            course_list = [
+                item.strip()
+                for item in input(
+                    "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
+                ).split(",")
+                if item.strip()
+            ]
         except Exception as e:
             raise InputFormatError("输入格式错误") from e
 
+    course_list = [str(item).strip() for item in course_list if str(item).strip()]
+    if not course_list:
+        raise InputFormatError(
+            "未指定要学习的课程。请填写课程ID, 或使用 course_list = all 学习全部课程。\n"
+            + _format_course_list(all_course)
+        )
+
+    # 学习全部课程需要显式声明 all / *, 避免配置写错时扩大刷课范围
+    if any(item in ("all", "*") for item in course_list):
+        # all / * 只允许单独出现, 否则同列表里的错误课程ID会被一并吞掉、不报错
+        if len(course_list) > 1:
+            raise InputFormatError(
+                f"all / * 表示全部课程, 不能和课程ID混写: {', '.join(course_list)}"
+            )
+        logger.info("已显式指定学习全部课程")
+        return _dedupe_courses(all_course)
+
     # 筛选需要学习的课程
-    course_task = []
-    seen_keys = set()
-    for course in all_course:
-        key = (course["courseId"], course["clazzId"])
-        if course["courseId"] in course_list and key not in seen_keys:
-            course_task.append(course)
-            seen_keys.add(key)
-    
-    # 如果没有指定课程，则学习所有课程
-    if not course_task:
-        course_task = all_course
+    wanted = set(course_list)
+    course_task = _dedupe_courses(
+        [course for course in all_course if course["courseId"] in wanted]
+    )
+
+    # 指定的课程ID一个都没匹配上时直接报错, 不能静默回退成全部课程
+    matched = {course["courseId"] for course in course_task}
+    unmatched = [item for item in course_list if item not in matched]
+    if unmatched:
+        raise InputFormatError(
+            f"课程ID {', '.join(unmatched)} 不在当前账号的课程列表中"
+            "（course_list 只接受 courseId, 课程名无效）, 本次未启动任何刷课任务。"
+            "可用课程如下:\n" + _format_course_list(all_course)
+        )
 
     return course_task
 
