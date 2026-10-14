@@ -59,6 +59,17 @@
               <!-- 题库配置 -->
               <el-tab-pane label="题库/AI设置" name="tiku">
                 <el-form :model="config.tiku" label-width="150px" style="max-width: 600px;">
+                  <el-form-item label="启用答题">
+                    <el-switch v-model="config.tiku.enabled" />
+                  </el-form-item>
+                  <el-alert
+                    v-if="!config.tiku.enabled"
+                    title="答题已关闭：章节检测会跳过，不查询题库，不随机填写答案，也不会提交答案。"
+                    type="info"
+                    :closable="false"
+                    show-icon
+                    style="margin: 0 0 18px 150px; width: calc(100% - 150px);"
+                  />
                   <el-form-item label="题库引擎提供商">
                     <el-select v-model="config.tiku.provider" placeholder="请选择引擎" style="width: 100%">
                       <el-option label="TikuYanxi (言溪)" value="TikuYanxi" />
@@ -94,7 +105,7 @@
                   </template>
                   
                   <el-form-item>
-                    <el-button type="info" @click="testApi" :loading="testingApi">测试题库/API连接</el-button>
+                    <el-button type="info" @click="testApi" :loading="testingApi" :disabled="!config.tiku.enabled">测试题库/API连接</el-button>
                   </el-form-item>
                 </el-form>
               </el-tab-pane>
@@ -210,6 +221,7 @@ const config = ref({
     use_cookies: false
   },
   tiku: {
+    enabled: false,
     provider: 'TikuYanxi',
     submit: false,
     cover_rate: 0.9,

@@ -69,13 +69,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Replace GitHub Release asset
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload gui-v3.1.3-win64-20261014 dist/ChaoxingDesktop-win64.zip --repo PaleVerge/chaoxing-gui --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release delete-asset gui-v3.1.3-win64-20261014 ChaoxingDesktop.exe --repo PaleVerge/chaoxing-gui --yes
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit gui-v3.1.3-win64-20261014 --repo PaleVerge/chaoxing-gui --title "Chaoxing GUI 3.1.3 for Windows x64 (ZIP package)" --notes "下载并完整解压 ZIP 包后运行 ChaoxingDesktop.exe，保留同目录下的 _internal 运行库文件夹。此包采用 PyInstaller onedir，避免单文件启动时 cv2.pyd 解压失败。包含 GPL-3.0 许可证。"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tag = "gui-v3.1.4-win64-20261014"
+          gh release view $tag --repo PaleVerge/chaoxing-gui *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag dist/ChaoxingDesktop-win64.zip LICENSE --repo PaleVerge/chaoxing-gui --target $env:GITHUB_SHA --title "Chaoxing GUI 3.1.4 for Windows x64" --notes "完整解压 ZIP 后运行 ChaoxingDesktop.exe。答题功能新增默认关闭的启用开关；关闭时章节检测会跳过答题。修复查询延迟配置导致的字符串与数字比较错误。采用 PyInstaller onedir，包含 GPL-3.0 许可证。"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            gh release upload $tag dist/ChaoxingDesktop-win64.zip LICENSE --repo PaleVerge/chaoxing-gui --clobber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
