@@ -1,0 +1,84 @@
+name: Build GUI Windows executable
+
+on:
+  push:
+    branches:
+      - codex/gui-exe-20261014-a4f2
+
+permissions:
+  contents: write
+
+jobs:
+  build-gui:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: "x64"
+
+      - name: Build Vue frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pywebview pyinstaller
+
+      - name: Package GUI application
+        run: >-
+          pyinstaller --noconfirm --clean --onedir --noconsole --noupx
+          --name ChaoxingDesktop
+          --add-data "gui_dist;gui_dist"
+          --add-data "resource;resource"
+          --collect-all webview
+          --collect-all pythonnet
+          --collect-all cv2
+          --hidden-import=chardet
+          gui_main.py
+
+      - name: Prepare ZIP package
+        run: |
+          Copy-Item LICENSE "dist/ChaoxingDesktop/LICENSE" -Force
+          @(
+            "请先完整解压此 ZIP 包，再运行 ChaoxingDesktop.exe。"
+            "不要单独移动 EXE；它需要同目录下的 _internal 运行库文件夹。"
+          ) | Set-Content "dist/ChaoxingDesktop/使用说明.txt" -Encoding utf8
+          Compress-Archive -Path "dist/ChaoxingDesktop/*" -DestinationPath "dist/ChaoxingDesktop-win64.zip" -CompressionLevel Optimal
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChaoxingDesktop-win64
+          path: dist/ChaoxingDesktop-win64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "gui-v3.1.4-win64-20261014"
+          gh release view $tag --repo PaleVerge/chaoxing-gui *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag dist/ChaoxingDesktop-win64.zip LICENSE --repo PaleVerge/chaoxing-gui --target $env:GITHUB_SHA --title "Chaoxing GUI 3.1.4 for Windows x64" --notes "完整解压 ZIP 后运行 ChaoxingDesktop.exe。答题功能新增默认关闭的启用开关；关闭时章节检测会跳过答题。修复查询延迟配置导致的字符串与数字比较错误。采用 PyInstaller onedir，包含 GPL-3.0 许可证。"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            gh release upload $tag dist/ChaoxingDesktop-win64.zip LICENSE --repo PaleVerge/chaoxing-gui --clobber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

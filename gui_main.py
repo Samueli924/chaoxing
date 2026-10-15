@@ -128,6 +128,7 @@ class Api:
                 "use_cookies": False
             },
             "tiku": {
+                "enabled": False,
                 "provider": "TikuYanxi",
                 "submit": False,
                 "cover_rate": 0.9,
@@ -176,6 +177,8 @@ class Api:
         try:
             new_config = json.loads(config_str)
             tiku_config = new_config.get("tiku", self._config.get("tiku", {}))
+            if tiku_config.get("enabled", False) is not True:
+                return {"success": False, "msg": "答题功能未启用，请先开启“启用答题”开关。"}
             
             mapped_tiku_config = {
                 "provider": str(tiku_config.get("provider", "TikuYanxi")),
@@ -229,9 +232,10 @@ class Api:
 
             common_config = self._config["common"]
             tiku_config = self._config["tiku"]
+            answer_enabled = tiku_config.get("enabled", False) is True
             
             mapped_tiku_config = {
-                "provider": str(tiku_config.get("provider", "TikuYanxi")),
+                "provider": str(tiku_config.get("provider", "TikuYanxi")) if answer_enabled else "",
                 "submit": "true" if tiku_config.get("submit", False) else "false",
                 "cover_rate": str(tiku_config.get("cover_rate", "0.9")),
                 "tokens": str(tiku_config.get("tokens", "")),
@@ -260,6 +264,9 @@ class Api:
                 "manual_mode_separator": ";",
                 "url": ""
             }
+            
+            if not answer_enabled:
+                logger.info("答题功能已关闭，将跳过章节检测答题")
             
             logger.info("Initializing Chaoxing API...")
             self._chaoxing = init_chaoxing(common_config, mapped_tiku_config, config_path=None)

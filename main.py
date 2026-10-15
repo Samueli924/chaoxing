@@ -243,7 +243,11 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
                     raise RuntimeError('用户取消运行')
                 logger.info('用户选择继续运行...')
 
-    query_delay = tiku_config.get("delay", 0)
+    try:
+        query_delay = max(0.0, float(tiku_config.get("delay", 0) or 0))
+    except (TypeError, ValueError):
+        logger.warning("题库查询延迟配置无效，使用 0 秒")
+        query_delay = 0.0
 
     # 章节检测答错后允许的最大重做次数（答错时反馈给AI并重新提交，直到全部正确）
     work_max_retries = common_config.get("work_max_retries", 3)
