@@ -263,7 +263,7 @@ class Tiku(ABC):
             logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
         return None
 
-    def query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+    def query_all(self, q_list: list[dict], query_delay: float = 0.0, answer_validator=None) -> list[Optional[str]]:
         if self.DISABLE:
             return [None] * len(q_list)
 
@@ -286,17 +286,22 @@ class Tiku(ABC):
                 continue
 
             answer = cache_dao.get_cache(q['title'])
-            if answer:
-                logger.info(f"从缓存中获取答案：{q['title']} -> {answer}")
+            if answer and (answer_validator is None or answer_validator(q, answer, self)):
+                logger.info(f"从缓存中获取可用答案：{q['title']} -> {answer}")
                 results[idx] = answer.strip()
             else:
+                if answer:
+                    logger.info(f"缓存答案无法匹配当前题目，重新查询：{q['title']}")
                 pending_indices.append(idx)
 
         if not pending_indices:
             return results
 
         sub_q_list = [q_list[idx] for idx in pending_indices]
-        sub_results = self._query_all(sub_q_list, query_delay=query_delay)
+        if answer_validator is None:
+            sub_results = self._query_all(sub_q_list, query_delay=query_delay)
+        else:
+            sub_results = self._query_all(sub_q_list, query_delay=query_delay, answer_validator=answer_validator)
 
         if not isinstance(sub_results, list):
             logger.error(f"{self.name} _query_all 返回结果格式异常，期望列表")
@@ -313,11 +318,13 @@ class Tiku(ABC):
             if ans:
                 ans = ans.strip()
                 logger.info(f"从{self.name}获取答案：{q_info['title']} -> {ans}")
-                if check_answer(ans, q_info['type'], self):
+                valid = (answer_validator(q_info, ans, self) if answer_validator is not None
+                         else check_answer(ans, q_info['type'], self))
+                if valid:
                     cache_dao.add_cache(q_info['title'], ans)
                     results[idx] = ans
                 else:
-                    logger.info(f"从{self.name}获取到的答案类型与题目类型不符，已舍弃")
+                    logger.info(f"{self.name}答案无法匹配当前题目，交给后续备用题库（如已配置）：{q_info['title']}")
             else:
                 logger.error(f"从{self.name}获取答案失败：{q_info['title']}")
 
@@ -340,7 +347,7 @@ class Tiku(ABC):
         """
         pass
 
-    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0, answer_validator=None) -> list[Optional[str]]:
         """
         批量查询的实现接口，默认循环调用单个查询 _query。
         子类若有批量查询或交互需求（如手动模式），可重写此方法。
@@ -509,7 +516,7 @@ class TikuFallback(Tiku):
             logger.info(f'{provider.name} 返回答案类型不符，回退到下一个题库')
         return None
 
-    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0, answer_validator=None) -> list[Optional[str]]:
         results = [None] * len(q_list)
         pending_indices = list(range(len(q_list)))
 
@@ -521,7 +528,10 @@ class TikuFallback(Tiku):
 
             sub_q_list = [q_list[idx] for idx in pending_indices]
             try:
-                sub_results = provider.query_all(sub_q_list, query_delay=query_delay)
+                if answer_validator is None:
+                    sub_results = provider.query_all(sub_q_list, query_delay=query_delay)
+                else:
+                    sub_results = provider.query_all(sub_q_list, query_delay=query_delay, answer_validator=answer_validator)
             except Exception as e:
                 provider_id = f'{provider.name}({provider.__class__.__name__})'
                 logger.exception(f'{self.name} 批量查询时 {provider_id} 异常: {e}')
@@ -1586,7 +1596,7 @@ class TikuManual(Tiku):
         logger.debug("手动答题结束，冲刷缓存日志")
         return ans
 
-    def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+    def _query_all(self, q_list: list[dict], query_delay: float = 0.0, answer_validator=None) -> list[Optional[str]]:
         # 强行关闭清除所有当前活动的 tqdm 进度条
         self._safe_close_tqdm_bars()
 
