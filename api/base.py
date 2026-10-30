@@ -19,7 +19,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 from tqdm import tqdm
 
 from api.answer import Tiku, TikuManual
-from api.answer_check import cut
+from api.answer_check import cut, check_judgement
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
 from api.cookies import save_cookies, use_cookies
@@ -219,6 +219,71 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
 def is_subsequence(a, o):
     iter_o = iter(o.lower())
     return all(c in iter_o for c in a.lower())
+
+
+def _question_options(raw_options):
+    """Split the question options without splitting punctuation within a line."""
+    if isinstance(raw_options, list):
+        options = [str(option).strip() for option in raw_options if str(option).strip()]
+    else:
+        options = [option.strip() for option in str(raw_options).splitlines() if option.strip()]
+        if len(options) <= 1:
+            options = multi_cut(str(raw_options)) or []
+    return options
+
+
+def _resolve_choice_answer(result, kind, options):
+    """Match a choice answer completely before accepting any option letters."""
+    if not options:
+        return ''
+    # Providers may return option letters instead of the requested option text.
+    letters = re.sub(r'[\s,，、;；]+', '', result).upper()
+    available = {option[:1].upper() for option in options}
+    if re.fullmatch(r'[A-Z]+', letters) and set(letters).issubset(available):
+        if kind == 'single':
+            return letters if len(letters) == 1 else ''
+        return ''.join(sorted(set(letters)))
+    if kind == 'single':
+        candidates = clean_res(result)
+    else:
+        # A full option may itself contain punctuation used as answer separators.
+        exact = [option for option in options if normalize_text(result) == normalize_text(option)]
+        if len(exact) == 1:
+            return exact[0][:1]
+        candidates = clean_res(multi_cut(result) or [])
+    return _match_choice_candidates(candidates, options)
+
+
+def _match_choice_candidates(candidates, options):
+    """Reject the entire choice answer when any fragment cannot be matched."""
+    matched = []
+    for candidate in candidates:
+        if not candidate:
+            return ''
+        letter = next((option[:1] for option in options
+                       if is_subsequence(candidate, get_option_text(option))), '')
+        if not letter:
+            letter = best_option_by_similarity(candidate, options, threshold=0.8)
+        if not letter:
+            return ''  # Never accept a partially matched multiple-choice answer.
+        matched.append(letter)
+    return ''.join(sorted(set(matched))) if matched else ''
+
+
+def resolve_question_answer(question, result, tiku):
+    """Resolve a provider answer to a submission value, without random guesses."""
+    if not result:
+        return ''
+    if isinstance(result, list):
+        result = '\n'.join(str(item) for item in result)
+    result = str(result).strip()
+    kind = question['type']
+    if kind == 'judgement':
+        value = check_judgement(result, tiku.true_list, tiku.false_list)
+        return 'true' if value == 1 else 'false' if value == 0 else ''
+    if kind in ('single', 'multiple'):
+        return _resolve_choice_answer(result, kind, _question_options(question.get('options', '')))
+    return result
 
 
 def random_answer(options: str, q_type: str) -> str:
@@ -1091,7 +1156,9 @@ class Chaoxing:
             # 3. 搜题
             total_questions = len(questions["questions"])
             found_answers = 0
-            answers = self.tiku.query_all(questions["questions"], query_delay=query_delay)
+            answers = self.tiku.query_all(
+                questions["questions"], query_delay=query_delay,
+                answer_validator=lambda q, result, provider: bool(resolve_question_answer(q, result, provider)))
 
             if not isinstance(answers, list):
                 logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
@@ -1104,65 +1171,13 @@ class Chaoxing:
 
             for q, res in zip(questions["questions"], answers):
                 logger.debug(f"当前题目信息 -> {q}")
-                answer = ""
-                if not res:
-                    # 随机答题
+                answer = resolve_question_answer(q, res, self.tiku)
+                if answer:
+                    q[f'answerSource{q["id"]}'] = "cover"
+                    found_answers += 1
+                else:
                     answer = random_answer(q["options"], q["type"])
                     q[f'answerSource{q["id"]}'] = "random"
-                else:
-                    # 根据响应结果选择答案
-                    if q["type"] == "multiple":
-                        # 多选处理
-                        options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
-                        res_list = multi_cut(res, _ORIGIN_HTML_CONTENT)
-                        if res_list is not None and options_list is not None:
-                            for _a in clean_res(res_list):
-                                matched = False
-                                for o in options_list:
-                                    if (
-                                            is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
-                                    ):
-                                        answer += o[:1]
-                                        matched = True
-                                        break  # 找到匹配项后立即停止，防止重复添加
-                                if not matched:
-                                    best_letter = best_option_by_similarity(_a, options_list, threshold=0.8)
-                                    if best_letter:
-                                        answer += best_letter
-                            # 对答案进行排序, 否则会提交失败
-                            answer = "".join(sorted(set(answer)))
-                        # else 如果分割失败那么就直接到下面去随机选
-                    elif q["type"] == "single":
-                        # 单选也进行切割，主要是防止返回的答案有异常字符
-                        options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
-                        if options_list is not None:
-                            t_res = clean_res(res)
-                            for o in options_list:
-                                if is_subsequence(t_res[0], o):
-                                    answer = o[:1]
-                                    break
-                            if not answer and t_res:
-                                answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
-                    elif q["type"] == "judgement":
-                        answer = "true" if self.tiku.judgement_select(res) else "false"
-                    elif q["type"] == "completion":
-                        if isinstance(res, list):
-                            answer = "".join(res)
-                        elif isinstance(res, str):
-                            answer = res
-                    else:
-                        # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
-                        answer = res
-
-                    if not answer:  # 检查 answer 是否为空
-                        logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
-                        answer = random_answer(q["options"], q["type"])  # 如果为空，则随机选择答案
-                        q[f'answerSource{q["id"]}'] = "random"
-                    else:
-                        logger.info(f"成功获取到答案：{answer}")
-                        q[f'answerSource{q["id"]}'] = "cover"
-                        found_answers += 1
-                # 填充答案
                 q["answerField"][f'answer{q["id"]}'] = answer
                 logger.info(f'{q["title"]} 填写答案为 {answer}')
             cover_rate = (found_answers / total_questions) * 100
