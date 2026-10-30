@@ -221,26 +221,19 @@ def is_subsequence(a, o):
     return all(c in iter_o for c in a.lower())
 
 
-def resolve_question_answer(question, result, tiku):
-    """Resolve a provider answer to a submission value, without random guesses."""
-    if not result:
-        return ''
-    if isinstance(result, list):
-        result = '\n'.join(str(item) for item in result)
-    result = str(result).strip()
-    kind = question['type']
-    if kind == 'judgement':
-        value = check_judgement(result, tiku.true_list, tiku.false_list)
-        return 'true' if value == 1 else 'false' if value == 0 else ''
-    if kind not in ('single', 'multiple'):
-        return result
-    raw_options = question.get('options', '')
+def _question_options(raw_options):
+    """Split the question options without splitting punctuation within a line."""
     if isinstance(raw_options, list):
         options = [str(option).strip() for option in raw_options if str(option).strip()]
     else:
         options = [option.strip() for option in str(raw_options).splitlines() if option.strip()]
         if len(options) <= 1:
             options = multi_cut(str(raw_options)) or []
+    return options
+
+
+def _resolve_choice_answer(result, kind, options):
+    """Match a choice answer completely before accepting any option letters."""
     if not options:
         return ''
     # Providers may return option letters instead of the requested option text.
@@ -258,6 +251,11 @@ def resolve_question_answer(question, result, tiku):
         if len(exact) == 1:
             return exact[0][:1]
         candidates = clean_res(multi_cut(result) or [])
+    return _match_choice_candidates(candidates, options)
+
+
+def _match_choice_candidates(candidates, options):
+    """Reject the entire choice answer when any fragment cannot be matched."""
     matched = []
     for candidate in candidates:
         if not candidate:
@@ -270,6 +268,23 @@ def resolve_question_answer(question, result, tiku):
             return ''  # Never accept a partially matched multiple-choice answer.
         matched.append(letter)
     return ''.join(sorted(set(matched))) if matched else ''
+
+
+def resolve_question_answer(question, result, tiku):
+    """Resolve a provider answer to a submission value, without random guesses."""
+    if not result:
+        return ''
+    if isinstance(result, list):
+        result = '\n'.join(str(item) for item in result)
+    result = str(result).strip()
+    kind = question['type']
+    if kind == 'judgement':
+        value = check_judgement(result, tiku.true_list, tiku.false_list)
+        return 'true' if value == 1 else 'false' if value == 0 else ''
+    if kind in ('single', 'multiple'):
+        return _resolve_choice_answer(result, kind, _question_options(question.get('options', '')))
+    return result
+
 
 def random_answer(options: str, q_type: str) -> str:
     answer = ""

@@ -12,6 +12,7 @@ DEFAULTS = dict(submit='false', cover_rate='0.9', true_list='正确,对,√,是'
 
 class Provider(Tiku):
     def __init__(self, name, answers):
+        """Initialize a predictable provider and record queried titles."""
         super().__init__()
         self.name = name
         self.answers = answers
@@ -53,31 +54,31 @@ class AnswerFallbackTests(unittest.TestCase):
                                answer_validator=lambda q, answer, provider: bool(resolve_question_answer(q, answer, provider)))
 
     def test_unmatched_primary_answer_uses_ai(self):
-        chain, first, second = self.chain({'人口分界线': '无法对应的地点'}, {'人口分界线': '黑河，腾冲'})
+        chain, _first, second = self.chain({'人口分界线': '无法对应的地点'}, {'人口分界线': '黑河，腾冲'})
         self.assertEqual(self.query(chain), ['黑河，腾冲'])
         self.assertEqual(second.calls, ['人口分界线'])
         self.assertEqual(self.cache.get_cache('人口分界线'), '黑河，腾冲')
 
     def test_matched_primary_does_not_call_ai(self):
-        chain, first, second = self.chain({'人口分界线': '黑河，腾冲'}, {'人口分界线': '北京，广州'})
+        chain, _first, second = self.chain({'人口分界线': '黑河，腾冲'}, {'人口分界线': '北京，广州'})
         self.assertEqual(self.query(chain), ['黑河，腾冲'])
         self.assertEqual(second.calls, [])
 
     def test_unmatched_cached_answer_does_not_block_fallback(self):
         self.cache.add_cache('人口分界线', '错误缓存内容')
-        chain, first, second = self.chain({'人口分界线': '另一段无关内容'}, {'人口分界线': '黑河，腾冲'})
+        chain, _first, second = self.chain({'人口分界线': '另一段无关内容'}, {'人口分界线': '黑河，腾冲'})
         self.assertEqual(self.query(chain), ['黑河，腾冲'])
         self.assertEqual(second.calls, ['人口分界线'])
         self.assertEqual(self.cache.get_cache('人口分界线'), '黑河，腾冲')
 
     def test_only_unresolved_questions_reach_ai(self):
         other = dict(title='另一题', type='single', options='A.地理学\nB.历史学')
-        chain, first, second = self.chain({'人口分界线': '黑河，腾冲'}, {'另一题': '历史学'})
+        chain, _first, second = self.chain({'人口分界线': '黑河，腾冲'}, {'另一题': '历史学'})
         self.assertEqual(self.query(chain, [self.question.copy(), other]), ['黑河，腾冲', '历史学'])
         self.assertEqual(second.calls, ['另一题'])
 
     def test_ai_failure_stays_unresolved(self):
-        chain, first, second = self.chain({}, {'人口分界线': RuntimeError('provider unavailable')})
+        chain, _first, _second = self.chain({}, {'人口分界线': RuntimeError('provider unavailable')})
         self.assertEqual(self.query(chain), [None])
         self.assertIsNone(self.cache.get_cache('人口分界线'))
 
@@ -89,14 +90,14 @@ class AnswerFallbackTests(unittest.TestCase):
 
     def test_multiple_choice_requires_all_fragments_to_match(self):
         question = dict(title='多选', type='multiple', options='A.地理学\nB.历史学\nC.化学')
-        chain, first, second = self.chain({'多选': '地理学\n不存在的学科'}, {'多选': '地理学\n历史学'})
+        chain, _first, second = self.chain({'多选': '地理学\n不存在的学科'}, {'多选': '地理学\n历史学'})
         self.assertEqual(self.query(chain, [question]), ['地理学\n历史学'])
         self.assertEqual(resolve_question_answer(question, '地理学\n历史学', second), 'AB')
         self.assertEqual(second.calls, ['多选'])
 
     def test_unrecognized_judgement_reaches_ai(self):
         question = dict(title='判断', type='judgement', options='正确\n错误')
-        chain, first, second = self.chain({'判断': '无法判断'}, {'判断': '错误'})
+        chain, _first, second = self.chain({'判断': '无法判断'}, {'判断': '错误'})
         self.assertEqual(self.query(chain, [question]), ['错误'])
         self.assertEqual(resolve_question_answer(question, '错误', second), 'false')
 
@@ -122,20 +123,22 @@ class AnswerFallbackTests(unittest.TestCase):
         self.assertEqual(second.calls, [])
 
     def test_legacy_query_without_validator_keeps_type_only_validation(self):
-        chain, first, second = self.chain({'人口分界线': '无法对应的地点'}, {'人口分界线': '黑河，腾冲'})
+        chain, _first, second = self.chain({'人口分界线': '无法对应的地点'}, {'人口分界线': '黑河，腾冲'})
         self.assertEqual(chain.query_all([self.question.copy()]), ['无法对应的地点'])
         self.assertEqual(second.calls, [])
 
     def test_legacy_batch_override_without_validator_keyword(self):
-        class LegacyProvider(Provider):
-            def _query_all(self, questions, query_delay=0.0):
-                return [self._query(question) for question in questions]
+        provider = Provider('Legacy', {'人口分界线': '黑河，腾冲'})
 
-        provider = LegacyProvider('旧题库', {'人口分界线': '黑河，腾冲'})
-        self.assertEqual(provider.query_all([self.question.copy()]), ['黑河，腾冲'])
+        def legacy_query(q_list, query_delay=0.0):
+            self.assertEqual(query_delay, 0.0)
+            return [provider._query(question) for question in q_list]
+
+        with patch.object(provider, '_query_all', side_effect=legacy_query):
+            self.assertEqual(provider.query_all([self.question.copy()]), ['黑河，腾冲'])
 
     def run_study(self, primary, fallback):
-        chain, first, second = self.chain(primary, fallback)
+        chain, _first, second = self.chain(primary, fallback)
         cx = Chaoxing(tiku=chain)
         session = Mock()
         session.get.return_value.status_code = 200
