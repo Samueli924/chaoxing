@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>超星学习通任务控制台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand-section">
+      <div class="logo-badge">CX</div>
+      <div class="brand-title">超星学习通任务控制台</div>
+      <div class="brand-tag">WebUI 运行中</div>
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-secondary" onclick="openSettingsModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        全量设置
+      </button>
+      <div class="account-bar">
+        <div class="account-selector" onclick="toggleAccountDropdown()">
+          <div class="avatar-bubble">U</div>
+          <div class="account-info">
+            <span class="account-name" id="currentAccountName">正在读取...</span>
+            <span class="account-sub">多账号隔离</span>
+          </div>
+          <div class="account-status-dot"></div>
+        </div>
+        <div class="account-dropdown" id="accountDropdown">
+          <div style="font-size: 0.7rem; color: var(--text-dim); padding: 0.3rem 0.5rem;">切换本地账号</div>
+          <div id="accountDropdownList"></div>
+          <div style="border-top: 1px solid var(--border-subtle); margin-top: 0.4rem; padding-top: 0.4rem;">
+            <div class="dropdown-item" onclick="openLoginModal()">
+              <span style="font-weight: 500; color: var(--accent-primary);">添加或登录新账号</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-workspace">
+    <div class="panel-left-pane custom-scroll">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            课程任务列表
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary" onclick="loadCourses(true)">
+              刷新课程
+            </button>
+            <button class="btn btn-secondary" onclick="saveSelectedCourses()">
+              保存勾选
+            </button>
+            <button class="btn btn-primary" id="btnTaskStart" onclick="startStudyTask()">
+              开始任务
+            </button>
+            <button class="btn btn-secondary" id="btnTaskStop" style="display: none; background: var(--accent-danger); border-color: var(--accent-danger);" onclick="stopStudyTask()">
+              停止任务
+            </button>
+          </div>
+        </div>
+        <div class="filter-toolbar">
+          <div class="search-input-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" class="search-input" id="courseSearchInput" placeholder="输入课程名、编号、班级进行快速检索...">
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="display: flex; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden;">
+              <button class="filter-tab-btn active" id="filterStatusAll" onclick="filterCourseStatus('ALL')">全部</button>
+              <button class="filter-tab-btn" id="filterStatusActive" onclick="filterCourseStatus('ACTIVE')">进行中</button>
+              <button class="filter-tab-btn" id="filterStatusEnded" onclick="filterCourseStatus('ENDED')">已结课</button>
+            </div>
+            <button class="btn btn-secondary" onclick="selectAllCourses(true)">全选</button>
+            <button class="btn btn-secondary" onclick="selectAllCourses(false)">全不选</button>
+          </div>
+        </div>
+        <div class="table-wrapper custom-scroll">
+          <table class="course-table">
+            <thead>
+              <tr>
+                <th style="width: 40px;">选择</th>
+                <th>课程名称</th>
+                <th>课程 ID</th>
+                <th>班级</th>
+                <th>教师</th>
+                <th>完成度</th>
+              </tr>
+            </thead>
+            <tbody id="courseTableBody"></tbody>
+          </table>
+        </div>
+        <div style="padding: 0.6rem 1.25rem; font-size: 0.75rem; color: var(--text-dim); background: var(--bg-card); border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; flex-shrink: 0;">
+          <span>当前已勾选: <strong id="selectedCourseCount" style="color: var(--accent-primary);">0</strong> 门课程</span>
+          <span>独立保存至当前账号配置文件</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-right-pane custom-scroll">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            监控看板
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-label">任务总进度</div>
+            <div class="stat-value" id="statProgress" style="color: var(--accent-primary);">0%</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">已完成章节数</div>
+            <div class="stat-value" id="statTasks">0 / 0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">测验通过次数</div>
+            <div class="stat-value" id="statQuiz" style="color: var(--accent-success);">0</div>
+          </div>
+          <div class="stat-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="stat-label">全局倍速控制</div>
+              <span id="globalSpeedVal" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-primary); font-family: var(--font-mono);">1.0x</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem;">
+              <input type="range" id="globalSpeedSlider" min="1.0" max="2.0" step="0.1" value="1.0" style="flex: 1;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+            视频观看进度
+          </div>
+        </div>
+        <div class="worker-list" id="workersContainer">
+          <div style="text-align: center; color: var(--text-dim); padding: 1rem;">暂无正在播放的视频</div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">系统日志</div>
+          <div style="display: flex; align-items: center; gap: 0.4rem;">
+            <span style="font-size: 0.72rem; color: var(--text-dim);">级别:</span>
+            <select id="logLevelSelector" class="form-control" style="padding: 0.15rem 0.45rem; font-size: 0.75rem; height: auto; width: auto; font-family: var(--font-mono);" onchange="changeLogLevel(this.value)">
+              <option value="TRACE">TRACE</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO" selected>INFO</option>
+              <option value="WARNING">WARN</option>
+              <option value="ERROR">ERROR</option>
+            </select>
+          </div>
+        </div>
+        <div class="log-console-wrap">
+          <div class="log-console custom-scroll" id="logConsole"></div>
+          <button id="btnScrollBottom" class="btn-scroll-bottom" onclick="scrollToLogBottom()" title="跳转到最新日志">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <span>回到底部</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="loginModalOverlay">
+    <div class="modal-card modal-card-split">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          登录超星学习通账号
+        </div>
+        <button class="modal-close-btn" onclick="closeLoginModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-split-layout">
+          <div class="modal-split-left">
+            <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.85rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+              <span>手机密码登录</span>
+            </div>
+            <form onsubmit="handlePasswordLogin(event)">
+              <div class="form-group">
+                <label class="form-label">手机号账号</label>
+                <input type="text" class="form-control" id="pwdUsername" required placeholder="请输入手机号">
+              </div>
+              <div class="form-group">
+                <label class="form-label">登录密码</label>
+                <input type="password" class="form-control" id="pwdPassword" required placeholder="请输入密码">
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 1.25rem;">立即认证并保存</button>
+            </form>
+          </div>
+          <div class="modal-split-right">
+            <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-main);">
+              学习通 APP 扫码登录
+            </div>
+            <div class="qr-box loading" id="loginQrBox">
+              <div class="qr-loading-overlay">
+                <div class="qr-spinner"></div>
+                <div class="qr-scanner-line"></div>
+              </div>
+              <img id="loginQrImage" class="qr-image" alt="二维码">
+            </div>
+            <div id="loginQrTip" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">正在拉取二维码...</div>
+            <button type="button" class="btn btn-secondary" style="margin-top: 0.75rem; font-size: 0.75rem; padding: 0.25rem 0.75rem;" onclick="startQrSession()">刷新二维码</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settingsModalOverlay">
+    <div class="modal-card modal-card-large">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          全量可视化配置中心
+        </div>
+        <button class="modal-close-btn" onclick="closeSettingsModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="settings-layout">
+        <div class="settings-nav">
+          <button class="settings-tab-btn active" data-tab="common" onclick="switchSettingsTab('common')">基础运行配置</button>
+          <button class="settings-tab-btn" data-tab="tiku" onclick="switchSettingsTab('tiku')">题库与答题设置</button>
+          <button class="settings-tab-btn" data-tab="notification" onclick="switchSettingsTab('notification')">消息推送服务</button>
+        </div>
+        <div class="settings-content-pane custom-scroll">
+          <div class="settings-tab-pane" data-pane="common">
+            <div class="form-group">
+              <label class="form-label">同时处理章节数 (jobs)</label>
+              <input type="number" class="form-control" id="cfg_jobs" min="1" max="16">
+              <div class="form-desc">控制后台并发处理的章节数量</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">关闭任务点行为 (notopen_action)</label>
+              <select class="form-control" id="cfg_notopen_action">
+                <option value="retry">重试 (retry)</option>
+                <option value="continue">继续跳过 (continue)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">重试等待间隔秒数 (retry_interval)</label>
+              <input type="number" step="0.1" class="form-control" id="cfg_retry_interval">
+            </div>
+            <div class="form-group">
+              <div class="switch-control">
+                <span>测验答错自动重做 (work_redo_enabled)</span>
+                <input type="checkbox" id="cfg_work_redo_enabled">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">测验最大重做轮次 (work_max_retries)</label>
+              <input type="number" class="form-control" id="cfg_work_max_retries">
+            </div>
+            <div class="form-group">
+              <div class="switch-control">
+                <span>刷完增加学习次数 (add_learning_count)</span>
+                <input type="checkbox" id="cfg_add_learning_count">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">学习次数目标值 (target_count)</label>
+              <input type="number" class="form-control" id="cfg_target_count">
+            </div>
+            <div class="form-group">
+              <label class="form-label">每日视频观看上限 (分钟，0为不限制)</label>
+              <input type="number" min="0" step="10" class="form-control" id="cfg_daily_watch_limit_minutes">
+              <div class="form-desc">当前账号每日累计观看视频达到该分钟数后自动跳过后续视频任务点</div>
+            </div>
+            <div class="form-group">
+              <div class="switch-control">
+                <span>话题讨论自动回复 (topic_auto_reply)</span>
+                <input type="checkbox" id="cfg_topic_auto_reply">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">话题讨论自定义回复内容 (topic_reply_content)</label>
+              <input type="text" class="form-control" id="cfg_topic_reply_content" placeholder="留空则使用大模型或默认学术语料">
+            </div>
+          </div>
+
+          <div class="settings-tab-pane" data-pane="tiku" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">题库提供商选择</label>
+              <select class="form-control" id="cfg_provider_select" onchange="onTikuProviderChange(this.value)">
+                <option value="AI">AI 大模型</option>
+                <option value="SiliconFlow">SiliconFlow 硅基流动</option>
+                <option value="TikuYanxi">言溪题库</option>
+                <option value="TikuLike">LIKE 知识库</option>
+                <option value="TikuAdapter">TikuAdapter 聚合服务</option>
+                <option value="TikuGo">GO 题库</option>
+                <option value="TikuManual">手动答题模式</option>
+                <option value="custom">自定义多题库回退序列</option>
+              </select>
+            </div>
+
+            <div id="tiku_pane_AI" class="tiku-provider-pane">
+              <div class="form-group">
+                <label class="form-label">大模型接口地址</label>
+                <input type="text" class="form-control" id="cfg_ai_endpoint" placeholder="例如 http://api.openai.com/v1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">大模型 API Key</label>
+                <input type="password" class="form-control" id="cfg_ai_key" placeholder="sk-...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">模型名称</label>
+                <input type="text" class="form-control" id="cfg_ai_model" placeholder="gpt-4o-mini">
+              </div>
+              <div class="form-group">
+                <div class="switch-control">
+                  <span>启动时检查大模型连通性</span>
+                  <input type="checkbox" id="cfg_check_llm">
+                </div>
+              </div>
+            </div>
+
+            <div id="tiku_pane_SiliconFlow" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">硅基流动 API Key</label>
+                <input type="password" class="form-control" id="cfg_sf_key" placeholder="sk-...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">模型名称</label>
+                <input type="text" class="form-control" id="cfg_sf_model" placeholder="deepseek-ai/DeepSeek-R1">
+              </div>
+              <div class="form-group">
+                <div class="switch-control">
+                  <span>启动时检查大模型连通性</span>
+                  <input type="checkbox" id="cfg_check_llm_sf">
+                </div>
+              </div>
+            </div>
+
+            <div id="tiku_pane_TikuYanxi" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">言溪题库 Token</label>
+                <input type="text" class="form-control" id="cfg_tokens_yanxi" placeholder="支持英文逗号隔开多个 Token">
+              </div>
+            </div>
+
+            <div id="tiku_pane_TikuLike" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">LIKE 知识库 Token</label>
+                <input type="text" class="form-control" id="cfg_tokens_like" placeholder="填写 LIKE 知识库 Token">
+              </div>
+              <div class="form-group">
+                <div class="switch-control">
+                  <span>启用联网搜索能力</span>
+                  <input type="checkbox" id="cfg_like_search">
+                </div>
+              </div>
+              <div class="form-group">
+                <div class="switch-control">
+                  <span>启用视觉识图答题能力</span>
+                  <input type="checkbox" id="cfg_like_vision">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">模型名称</label>
+                <input type="text" class="form-control" id="cfg_like_model" placeholder="glm-4.5-air">
+              </div>
+            </div>
+
+            <div id="tiku_pane_TikuAdapter" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">TikuAdapter 接口地址</label>
+                <input type="text" class="form-control" id="cfg_tiku_url" placeholder="例如 http://127.0.0.1:5001/query">
+              </div>
+            </div>
+
+            <div id="tiku_pane_TikuGo" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">GO 题库解除限流 Token</label>
+                <input type="text" class="form-control" id="cfg_go_auth" placeholder="一之哥哥公众号获取的 Token">
+              </div>
+              <div class="form-group">
+                <label class="form-label">请求最小时间间隔秒数</label>
+                <input type="number" step="0.1" class="form-control" id="cfg_go_interval">
+              </div>
+            </div>
+
+            <div id="tiku_pane_TikuManual" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">手动答题录入方式</label>
+                <select class="form-control" id="cfg_manual_mode">
+                  <option value="batch">批量一次性录入</option>
+                  <option value="single">单题逐题录入</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">批量录入答案分隔符</label>
+                <input type="text" class="form-control" id="cfg_manual_sep" placeholder=";">
+              </div>
+            </div>
+
+            <div id="tiku_pane_custom" class="tiku-provider-pane" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">自定义题库序列</label>
+                <input type="text" class="form-control" id="cfg_custom_provider_input" placeholder="例如 TikuGo,TikuYanxi,TikuLike">
+                <div class="form-desc">按逗号分隔，系统将按顺序依次查询题库与回退</div>
+              </div>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed var(--border-subtle);">
+              <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.75rem;">答题通用设置</div>
+              <div class="form-group">
+                <div class="switch-control">
+                  <span>达到覆盖率直接提交</span>
+                  <input type="checkbox" id="cfg_submit">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">最低题库覆盖率</label>
+                <input type="number" step="0.05" min="0" max="1" class="form-control" id="cfg_cover_rate">
+              </div>
+              <div class="form-group">
+                <label class="form-label">多题搜索间隔秒数</label>
+                <input type="number" step="0.1" class="form-control" id="cfg_delay">
+              </div>
+              <div class="form-group">
+                <label class="form-label">判断题正确选项映射</label>
+                <input type="text" class="form-control" id="cfg_true_list">
+              </div>
+              <div class="form-group">
+                <label class="form-label">判断题错误选项映射</label>
+                <input type="text" class="form-control" id="cfg_false_list">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-tab-pane" data-pane="notification" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">推送渠道</label>
+              <select class="form-control" id="cfg_notif_provider">
+                <option value="ServerChan">Server酱</option>
+                <option value="Qmsg">Qmsg酱</option>
+                <option value="Bark">Bark</option>
+                <option value="Telegram">Telegram</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">推送 Webhook 地址</label>
+              <input type="text" class="form-control" id="cfg_notif_url">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Telegram 目标会话</label>
+              <input type="text" class="form-control" id="cfg_notif_tg_id">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 1rem 1.5rem; background: var(--bg-card); border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="btn btn-secondary" onclick="closeSettingsModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveSettings()">保存配置并生效</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="manualQuizModalOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          章节检测手动答题
+        </div>
+        <span class="badge badge-blue" id="quizTypeBadge">单选题</span>
+      </div>
+      <div class="modal-body">
+        <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 1rem; line-height: 1.4;" id="quizQuestionTitle">题目载入中...</div>
+        <div id="quizOptionsContainer"></div>
+        <div id="quizTextInputWrap" style="display: none; margin-top: 1rem;">
+          <input type="text" class="form-control" id="quizAnswerInput" placeholder="请输入答案内容...">
+        </div>
+      </div>
+      <div style="padding: 1rem 1.5rem; background: var(--bg-card); border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary" onclick="skipCurrentQuiz()">跳过此题</button>
+        <button class="btn btn-primary" onclick="submitCurrentQuizAnswer()">提交答案</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

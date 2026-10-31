@@ -1,4 +1,4 @@
-# :computer: 超星学习通自动化完成任务点(命令行版)
+# :computer: 超星学习通自动化完成任务点
 
 <p align="center">
     <a href="https://github.com/Samueli924/chaoxing" target="_blank" style="margin-right: 20px; font-style: normal; text-decoration: none;">
@@ -23,7 +23,24 @@
 
 ## :books: 使用方法
 
-### 源码运行（Python 3.13+）
+### Web 控制台运行
+
+启动本地可视化控制台，支持扫码登录、多账号管理、课程列表可视化勾选、任务看板、滑动倍速调节、每日观看限时熔断及手动答题弹窗：
+
+```bash
+python main.py --webui
+python main.py --webui --host 0.0.0.0 --port 5000
+```
+
+启动后在浏览器打开 `http://127.0.0.1:5000`。
+
+使用 Docker Compose 运行：
+
+```bash
+docker compose up -d
+```
+
+### 源码运行
 
 1. clone 项目至本地
 
@@ -143,6 +160,13 @@ python main.py -a ask  # 使用询问模式
 这功能会在所有课程学习任务结束后，或是程序出现错误时，使用外部通知服务推送消息告知你（~~有用但不多~~）
 
 与题库配置类似，不填写视为不使用，按照注释填写想要使用的外部通知服务（也是`provider`，大小写要一致），并填写必要的`url`
+
+### 每日视频观看时长限制配置说明
+
+在配置文件的 `[common]` 部分，可以通过 `daily_watch_limit_minutes` 设置单个账号每日观看视频的最长时间：
+
+- `daily_watch_limit_minutes = 0`：不限制每日视频观看时长。
+- 设置为大于 0 的分钟数时，账号当日观看视频达到该累计时长后，会自动跳过后续视频任务点并保存状态。
 
 ## :heart: CONTRIBUTORS
 

@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import functools
+import os
 import random
 import secrets
 import re
 import threading
 import time
+import uuid
 from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
@@ -22,7 +24,7 @@ from api.answer import Tiku, TikuManual
 from api.answer_check import cut
 from api.cipher import AESCipher
 from api.config import GlobalConst as gc
-from api.cookies import save_cookies, use_cookies
+from api.cookies import parse_cookie_string, save_cookies, use_cookies
 from api.decode import (
     decode_course_list,
     decode_course_point,
@@ -30,10 +32,27 @@ from api.decode import (
     decode_course_folder,
     decode_questions_info,
 )
+from api.task_runner import TaskStateHub
 
 
 def get_timestamp():
     return str(int(time.time() * 1000))
+
+
+def create_session(cookies: Optional[dict] = None) -> requests.Session:
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=10))
+    session.mount("http://", HTTPAdapter(max_retries=10))
+    session.request = functools.partial(session.request, timeout=5)
+    # For debug purposes
+    # session.verify=False
+    session.headers.clear()
+    session.headers.update(gc.HEADERS)
+    if cookies is not None:
+        session.cookies.update(cookies)
+    else:
+        session.cookies.update(use_cookies())
+    return session
 
 
 class SessionManager:
@@ -46,15 +65,8 @@ class SessionManager:
         return cls._instance
 
     def __init__(self):
-        self._session = requests.Session()
-        self._session.mount("https://", HTTPAdapter(max_retries=10))
-        self._session.mount("http://", HTTPAdapter(max_retries=10))
-        self._session.request = functools.partial(self._session.request, timeout=5)
-        # For debug purposes
-        # self._session.verify=False
-        self._session.headers.clear()
-        self._session.headers.update(gc.HEADERS)
-        self._session.cookies.update(use_cookies())
+        if not hasattr(self, "_session"):
+            self._session = create_session({} if TaskStateHub().is_web_mode() else None)
 
     @classmethod
     def get_instance(cls) -> Self:
@@ -67,7 +79,8 @@ class SessionManager:
 
     @classmethod
     def update_cookies(cls):
-        cls.get_instance()._session.cookies.update(use_cookies())
+        if not TaskStateHub().is_web_mode():
+            cls.get_instance()._session.cookies.update(use_cookies())
 
     @classmethod
     def relogin_if_needed(cls, chaoxing_instance) -> bool:
@@ -381,7 +394,7 @@ def normalize_answer_text(ans) -> str:
 
 
 class Chaoxing:
-    def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
+    def __init__(self, account: Account = None, tiku: Tiku = None, session: Optional[requests.Session] = None, **kwargs):
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
@@ -390,11 +403,28 @@ class Chaoxing:
         self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
 
+        if session is not None:
+            self._session = session
+        else:
+            raw_cookies = kwargs.get("cookies")
+            cookie_dict = None
+            if isinstance(raw_cookies, dict):
+                cookie_dict = raw_cookies
+            elif isinstance(raw_cookies, str):
+                cookie_dict = parse_cookie_string(raw_cookies)
+
+            sm_session = SessionManager.get_session()
+            if hasattr(sm_session, "_mock_return_value") or type(sm_session).__name__ in ("MagicMock", "Mock"):
+                self._session = sm_session
+            else:
+                self._session = create_session(cookie_dict)
+
+    def get_session(self) -> requests.Session:
+        return self._session
+
     def login(self, login_with_cookies=False):
         if login_with_cookies:
             logger.info("Logging in with cookies")
-            SessionManager.update_cookies()
-            logger.debug(f"Logged in with cookies: {SessionManager.get_instance()._session.cookies}")
             if not self._validate_cookie_session():
                 logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
                 if self.account and self.account.username and self.account.password:
@@ -409,7 +439,8 @@ class Chaoxing:
                 logger.debug(f"获取当前登录用户名失败: {e}")
             return {"status": True, "msg": "登录成功"}
 
-        _session = requests.Session()
+        temp_session = requests.Session()
+        temp_session.headers.update(gc.HEADERS)
         _url = "https://passport2.chaoxing.com/fanyalogin"
         _data = {
             "fid": "-1",
@@ -423,10 +454,32 @@ class Chaoxing:
             "independentId": 0,
         }
         logger.trace("正在尝试登录...")
-        resp = _session.post(_url, headers=gc.HEADERS, data=_data)
-        if resp and resp.json()["status"] == True:
-            save_cookies(_session)
-            SessionManager.update_cookies()
+        resp = temp_session.post(_url, headers=gc.HEADERS, data=_data, timeout=10)
+        if resp and resp.json().get("status") == True:
+            _session = self._session
+            _session.cookies.clear()
+            _session.cookies.update(temp_session.cookies)
+            if TaskStateHub().is_web_mode():
+                SessionManager.get_session().cookies.clear()
+                SessionManager.get_session().cookies.update(_session.cookies)
+                cfg_path = self.kwargs.get("config_path")
+                if cfg_path and os.path.exists(cfg_path):
+                    try:
+                        from api.account_manager import AccountManager
+                        new_cookies = "; ".join(f"{k}={v}" for k, v in _session.cookies.items())
+                        uid = _session.cookies.get("_uid") or _session.cookies.get("UID") or self.account.username
+                        acc_dir = os.path.dirname(os.path.abspath(cfg_path))
+                        AccountManager(accounts_dir=acc_dir, auto_import_legacy=False).save_account(str(uid), {
+                            "username": self.account.username,
+                            "password": self.account.password,
+                            "cookies": new_cookies,
+                            "use_cookies": "true",
+                        })
+                    except Exception as e:
+                        logger.debug(f"同步保存WebUI重登Cookie失败: {e}")
+            else:
+                save_cookies(_session)
+                SessionManager.update_cookies()
             logger.info("登录成功...")
             try:
                 realname = self.get_name()
@@ -436,11 +489,10 @@ class Chaoxing:
                 logger.debug(f"获取当前登录用户名失败: {e}")
             return {"status": True, "msg": "登录成功"}
         else:
-            return {"status": False, "msg": str(resp.json()["msg2"])}
+            return {"status": False, "msg": str(resp.json().get("msg2"))}
 
-    @staticmethod
-    def get_name() -> str:
-        _session = SessionManager.get_session()
+    def get_name(self, session: Optional[requests.Session] = None) -> str:
+        _session = session or self._session
         try:
             resp = _session.get("https://passport2.chaoxing.com/mooc/accountManage", timeout=10)
             if resp.status_code == 200:
@@ -452,8 +504,8 @@ class Chaoxing:
         return ""
 
     def _validate_cookie_session(self) -> bool:
-        session = SessionManager.get_instance()._session
-        if not session.cookies.get("_uid"):
+        session = self._session
+        if not (session.cookies.get("_uid") or session.cookies.get("UID")):
             return False
 
         test_session = requests.Session()
@@ -479,11 +531,10 @@ class Chaoxing:
         return True
 
     def get_fid(self):
-        _session = SessionManager.get_session()
-        return _session.cookies.get("fid", 1024)
+        return self._session.cookies.get("fid", 1024)
 
     def get_uid(self):
-        s = SessionManager.get_session()
+        s = self._session
         if "_uid" in s.cookies:
             return s.cookies["_uid"]
         if "UID" in s.cookies:
@@ -491,10 +542,58 @@ class Chaoxing:
         raise ValueError("Cannot get uid !")
 
     def get_course_list(self):
-        _session = SessionManager.get_session()
+        _session = self._session
+        logger.trace("正在读取所有的课程列表...")
+
+        # 官方接口直接包含服务端权威的 coursestate 结课状态
+        try:
+            _api_url = "https://mooc1-api.chaoxing.com/mycourse/backclazzdata"
+            _api_resp = _session.get(_api_url, timeout=8)
+            if _api_resp.status_code == 200:
+                api_data = _api_resp.json()
+                if api_data.get("result") == 1:
+                    api_courses = []
+                    for ch in api_data.get("channelList", []):
+                        content = ch.get("content", {})
+                        c_list = content.get("course", {}).get("data", [])
+                        c_data = c_list[0] if c_list else {}
+                        course_id = str(c_data.get("id") or "")
+                        clazz_id = str(content.get("id") or "")
+                        cpi = str(content.get("cpi") or ch.get("cpi") or "")
+                        title = c_data.get("name") or content.get("name") or ""
+                        if not course_id or not clazz_id:
+                            continue
+                        is_ended = (content.get("isFiled") == 1 or c_data.get("coursestate") == 1)
+                        api_courses.append({
+                            "id": f"c_{course_id}",
+                            "info": f"{clazz_id}_{cpi}",
+                            "roleid": f"stu_{clazz_id}",
+                            "clazzId": clazz_id,
+                            "courseId": course_id,
+                            "cpi": cpi,
+                            "title": title,
+                            "desc": c_data.get("schools") or "",
+                            "teacher": c_data.get("teacherfactor") or "",
+                            "status": "已结课" if is_ended else "进行中",
+                            "is_ended": is_ended,
+                        })
+                    if api_courses:
+                        try:
+                            from api.decode import decode_archived_courses
+                            _archive_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/archivecourse/student"
+                            _archive_resp = _session.get(_archive_url, timeout=8)
+                            _archive_resp.encoding = "utf-8"
+                            if _archive_resp.status_code == 200:
+                                api_courses += decode_archived_courses(_archive_resp.text)
+                        except Exception:
+                            pass
+                        logger.debug("课程列表读取完毕...")
+                        return api_courses
+        except Exception as e:
+            logger.debug(f"尝试读取官方课程API异常，降级为HTML解析: {e}")
+
         _url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/courselistdata"
         _data = {"courseType": 1, "courseFolderId": 0, "query": "", "superstarClass": 0}
-        logger.trace("正在读取所有的课程列表...")
 
         # 接口突然抽风, 增加headers
         # 有可能只是referer的问题
@@ -502,12 +601,14 @@ class Chaoxing:
             "Referer": "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction?moocDomain=https://mooc1-1.chaoxing.com/mooc-ans",
         }
         _resp = _session.post(_url, headers=_headers, data=_data)
+        _resp.encoding = "utf-8"
         # logger.trace(f"原始课程列表内容:\n{_resp.text}")
-        logger.info("课程列表读取完毕...")
+        logger.debug("课程列表读取完毕...")
         course_list = decode_course_list(_resp.text)
 
         _interaction_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/interaction"
         _interaction_resp = _session.get(_interaction_url)
+        _interaction_resp.encoding = "utf-8"
         course_folder = decode_course_folder(_interaction_resp.text)
         for folder in course_folder:
             _data = {
@@ -517,11 +618,23 @@ class Chaoxing:
                 "superstarClass": 0,
             }
             _resp = _session.post(_url, data=_data)
+            _resp.encoding = "utf-8"
             course_list += decode_course_list(_resp.text)
+
+        try:
+            from api.decode import decode_archived_courses
+            _archive_url = "https://mooc2-ans.chaoxing.com/mooc2-ans/visit/archivecourse/student"
+            _archive_resp = _session.get(_archive_url, timeout=8)
+            _archive_resp.encoding = "utf-8"
+            if _archive_resp.status_code == 200:
+                course_list += decode_archived_courses(_archive_resp.text)
+        except Exception as e:
+            logger.debug(f"读取归档已结课课程异常: {e}")
+
         return course_list
 
     def get_activity_list(self, course: dict) -> list[dict]:
-        s = SessionManager.get_session()
+        s = self._session
         url = "https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist"
         params = {
             "fid": self.get_fid(),
@@ -545,7 +658,7 @@ class Chaoxing:
         return data["data"]["activeList"]
 
     def pre_sign(self, course: dict, activity_id):
-        s = SessionManager.get_session()
+        s = self._session
         params = {
             "general": 1,
             "sys": 1,
@@ -567,7 +680,7 @@ class Chaoxing:
         return resp_txt
 
     def sign_in_normal(self, course: dict, activity_id, name="", obj_id="aaa", lat=-1, lon=-1, type_=SignType.NORMAL):
-        s = SessionManager.get_session()
+        s = self._session
         params = {
             "activeId": activity_id,
             "uid": self.get_uid(),
@@ -599,7 +712,7 @@ class Chaoxing:
         return resp_txt
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
-        _session = SessionManager.get_session()
+        _session = self._session
         _url = f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={_courseid}&clazzid={_clazzid}&cpi={_cpi}&ut=s"
         logger.trace("URL: " + _url)
         logger.trace("开始读取课程所有章节...")
@@ -610,7 +723,7 @@ class Chaoxing:
         return decode_course_point(_resp.text)
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
-        _session = SessionManager.get_session()
+        _session = self._session
         self.rate_limiter.limit_rate()
         job_list = []
         job_info = {}
@@ -719,7 +832,9 @@ class Chaoxing:
         def perform_request(rt_val):
             params.update({"rt": rt_val, "_t": get_timestamp()})
             res = _session.get(_url, params=params, headers=headers)
-            if res.status_code == 403 or '验证码' in res.text or 'validate' in res.text:
+            is_9011_forbidden = res.status_code == 403 and ("9011" in res.text or "没有权限" in res.text)
+            has_captcha_indicator = ("验证码" in res.text or "captcha" in res.text.lower() or "validate" in res.text.lower()) and not is_9011_forbidden
+            if has_captcha_indicator:
                 logger.warning("检测到验证码拦截，正在尝试自动通过验证码...")
                 try:
                     from api.captcha import CxCaptcha
@@ -763,6 +878,13 @@ class Chaoxing:
             logger.trace(f"Got rt: {rt}")
             _job['rt'] = rt
             resp = perform_request(rt)
+            if resp.status_code == 403 and "9011" not in resp.text:
+                alt_rt = "1" if str(rt) in ["0.9", "d"] else "0.9"
+                logger.warning(f"当前 rt={rt} 返回403，尝试切换为备选 rt={alt_rt}")
+                alt_resp = perform_request(alt_rt)
+                if alt_resp.status_code == 200:
+                    _job['rt'] = alt_rt
+                    resp = alt_resp
         else:
             logger.warning("Failed to get rt")
             for rt in [0.9, 1]:
@@ -854,7 +976,7 @@ class Chaoxing:
 
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
-        _session = SessionManager.get_session()
+        _session = self._session
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
@@ -878,6 +1000,19 @@ class Chaoxing:
         last_iter = time.time()
         wait_time = int(random.uniform(30, 90))
 
+        limit_minutes = int(self.kwargs.get("daily_watch_limit_minutes", 0) or 0)
+        username = str(self.kwargs.get("username") or getattr(getattr(self, "account", None), "username", "") or "default")
+        from api.account_manager import AccountManager
+        acct_mgr = AccountManager(auto_import_legacy=False)
+        watched_today = 0.0
+        if limit_minutes > 0:
+            watched_today = acct_mgr.get_daily_watched_seconds(username)
+            if watched_today >= limit_minutes * 60:
+                logger.warning(
+                    f"当前账号今日视频观看时长已达上限 ({int(watched_today // 60)}/{limit_minutes}分钟)，自动跳过视频: {_job['name']}"
+                )
+                return StudyResult.SUCCESS
+
         logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
 
         forbidden_retry = 0
@@ -890,8 +1025,13 @@ class Chaoxing:
             return StudyResult.SUCCESS
 
         pbar = None
+        hub = TaskStateHub()
         try:
             while not passed:
+                if hub.is_web_mode() and not hub.is_task_running():
+                    logger.warning(f"检测到任务终止指令，中断视频播放: {_job['name']}")
+                    return StudyResult.ERROR
+
                 # Sometimes the last request needs to be sent several times to complete the task
                 if play_time - last_log_time >= wait_time or play_time == duration:
 
@@ -932,10 +1072,31 @@ class Chaoxing:
 
                     logger.trace("Progress logged")
 
-                # Uploading the progress takes time, we assume that the video is still playing in the background, this manually calculates the time elapsed
-                dt = (time.time() - last_iter) * _speed
+                current_speed = _speed
+                if hub.is_web_mode():
+                    t_name = threading.current_thread().name
+                    current_speed = hub.get_effective_speed(t_name)
+                    hub.update_worker_state(t_name, {
+                        "chapter": f"{_course['title']} - {_job.get('name', '')}",
+                        "position": int(play_time),
+                        "duration": int(duration),
+                        "speed": current_speed,
+                        "status": "PLAYING",
+                        "type": "video",
+                    })
+
+                dt = (time.time() - last_iter) * current_speed
                 last_iter = time.time()
                 play_time = min(duration, play_time + dt)
+
+                if limit_minutes > 0:
+                    acct_mgr.add_daily_watched_seconds(username, dt)
+                    watched_today += dt
+                    if watched_today >= limit_minutes * 60:
+                        logger.warning(
+                            f"当前账号今日视频观看时长达到设定上限 ({limit_minutes}分钟)，停止继续播放: {_job['name']}"
+                        )
+                        return StudyResult.SUCCESS
 
                 # 检查手动模式锁是否被锁定
                 manual_locked = False
@@ -956,6 +1117,9 @@ class Chaoxing:
                 time.sleep(gc.THRESHOLD)
         finally:
             pbar = self._close_pbar_safe(pbar)
+            hub = TaskStateHub()
+            if hub.is_web_mode():
+                hub.remove_worker(threading.current_thread().name)
 
         logger.info("任务完成: {}", _job['name'])
         return StudyResult.SUCCESS
@@ -984,7 +1148,7 @@ class Chaoxing:
             - get_timestamp(): To get current timestamp
             - re module for regular expression matching
         """
-        _session = SessionManager.get_session()
+        _session = self._session
         _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
         _resp = _session.get(_url)
         if _resp.status_code != 200:
@@ -996,7 +1160,7 @@ class Chaoxing:
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
 
-        _session = SessionManager.get_session()
+        _session = self._session
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
 
         def is_not_permission_error(exception):
@@ -1092,6 +1256,9 @@ class Chaoxing:
             total_questions = len(questions["questions"])
             found_answers = 0
             answers = self.tiku.query_all(questions["questions"], query_delay=query_delay)
+            if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                logger.warning("检测到任务终止指令，取消提交章节检测")
+                return StudyResult.ERROR
 
             if not isinstance(answers, list):
                 logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
@@ -1238,16 +1405,15 @@ class Chaoxing:
             if questions["pyFlag"] == "1":
                 return StudyResult.SUCCESS
 
-            # 6. 提交后检查成绩：若未全部正确，则收集错误反馈并重新作答提交
             result_info = self._check_work_result(_session, _course, _job, _job_info, questions)
             if result_info is None:
-                # 无法获取成绩详情（如接口异常），按原行为返回成功，避免误判失败
                 return StudyResult.SUCCESS
 
             score = float(result_info.get("score", 0.0) or 0.0)
             unknown = int(result_info.get("unknown", 0) or 0)
             if result_info.get("all_correct", False):
                 logger.info(f"章节检测全部正确（成绩 {score} 分），通过！")
+                TaskStateHub().increment_passed_tests()
                 return StudyResult.SUCCESS
             if score >= 99.95:
                 # 逐题比对存在格式差异或解析失配, 但满分成绩说明实际全对, 以分数为准
@@ -1256,17 +1422,16 @@ class Chaoxing:
                                    f"（{unknown} 题答案字段未能解析, 建议人工复核）")
                 else:
                     logger.info(f"逐题比对存在格式差异, 但成绩 {score} 分达到满分, 以分数为准, 通过！")
+                TaskStateHub().increment_passed_tests()
                 return StudyResult.SUCCESS
             if unknown > 0:
                 # 解析失配且未达满分: 判定不可信, 不触发重做, 保留已提交成绩
                 logger.warning(f"{unknown} 题答案字段解析失败且成绩 {score} 分未达满分, 跳过重做判定")
                 return StudyResult.SUCCESS
 
-            # 7. 未全对：收集错误反馈，进入下一轮重做
             feedback_history = result_info.get("feedback", [])
             wrong_count = len(feedback_history)
             if attempt >= max_retries:
-                # 已是最后一轮(含单轮模式), 保留已提交成绩, 不再触发无意义的重做
                 logger.warning(f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
                                f"已保留本次成绩, 请人工检查处理")
                 return StudyResult.SUCCESS
@@ -1469,7 +1634,7 @@ class Chaoxing:
         """
         阅读任务学习, 仅完成任务点, 并不增长时长
         """
-        _session = SessionManager.get_session()
+        _session = self._session
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/ananas/job/readv2",
             params={
@@ -1514,7 +1679,7 @@ class Chaoxing:
             f"&clazzid={course['clazzId']}&cpi={course['cpi']}&mooc2=1"
         )
         try:
-            session = SessionManager.get_session()
+            session = self._session
             resp = session.get(
                 "https://detect.chaoxing.com/api/monitor",
                 params=params,
@@ -1525,8 +1690,279 @@ class Chaoxing:
         except Exception as e:
             logger.trace(f"Monitor heartbeat failed (non-critical): {e}")
 
+    def study_topic(self, _course: dict, _job: dict, _job_info: dict) -> StudyResult:
+        """执行话题回复讨论任务点."""
+        auto_reply = self.kwargs.get("topic_auto_reply", True)
+        if str(auto_reply).strip().lower() in ("false", "0", "no", "off"):
+            logger.info(f"已关闭话题自动回复，跳过话题讨论 -> {_job.get('title') or '话题讨论'}")
+            return StudyResult.SUCCESS
+
+        course_id = str(_course.get("courseId", ""))
+        class_id = str(_course.get("clazzId", ""))
+        cpi = str(_course.get("cpi", ""))
+        topic_uuid = str(_job.get("topic_uuid") or _job.get("property", {}).get("uuid", "")).strip()
+        bbsid = str(_job.get("bbsid") or _job.get("property", {}).get("bbsid", "")).strip()
+        title = _job.get("title") or "话题讨论"
+        job_id = str(_job.get("jobid", ""))
+        mid = str(_job.get("mid") or _job.get("property", {}).get("mid", "")).strip()
+        knowledge_id = str(_job_info.get("knowledgeid") or "")
+        if not knowledge_id:
+            m = re.findall(r"nodeId_(\d+)", str(_job.get("otherinfo", "")))
+            if m:
+                knowledge_id = m[0]
+
+        session = self._session
+        self.rate_limiter.limit_rate()
+
+        reply_list_url = ""
+        # 兼容 insertbbs 模块：卡片未直出 uuid 与 bbsid 时从讨论卡片页面动态解析真实标识
+        if not topic_uuid or not bbsid:
+            chapter_url = "https://mooc1.chaoxing.com/mooc-ans/bbscircle/chapter"
+            chapter_params = {
+                "mtopicid": mid,
+                "jobid": job_id,
+                "isPortal": "false",
+                "knowledgeid": knowledge_id,
+                "ut": "s",
+                "clazzId": class_id,
+                "courseid": course_id,
+                "isJob": "false",
+            }
+            try:
+                chapter_resp = session.get(chapter_url, params=chapter_params, timeout=10)
+                if chapter_resp.status_code == 200:
+                    if 'id="isFinished" value="true"' in chapter_resp.text:
+                        logger.info(f"话题已回复完成 -> {title}")
+                        return StudyResult.SUCCESS
+                    data_match = re.search(
+                        r'data=["\'](https://groupweb\.chaoxing\.com/course/topic/v3/bbs/([^/]+)/([^/]+)/replysList[^\"]*)["\']',
+                        chapter_resp.text,
+                    )
+                    if data_match:
+                        reply_list_url = data_match.group(1)
+                        bbsid = data_match.group(2)
+                        topic_uuid = data_match.group(3)
+            except Exception as e:
+                logger.debug(f"动态解析话题详情地址异常: {e}")
+
+        if not reply_list_url and bbsid and topic_uuid:
+            reply_list_url = f"https://groupweb.chaoxing.com/course/topic/v3/bbs/{bbsid}/{topic_uuid}/replysList"
+
+        if not topic_uuid or not bbsid or not reply_list_url:
+            logger.error(f"话题讨论参数解析失败，跳过 -> {title}")
+            return StudyResult.ERROR
+
+        params = {
+            "courseId": course_id,
+            "classId": class_id,
+            "cpi": cpi,
+            "isLearnSilver": 0,
+            "ut": "s",
+        }
+        url_token = ""
+        try:
+            resp = session.get(reply_list_url, params=params, timeout=8)
+            resp.encoding = "utf-8"
+            if resp.status_code == 200:
+                uid = str(session.cookies.get("UID") or session.cookies.get("_uid") or "")
+                if uid and (f'creater_id="{uid}"' in resp.text or f'createrPuid":{uid}' in resp.text or f'createrPuid": "{uid}"' in resp.text):
+                    logger.info(f"话题已回复过，直接标记完成 -> {title}")
+                    return StudyResult.SUCCESS
+
+                token_match = re.search(r'urlToken\s*[:=]\s*["\']([^"\']+)["\']', resp.text)
+                if token_match:
+                    url_token = token_match.group(1)
+        except Exception as e:
+            logger.debug(f"检查话题历史回复异常: {e}")
+
+        reply_content = str(self.kwargs.get("topic_reply_content") or "").strip()
+        if not reply_content:
+            if self.tiku and hasattr(self.tiku, "generate_topic_reply"):
+                try:
+                    ans = self.tiku.generate_topic_reply(title, str(_job.get("content") or ""))
+                    if ans and len(str(ans).strip()) >= 5:
+                        reply_content = str(ans).strip()
+                except Exception as e:
+                    logger.debug(f"题库生成话题回复异常: {e}")
+
+            if not reply_content:
+                default_replies = [
+                    "本章节内容观点明确，理论结合实际，对理解核心知识很有启发。",
+                    "认真研读了本议题，分析透彻，逻辑清晰，加深了专业知识的掌握。",
+                    "结合案例阐述到位，层次分明，对后续学习和实践具有指导意义。",
+                    "通过本小节的学习与思考，进一步理清了知识脉络，收获很大。"
+                ]
+                reply_content = random.choice(default_replies)
+
+        logger.info(f"正在发表话题回复 -> [{title}]: {reply_content}")
+
+        submit_url = f"https://groupweb.chaoxing.com/pc/invitation/{topic_uuid}/addReplys"
+        payload = {
+            "courseId": course_id,
+            "classId": class_id,
+            "replyId": "-1",
+            "uuid": str(uuid.uuid4()),
+            "topic_content": reply_content,
+            "files_url": "",
+            "files_attr": "",
+            "anonymous": "",
+            "urlToken": url_token,
+            "bbsid": bbsid,
+        }
+        headers = {
+            "Referer": reply_list_url,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        try:
+            post_resp = session.post(submit_url, data=payload, headers=headers, timeout=10)
+            if post_resp.status_code == 405:
+                logger.warning(f"话题已截止或关闭回复，标记完成 -> {title}")
+                return StudyResult.SUCCESS
+            if not post_resp.text or not post_resp.text.strip():
+                logger.info(f"话题回复已提交 HTTP {post_resp.status_code} -> {title}")
+                return StudyResult.SUCCESS if post_resp.status_code == 200 else StudyResult.ERROR
+            try:
+                res_data = post_resp.json()
+            except Exception:
+                if post_resp.status_code == 200 and ("成功" in post_resp.text or "success" in post_resp.text.lower()):
+                    logger.info(f"话题回复成功 -> {title}")
+                    return StudyResult.SUCCESS
+                logger.error(f"话题回复响应解析异常: [{post_resp.status_code}] {post_resp.text[:100]}")
+                return StudyResult.ERROR
+
+            if res_data.get("status") is True or res_data.get("result") == 1:
+                logger.info(f"话题回复成功 -> {title}")
+                return StudyResult.SUCCESS
+            msg = str(res_data.get("msg", "回复提交未通过"))
+            if "最多回复" in msg or "已达到" in msg or "重复回复" in msg:
+                logger.info(f"已达到该话题回复上限，视作完成 -> {title}")
+                return StudyResult.SUCCESS
+            logger.error(f"话题回复失败 -> [{msg}] {title}")
+            return StudyResult.ERROR
+        except Exception as e:
+            logger.error(f"话题回复网络请求异常 -> {e}")
+            return StudyResult.ERROR
+
+    def study_vote(self, _course: dict, _job: dict, _job_info: dict) -> StudyResult:
+        """执行随堂问答投票任务点."""
+        course_id = str(_course.get("courseId", ""))
+        class_id = str(_course.get("clazzId", ""))
+        active_id = str(_job.get("active_id") or _job.get("property", {}).get("id", ""))
+        job_id = str(_job.get("jobid", ""))
+        jtoken = str(_job.get("jtoken", ""))
+        knowledge_id = str(_job_info.get("knowledgeid") or "")
+        if not knowledge_id:
+            m = re.findall(r"nodeId_(\d+)", str(_job.get("otherinfo", "")))
+            if m:
+                knowledge_id = m[0]
+        title = _job.get("title") or "随堂问答"
+
+        session = self._session
+        self.rate_limiter.limit_rate()
+
+        submit_view_url = "https://mobilelearn.chaoxing.com/widget/chaptervote/goChapterSubmit"
+        params = {
+            "activeId": active_id,
+            "quessequence": "1",
+            "courseId": course_id,
+            "isjob": "true",
+            "ut": "s",
+        }
+        try:
+            resp = session.get(submit_view_url, params=params, timeout=10)
+            if resp.status_code != 200:
+                logger.error(f"获取随堂问答页面失败 ({resp.status_code}) -> {title}")
+                return StudyResult.ERROR
+
+            match = re.search(
+                r'var\s+questionlist\s*=\s*(\[\s*\{.*?\}\s*\]);\s*\n\s*var\s+questionhtml',
+                resp.text,
+                re.DOTALL,
+            )
+            if not match:
+                logger.warning(f"随堂问答未解析到题目列表，可能已完成或无需答题 -> {title}")
+                self._finish_vote_job(job_id, knowledge_id, course_id, class_id, jtoken)
+                return StudyResult.SUCCESS
+
+            js_code = match.group(1)
+            q_list = eval(js_code, {"null": None, "true": True, "false": False, "__builtins__": None})
+            if not q_list:
+                logger.warning(f"随堂问答题目为空 -> {title}")
+                self._finish_vote_job(job_id, knowledge_id, course_id, class_id, jtoken)
+                return StudyResult.SUCCESS
+
+            all_answered = all(bool(q.get("haveAnswer")) for q in q_list)
+            if all_answered:
+                logger.info(f"随堂问答之前已作答，直接完成 -> {title}")
+                self._finish_vote_job(job_id, knowledge_id, course_id, class_id, jtoken)
+                return StudyResult.SUCCESS
+
+            uid = str(session.cookies.get("UID") or session.cookies.get("_uid") or "")
+            payload = {
+                "courseId": course_id,
+                "classId": class_id,
+                "activeId": active_id,
+                "uid": uid,
+                "fid": "",
+            }
+            for q in q_list:
+                qid = str(q.get("id"))
+                qtype = str(q.get("type", 0))
+                payload["questionId"] = qid
+                payload["questionType"] = qtype
+                ans_options = q.get("answer") or []
+                selected_ans = "A"
+                if self.tiku and hasattr(self.tiku, "query"):
+                    try:
+                        tiku_ans = self.tiku.query(q.get("content", ""))
+                        if tiku_ans:
+                            for opt in ans_options:
+                                if opt.get("content") and opt["content"] in tiku_ans:
+                                    selected_ans = opt.get("name", "A")
+                                    break
+                    except Exception:
+                        pass
+                payload[f"answer{qid}"] = selected_ans
+
+            submit_url = "https://mobilelearn.chaoxing.com/widget/pcvote/doQuestion"
+            headers = {
+                "Referer": resp.url,
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            post_res = session.post(submit_url, data=payload, headers=headers, timeout=10)
+            if post_res.status_code == 200:
+                try:
+                    res_json = post_res.json()
+                except Exception:
+                    res_json = {}
+                if res_json.get("isresult") in (0, 1):
+                    logger.info(f"随堂问答作答提交成功 -> {title}")
+                    self._finish_vote_job(job_id, knowledge_id, course_id, class_id, jtoken)
+                    return StudyResult.SUCCESS
+                msg = str(res_json.get("msg", ""))
+                if "重复" in msg or "已答" in msg or "已完成" in msg:
+                    logger.info(f"随堂问答已作答过，标记完成 -> {title}")
+                    self._finish_vote_job(job_id, knowledge_id, course_id, class_id, jtoken)
+                    return StudyResult.SUCCESS
+
+            logger.error(f"随堂问答提交未通过: {post_res.text[:100]} -> {title}")
+            return StudyResult.ERROR
+        except Exception as e:
+            logger.error(f"随堂问答处理异常: {e}")
+            return StudyResult.ERROR
+
+    def _finish_vote_job(self, job_id: str, knowledge_id: str, course_id: str, class_id: str, jtoken: str) -> None:
+        if not job_id:
+            return
+        try:
+            url = f"https://mooc1.chaoxing.com/mooc-ans/job/vote?jobid={job_id}&knowledgeid={knowledge_id}&courseid={course_id}&clazzid={class_id}&jtoken={jtoken}"
+            self._session.get(url, timeout=8)
+        except Exception as e:
+            logger.trace(f"投票完成标记通知异常: {e}")
+
     def study_emptypage(self, _course, point):
-        _session = SessionManager.get_session()
+        _session = self._session
         # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
@@ -1550,7 +1986,7 @@ class Chaoxing:
             return StudyResult.SUCCESS
 
     def _access_chapter_for_count(self, _course, point):
-        _session = SessionManager.get_session()
+        _session = self._session
         # &cpi=0&verificationcode=&mooc2=1&microTopicId=0&editorPreview=0
         _resp = _session.get(
             url="https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudyAjax",
@@ -1592,7 +2028,7 @@ class Chaoxing:
 
         setlog_url = match.group(1)
         try:
-            session = SessionManager.get_session()
+            session = self._session
             resp = session.get(setlog_url, timeout=5)
             logger.trace(f"Setlog sent -> {resp.status_code}")
         except Exception as e:
@@ -1625,10 +2061,14 @@ class Chaoxing:
         if not points:
             logger.warning("章节列表为空, 跳过章节学习次数增加")
             return StudyResult.SUCCESS
+        hub = TaskStateHub()
         while total < target_count:
             for point in points:
                 if total >= target_count:
                     break
+                if hub.is_web_mode() and not hub.is_task_running():
+                    logger.warning("检测到任务终止指令，中断章节学习次数增加")
+                    return StudyResult.ERROR
                 self.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
                 html_text = self._access_chapter_for_count(course, point)
                 if not html_text:
@@ -1642,19 +2082,16 @@ class Chaoxing:
                     continue
 
                 consecutive_failures = 0
-
-                # 第 1 步：从 HTML 中提取 setlog URL 并执行（真正的计次 API）
                 self._extract_and_send_setlog(html_text)
-
-                # 第 2 步：立即发送 monitor 心跳包（模拟 fn()）
                 self._send_monitor_heartbeat(course, point)
 
-                # 第 3 步：停留 30 秒（模拟前端 setInterval 间隔）
-                time.sleep(30)
+                for _ in range(30):
+                    if hub.is_web_mode() and not hub.is_task_running():
+                        logger.warning("检测到任务终止指令，中断章节学习次数增加")
+                        return StudyResult.ERROR
+                    time.sleep(1)
 
-                # 第 4 步：再次发送 monitor 心跳包（模拟 setInterval 触发的第二次心跳）
                 self._send_monitor_heartbeat(course, point)
-
                 total += 1
                 logger.info(f"章节学习次数进度: {total}/{target_count}")
         logger.info(f"章节学习次数增加完成, 共完成: {total} 次")

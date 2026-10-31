@@ -29,7 +29,9 @@ class _NoopRateLimiter:
 
 class JobProcessorTestCase(unittest.TestCase):
     def setUp(self):
-        main.logger.remove()  # 关闭所有 handler，避免测试日志刷屏
+        from api.task_runner import TaskStateHub
+        TaskStateHub().set_web_mode(False)
+        main.logger.remove()
 
     def _make_processor(self, job_info, notopen_action="retry", max_tries=3):
         course = {"title": "课程"}

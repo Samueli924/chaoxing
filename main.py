@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
 import argparse
 import configparser
 import enum
+import os
 import sys
 import threading
 import time
@@ -18,6 +18,7 @@ from api.live import Live
 from api.live_process import LiveProcessor
 from api.process import increase_learning_count_for_course
 
+import queue
 try:
     from queue import PriorityQueue, ShutDown
 except ImportError:
@@ -53,14 +54,34 @@ def str_to_bool(value):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def parse_args():
+def parse_args(args=None):
     """解析命令行参数"""
+    raw_args = sys.argv[1:] if args is None else list(args)
+    import re
+    normalized_args = []
+    for a in raw_args:
+        if isinstance(a, str) and a.startswith(("—", "–", "－")):
+            normalized_args.append(re.sub(r"^[—–－]+-?", "--", a))
+        else:
+            normalized_args.append(a)
+
     parser = argparse.ArgumentParser(
         description="Samueli924/chaoxing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument("--use-cookies", action="store_true", help="使用cookies登录")
+
+    parser.add_argument(
+        "--webui", action="store_true", help="启动本地 Web 控制台服务"
+    )
+    parser.add_argument(
+        "--host", type=str, default=os.environ.get("HOST", "127.0.0.1"),
+        help="Web 控制台服务监听地址 (默认 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=5000, help="Web 控制台服务端口 (默认 5000)"
+    )
 
     parser.add_argument(
         "-c", "--config", type=str, default=None, help="使用配置文件运行程序"
@@ -110,11 +131,11 @@ def parse_args():
     )
 
     # 在解析之前捕获 -h 的行为
-    if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
+    if len(normalized_args) == 1 and normalized_args[0] in {"-h", "--help"}:
         parser.print_help()
         sys.exit(0)
 
-    return parser.parse_args()
+    return parser.parse_args(normalized_args)
 
 
 def load_config_from_file(config_path):
@@ -160,6 +181,13 @@ def load_config_from_file(config_path):
             common_config["add_learning_count"] = str_to_bool(common_config["add_learning_count"])
         if "target_count" in common_config:
             common_config["target_count"] = int(common_config["target_count"])
+        if "daily_watch_limit_minutes" in common_config:
+            try:
+                common_config["daily_watch_limit_minutes"] = int(common_config["daily_watch_limit_minutes"])
+            except ValueError:
+                common_config["daily_watch_limit_minutes"] = 0
+        if "topic_auto_reply" in common_config:
+            common_config["topic_auto_reply"] = str_to_bool(common_config["topic_auto_reply"])
         if "username" in common_config and common_config["username"] is not None:
             common_config["username"] = common_config["username"].strip()
         if "password" in common_config and common_config["password"] is not None:
@@ -197,9 +225,10 @@ def build_config_from_args(args):
     return common_config, {}, {}
 
 
-def init_config():
+def init_config(args=None):
     """初始化配置"""
-    args = parse_args()
+    if args is None:
+        args = parse_args()
 
     if args.config:
         common_config, tiku_config, notification_config = load_config_from_file(args.config)
@@ -232,24 +261,25 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
     provider = tiku_config.get('provider', '')
     provider_list = [name.strip() for name in provider.split(',') if name.strip()]
     if any(name in ['AI', 'SiliconFlow'] for name in provider_list):
-        check_connection = tiku_config.get('check_llm_connection', 'true').lower() == 'true'
+        check_connection = str_to_bool(tiku_config.get('check_llm_connection', True))
         if check_connection:
             logger.info(f'正在验证大模型配置 (provider={provider})...')
             if not tiku.check_llm_connection():
                 logger.error('大模型连接检查失败')
+                from api.task_runner import TaskStateHub
+                if TaskStateHub().is_web_mode():
+                    raise RuntimeError(f"大模型连接检查失败 (provider={provider})，请检查相关 Endpoint、API Key 及 Model 配置")
                 choice = input('大模型连接检查失败，无法准确答题，是否继续运行？(Y/n): ').strip().lower()
-                # 直接回车默认继续运行
                 if choice not in ('', 'y', 'yes'):
                     raise RuntimeError('用户取消运行')
                 logger.info('用户选择继续运行...')
 
-    query_delay = tiku_config.get("delay", 0)
-
-    # 章节检测答错后允许的最大重做次数（答错时反馈给AI并重新提交，直到全部正确）
-    work_max_retries = common_config.get("work_max_retries", 3)
-
-    # 是否允许自动重做(默认false: 仅检查并记录成绩, 适用于只允许作答一次的课程)
-    work_redo_enabled = common_config.get("work_redo_enabled", False)
+    query_delay = float(tiku_config.get("delay", 0))
+    work_max_retries = int(common_config.get("work_max_retries", 3))
+    work_redo_enabled = str_to_bool(common_config.get("work_redo_enabled", False))
+    daily_watch_limit_minutes = int(common_config.get("daily_watch_limit_minutes", 0) or 0)
+    topic_auto_reply = str_to_bool(common_config.get("topic_auto_reply", True))
+    topic_reply_content = str(common_config.get("topic_reply_content") or "").strip()
 
     # 实例化超星API
     chaoxing = Chaoxing(
@@ -258,6 +288,12 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
         query_delay=query_delay,
         work_max_retries=work_max_retries,
         work_redo_enabled=work_redo_enabled,
+        cookies=common_config.get("cookies"),
+        daily_watch_limit_minutes=daily_watch_limit_minutes,
+        topic_auto_reply=topic_auto_reply,
+        topic_reply_content=topic_reply_content,
+        username=username,
+        config_path=config_path,
     )
 
     return chaoxing
@@ -273,6 +309,9 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
             course, job, job_info, _speed=speed, _type="Video"
         )
         if video_result.is_failure():
+            from api.task_runner import TaskStateHub
+            if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                return video_result
             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
             video_result = chaoxing.study_video(
                 course, job, job_info, _speed=speed, _type="Audio")
@@ -304,25 +343,23 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
                 "knowledgeid": job_info.get("knowledgeid")
             }
 
-            # 创建直播对象
             live = Live(
                 attachment=job,
                 defaults=defaults,
-                course_id=course.get("courseId")
+                course_id=course.get("courseId"),
+                session=chaoxing.get_session(),
             )
-
-            # 启动直播处理线程
-            thread = threading.Thread(
-                target=LiveProcessor.run_live,
-                args=(live, speed),
-                daemon=True
-            )
-            thread.start()
-            thread.join()  # 等待直播处理完成
-            return StudyResult.SUCCESS
+            ok = LiveProcessor.run_live(live, speed, course_title=course.get("title", ""))
+            return StudyResult.SUCCESS if ok else StudyResult.ERROR
         except Exception as e:
             logger.error(f"处理直播任务时出错: {str(e)}")
             return StudyResult.ERROR
+    elif job["type"] == "topic":
+        logger.trace(f"识别到话题讨论任务, 任务章节: {course['title']} 话题: {job['title']}")
+        return chaoxing.study_topic(course, job, job_info)
+    elif job["type"] == "vote":
+        logger.trace(f"识别到随堂问答/投票任务, 任务章节: {course['title']} 问答: {job['title']}")
+        return chaoxing.study_vote(course, job, job_info)
 
     logger.error(f"未知任务类型: {job['type']}")
     return StudyResult.ERROR
@@ -367,7 +404,7 @@ class JobProcessor:
             self.task_queue.put(task)
 
         for i in range(self.worker_num):
-            thread = threading.Thread(target=self.worker_thread, daemon=True)
+            thread = threading.Thread(target=self.worker_thread, name=f"Worker-{i+1}", daemon=True)
             self.threads.append(thread)
             thread.start()
 
@@ -375,23 +412,58 @@ class JobProcessor:
 
         self.task_queue.join()
         time.sleep(0.5)
+        self.shutdown_queues(immediate=False)
+
+    def shutdown_queues(self, immediate: bool = False) -> None:
+        if immediate:
+            while True:
+                try:
+                    self.retry_queue.get_nowait()
+                    self.task_queue.task_done()
+                except (ShutDown, queue.Empty):
+                    break
         if hasattr(self.task_queue, "shutdown"):
-            self.task_queue.shutdown()
+            self.task_queue.shutdown(immediate=immediate)
+        elif immediate:
+            while True:
+                try:
+                    self.task_queue.get_nowait()
+                    self.task_queue.task_done()
+                except queue.Empty:
+                    break
+        if hasattr(self.retry_queue, "shutdown"):
+            self.retry_queue.shutdown(immediate=True)
 
     @log_error
     def worker_thread(self):
         while True:
-            try:
-                task = self.task_queue.get()
-            except ShutDown:
-                logger.info("Queue shut down")
+            from api.task_runner import TaskStateHub
+            if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
                 return
+            try:
+                task = self.task_queue.get(timeout=1.0)
+            except ShutDown:
+                return
+            except queue.Empty:
+                if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                    return
+                continue
 
-            task.result = process_chapter(self.chaoxing, task.course, task.point, self.speed)
+            try:
+                task.result = process_chapter(self.chaoxing, task.course, task.point, self.speed)
+            except Exception as e:
+                logger.error(f"章节处理异常 {task.course.get('title')} - {task.point.get('title')}: {e}")
+                task.result = ChapterResult.ERROR
+
+            if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                self.task_queue.task_done()
+                return
 
             match task.result:
                 case ChapterResult.SUCCESS:
                     logger.debug("Task success: {} - {}", task.course["title"], task.point["title"])
+                    from api.task_runner import TaskStateHub
+                    TaskStateHub().increment_completed_jobs()
                     self.task_queue.task_done()
                     logger.debug(f"unfinished task: {self.task_queue.unfinished_tasks}")
 
@@ -434,12 +506,30 @@ class JobProcessor:
     def retry_thread(self):
         try:
             while True:
-                task = self.retry_queue.get()
-                self.task_queue.put(task)
-                # task_done is not called when a task failed and needs to be retried so if is reinserted into the queue,
-                # the task num will increase by one and become more than the real task number
-                self.task_queue.task_done()
-                time.sleep(self.retry_interval)
+                from api.task_runner import TaskStateHub
+                if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                    return
+                try:
+                    task = self.retry_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                try:
+                    waited = 0.0
+                    while waited < self.retry_interval:
+                        if getattr(self.task_queue, "is_shutdown", False) or (
+                            TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running()
+                        ):
+                            break
+                        step = min(0.1, self.retry_interval - waited)
+                        time.sleep(step)
+                        waited += step
+                    if TaskStateHub().is_web_mode() and not TaskStateHub().is_task_running():
+                        continue
+                    self.task_queue.put(task)
+                except ShutDown:
+                    continue
+                finally:
+                    self.task_queue.task_done()
         except ShutDown:
             pass
 
@@ -467,7 +557,11 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
         pass
 
     job_results: list[StudyResult] = []
+    from api.task_runner import TaskStateHub
+    hub = TaskStateHub()
     for job in jobs:
+        if hub.is_web_mode() and not hub.is_task_running():
+            return ChapterResult.ERROR
         result = process_job(chaoxing, course, job, job_info, speed)
         job_results.append(result)
 
@@ -478,14 +572,37 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
     return ChapterResult.SUCCESS
 
 
+def is_course_finished(course: dict[str, Any], point_list: dict[str, Any] | None = None) -> bool:
+    """判定课程完成度是否已达 100%."""
+    if point_list is None:
+        course_prog = course.get("progress")
+        return course_prog is not None and float(course_prog) >= 100
+    if point_list.get("hasLocked"):
+        return False
+    if point_list.get("is_finished"):
+        return True
+    prog = point_list.get("progress")
+    if prog is not None:
+        return float(prog) >= 100
+    points = point_list.get("points")
+    return bool(points) and all(p.get("has_finished", False) for p in points)
+
+
 def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
     """处理单个课程"""
-    logger.info(f"开始学习课程: {course['title']}")
+    if is_course_finished(course):
+        logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+        return
 
     # 获取当前课程的所有章节
     point_list = chaoxing.get_course_point(
         course["courseId"], course["clazzId"], course["cpi"]
     )
+    if is_course_finished(course, point_list):
+        logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+        return
+
+    logger.info(f"开始学习课程: {course['title']}")
 
     # 为了支持课程任务回滚, 采用下标方式遍历任务点
 
@@ -497,8 +614,9 @@ def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
     for i, point in enumerate(point_list["points"]):
         task = ChapterTask(point=point, index=i, course=course)
         tasks.append(task)
-    p = JobProcessor(chaoxing, tasks, config)
-    p.run()
+    if tasks:
+        p = JobProcessor(chaoxing, tasks, config)
+        p.run()
 
     tqdm.format_sizeof = _old_format_sizeof
 
@@ -506,6 +624,11 @@ def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
 def filter_courses(all_course, course_list):
     """过滤要学习的课程"""
     if not course_list:
+        from api.task_runner import TaskStateHub
+        if TaskStateHub().is_web_mode():
+            ongoing = [c for c in all_course if not c.get("is_ended")]
+            return ongoing if ongoing else list(all_course)
+
         # 手动输入要学习的课程ID列表
         print("*" * 10 + "课程列表" + "*" * 10)
         for course in all_course:
@@ -513,9 +636,10 @@ def filter_courses(all_course, course_list):
         print("*" * 28)
         print("提示: 同一 courseId 下若存在多个班级, 将分别完成。")
         try:
-            course_list = input(
+            raw_input = input(
                 "请输入想要学习的课程列表,以逗号分隔,例: 2151141,189191,198198\n"
-            ).split(",")
+            )
+            course_list = [item.strip() for item in raw_input.split(",") if item.strip()]
         except Exception as e:
             raise InputFormatError("输入格式错误") from e
 
@@ -527,10 +651,14 @@ def filter_courses(all_course, course_list):
         if course["courseId"] in course_list and key not in seen_keys:
             course_task.append(course)
             seen_keys.add(key)
-    
+
     # 如果没有指定课程，则学习所有课程
     if not course_task:
-        course_task = all_course
+        for course in all_course:
+            key = (course["courseId"], course["clazzId"])
+            if key not in seen_keys:
+                course_task.append(course)
+                seen_keys.add(key)
 
     return course_task
 
@@ -547,11 +675,187 @@ def format_time(num, suffix='', divisor=''):
     return f"{mins:02d}:{sec:02d}"
 
 
+_current_study_thread = None
+_current_study_processor = None
+_current_cancel_event = None
+_is_task_running = False
+_task_run_lock = threading.Lock()
+
+
+def start_study_task(common_config: dict[str, Any], tiku_config: dict[str, Any], notification_config: dict[str, Any], config_path: str | None = None) -> bool:
+    global _current_study_thread, _is_task_running, _current_cancel_event
+    with _task_run_lock:
+        if _is_task_running:
+            return False
+        _is_task_running = True
+        _current_cancel_event = threading.Event()
+        cancel_evt = _current_cancel_event
+    from api.task_runner import TaskStateHub
+    TaskStateHub().set_task_running(True)
+
+    def runner():
+        global _is_task_running, _current_study_processor
+        notification = None
+        try:
+            from api.task_runner import TaskStateHub
+            hub = TaskStateHub()
+            if cancel_evt.is_set():
+                return
+            common_config["speed"] = min(2.0, max(1.0, float(common_config.get("speed", hub.get_global_speed() or 1.0))))
+            common_config["notopen_action"] = common_config.get("notopen_action", "retry")
+            add_learning_count = str_to_bool(common_config.get("add_learning_count", False))
+            target_count = int(common_config.get("target_count", 100) or 100)
+
+            notification = Notification()
+            notification.config_set(notification_config or {})
+            notification = notification.get_notification_from_config()
+            notification.init_notification()
+
+            chaoxing = init_chaoxing(common_config, tiku_config, config_path=config_path)
+            _login_state = chaoxing.login(login_with_cookies=common_config.get("use_cookies", False))
+            if not _login_state.get("status"):
+                raise LoginError(str(_login_state.get("msg", "登录校验失败")))
+
+            if cancel_evt.is_set():
+                logger.warning("任务在登录校验后被用户终止")
+                return
+
+            all_course = chaoxing.get_course_list()
+            course_task = filter_courses(all_course, common_config.get("course_list"))
+            logger.info(f"课程列表过滤完毕，当前任务课程数量: {len(course_task)}")
+
+            tasks = []
+            page_total = 0
+            page_finished = 0
+            local_total = 0
+            local_finished = 0
+            for course in course_task:
+                if cancel_evt.is_set():
+                    logger.warning("任务在读取课程章节阶段被用户终止")
+                    return
+                if is_course_finished(course):
+                    logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+                    continue
+                logger.info(f"正在读取课程章节: {course['title']}")
+                point_list = chaoxing.get_course_point(
+                    course["courseId"], course["clazzId"], course["cpi"]
+                )
+                if is_course_finished(course, point_list):
+                    logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+                    continue
+                for i, point in enumerate(point_list["points"]):
+                    local_total += 1
+                    if point.get("has_finished"):
+                        local_finished += 1
+                        continue
+                    tasks.append(ChapterTask(point=point, index=i, course=course))
+                page_total += point_list.get("page_total", 0)
+                page_finished += point_list.get("page_finished", 0)
+
+            if cancel_evt.is_set():
+                logger.warning("任务在执行前被用户终止")
+                return
+
+            # 分母与起始已完成数取课程页统计值，与课程列表完成度同源；缺统计时回退本地章节口径
+            if page_total:
+                hub.set_total_jobs(page_total, completed_base=page_finished)
+            else:
+                hub.set_total_jobs(local_total, completed_base=local_finished)
+
+            if tasks:
+                p = JobProcessor(chaoxing, tasks, common_config)
+                if not cancel_evt.is_set():
+                    _current_study_processor = p
+                    p.run()
+
+            if cancel_evt.is_set():
+                logger.warning("课程学习任务已由用户终止")
+                return
+
+            try:
+                from api.web_server import _course_progress_cache
+                _course_progress_cache.clear()
+            except Exception:
+                pass
+
+            logger.info("所有课程学习任务已完成")
+            notification.send("chaoxing : 所有课程学习任务已完成")
+
+            if add_learning_count and not cancel_evt.is_set():
+                logger.info("刷课完成，开始增加章节学习次数...")
+                common_config["target_count"] = target_count
+                for course in course_task:
+                    if cancel_evt.is_set():
+                        break
+                    increase_learning_count_for_course(chaoxing, course, common_config)
+                if not cancel_evt.is_set():
+                    logger.info("所有课程章节学习次数增加完成")
+                    notification.send("chaoxing : 所有课程章节学习次数增加完成")
+        except Exception as e:
+            logger.error(f"自动化刷课执行异常: {e}")
+            if notification:
+                try:
+                    notification.send(f"chaoxing : 出现错误 {type(e).__name__}: {e}")
+                except Exception:
+                    pass
+        finally:
+            is_active_runner = False
+            with _task_run_lock:
+                if _current_study_thread is threading.current_thread():
+                    _is_task_running = False
+                    _current_study_processor = None
+                    is_active_runner = True
+            if is_active_runner:
+                from api.task_runner import TaskStateHub
+                TaskStateHub().clear_workers()
+                TaskStateHub().set_task_running(False)
+
+    _current_study_thread = threading.Thread(target=runner, daemon=True)
+    _current_study_thread.start()
+    return True
+
+
+def stop_study_task() -> bool:
+    global _is_task_running, _current_study_processor
+    with _task_run_lock:
+        if not _is_task_running:
+            return False
+        _is_task_running = False
+        if _current_cancel_event:
+            _current_cancel_event.set()
+        if _current_study_processor:
+            try:
+                _current_study_processor.shutdown_queues(immediate=True)
+            except Exception:
+                pass
+        _current_study_processor = None
+        from api.task_runner import TaskStateHub
+        TaskStateHub().clear_workers()
+        TaskStateHub().set_task_running(False, stopped=True)
+        return True
+
+
 def main():
     """主程序入口"""
     try:
+        args = parse_args()
+        if args.webui:
+            from api.logger import setup_webui_logging
+            setup_webui_logging()
+
+            from api.web_server import create_app
+            host = args.host
+            port = args.port
+            app_cfg = {}
+            if args.config:
+                app_cfg["DEFAULT_CONFIG_PATH"] = os.path.abspath(args.config)
+            app = create_app(test_config=app_cfg or None)
+            print(f"Web 控制台已在后台运行，请通过浏览器访问: http://{host}:{port}")
+            app.run(host=host, port=port, debug=False)
+            return
+
         # 初始化配置
-        common_config, tiku_config, notification_config, config_path = init_config()
+        common_config, tiku_config, notification_config, config_path = init_config(args=args)
 
         # 强制播放按照配置文件调节
         common_config["speed"] = min(2.0, max(1.0, common_config.get("speed", 1.0)))
@@ -589,17 +893,24 @@ def main():
 
         tasks = []
         for course in course_task:
+            if is_course_finished(course):
+                logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+                continue
             logger.info(f"正在读取课程章节: {course['title']}")
             point_list = chaoxing.get_course_point(
                 course["courseId"], course["clazzId"], course["cpi"]
             )
+            if is_course_finished(course, point_list):
+                logger.info(f"课程 {course['title']} 完成度为 100%，直接跳过")
+                continue
             for i, point in enumerate(point_list["points"]):
                 task = ChapterTask(point=point, index=i, course=course)
                 tasks.append(task)
 
         # 全局并发执行所有课程的任务点
-        p = JobProcessor(chaoxing, tasks, common_config)
-        p.run()
+        if tasks:
+            p = JobProcessor(chaoxing, tasks, common_config)
+            p.run()
 
         tqdm.format_sizeof = _old_format_sizeof
 

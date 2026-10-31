@@ -1,46 +1,94 @@
-name: CI
+name: Release
 
 on:
   push:
-
-  # Allows you to run this workflow manually from the Actions tab
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
   workflow_dispatch:
 
-jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            architecture: 'x64'
-            name: 'win64'
+permissions:
+  contents: write
 
+jobs:
+  release:
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          architecture: ${{matrix.architecture}}
+          architecture: 'x64'
+
+      - name: Check version status
+        id: check_ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "
+          import os, tomllib, subprocess
+
+          ref_type = os.environ.get('GITHUB_REF_TYPE', '')
+          ref_name = os.environ.get('GITHUB_REF_NAME', '')
+          with open('pyproject.toml', 'rb') as f:
+              py_ver = 'v' + tomllib.load(f)['project']['version']
+
+          tag = ref_name if ref_type == 'tag' else py_ver
+          print(f'Checking release status for {tag}...')
+
+          res = subprocess.run(['gh', 'release', 'view', tag], capture_output=True)
+          out_file = os.environ.get('GITHUB_OUTPUT', '')
+          if res.returncode == 0 and ref_type != 'tag':
+              print(f'Release {tag} already exists. Skipping build.')
+              with open(out_file, 'a', encoding='utf-8') as out:
+                  out.write('should_release=false\n')
+          else:
+              print(f'New version detected: {tag}. Proceeding.')
+              with open(out_file, 'a', encoding='utf-8') as out:
+                  out.write('should_release=true\n')
+                  out.write(f'tag={tag}\n')
+          "
 
       - name: Install requirements
+        if: steps.check_ver.outputs.should_release == 'true'
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build win bin
-        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
+      - name: Run tests
+        if: steps.check_ver.outputs.should_release == 'true'
+        run: |
+          python -m unittest discover tests
+
+      - name: Build Windows binary
+        if: steps.check_ver.outputs.should_release == 'true'
+        run: |
+          pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --add-data "web;web" --add-data "config_template.ini;." --hidden-import=chardet
 
       - name: Create release package
+        if: steps.check_ver.outputs.should_release == 'true'
         run: |
           mkdir release
           copy dist\chaoxing.exe release\
           copy config_template.ini release\
           cd release
-          7z a -tzip chaoxing.zip *
+          7z a -tzip chaoxing-windows-amd64.zip *
 
-      - uses: actions/upload-artifact@v4
+      - name: Publish GitHub Release
+        if: steps.check_ver.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.name }}
-          path: 'release/chaoxing.zip'
+          tag_name: ${{ steps.check_ver.outputs.tag }}
+          name: Release ${{ steps.check_ver.outputs.tag }}
+          files: |
+            release/chaoxing-windows-amd64.zip
+            dist/chaoxing.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

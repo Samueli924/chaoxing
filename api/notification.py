@@ -146,8 +146,13 @@ class DefaultNotification(NotificationService):
             if not provider_name:
                 raise KeyError("未指定通知服务提供商")
 
-            # 获取对应的通知服务类
-            provider_class = globals().get(provider_name)
+            providers = {
+                "ServerChan": ServerChan,
+                "Qmsg": Qmsg,
+                "Bark": Bark,
+                "Telegram": Telegram,
+            }
+            provider_class = providers.get(provider_name)
             if not provider_class:
                 logger.error(f"未找到名为 {provider_name} 的通知服务提供商")
                 self.disabled = True

@@ -100,12 +100,18 @@ class CxCaptcha:
         api = self.host + self.api['get']
         random_t = randint(0, 2147483647)
 
-        res = self.s.get(api, params={'t': random_t})
-        if res.status_code == 200 and res.headers['Content-Type'] == 'image/png':
-            return res.content
-        else:
-            # 提供的Cookies或UA存在问题，导致未能正常获取验证码内容
+        try:
+            res = self.s.get(api, params={'t': random_t}, timeout=5)
+            if res.status_code == 200 and res.headers.get('Content-Type') == 'image/png':
+                return res.content
+            if res.status_code == 404:
+                logger.warning("超星验证码接口返回404，该验证码接口已失效")
+                return None
+        except Exception as e:
+            logger.warning(f"获取验证码网络异常: {e}")
             return None
+
+        return None
 
     def submitCaptcha(self, cap_token: str) -> bool:
         """
@@ -122,11 +128,15 @@ class CxCaptcha:
             'ucode': cap_token,
             'app': 0
         }
-        res = self.s.get(api, params=params)
-        if res.status_code == 302:
-            return True
-        else:
+        try:
+            res = self.s.get(api, params=params, allow_redirects=False, timeout=5)
+            if res.status_code == 302 or (res.history and res.history[0].status_code == 302):
+                return True
+        except Exception as e:
+            logger.warning(f"提交验证码网络异常: {e}")
             return False
+
+        return False
 
     def recognition(self, img: bytes) -> str:
         """

@@ -1,0 +1,16 @@
+.git
+.github
+tests
+accounts
+logs
+*.log
+cookies.txt
+config.ini
+cache.json
+__pycache__
+*.pyc
+.venv
+venv
+dist
+build
+release
