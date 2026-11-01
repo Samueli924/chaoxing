@@ -577,36 +577,132 @@ class TikuYanxi(Tiku):
         self._token = None
         self._token_index = 0  # token队列计数器
         self._times = 100  # 查询次数剩余, 初始化为100, 查询后校对修正
+        self._timeout = 30  # 单次查询超时(秒), 避免服务端挂起拖死工作线程
+        self._query_retry_times = 3  # 瞬时失败(网络/服务)重试次数
+        self._retry_backoff = 1.5  # 重试退避基数(秒)
 
     def _query(self, q_info: dict):
-        res = requests.get(
-            self.api,
-            params={
-                'question': q_info['title'],
-                'token': self._token,
-                # 'type':q_info['type'], #修复478题目类型与答案类型不符（不想写后处理了）
-                # 没用，就算有type和options，言溪题库还是可能返回类型不符，问了客服，type仅用于收集
-            },
-            verify=False
-        )
-        if res.status_code == 200:
-            res_json = res.json()
-            if not res_json['code']:
+        """查询言溪题库, 命中返回答案文本, 未命中/失败返回 None.
+
+        仅对瞬时故障(网络异常/429/5xx/响应无法解析)重试; 401/403 属于凭据
+        问题, 用同一 token 重试只会白等退避时间, 直接放弃并交给上层切换题库.
+        """
+        for attempt in range(1, self._query_retry_times + 1):
+            res = self._request_once(q_info, attempt)
+            if res is None:
+                # 网络层异常已在上一步重试/记录, 此处为放弃本次查询
+                if attempt < self._query_retry_times:
+                    self._sleep_retry(attempt, '查询异常')
+                    continue
+                return None
+
+            parsed = self._parse_response(res)
+            if parsed is None:
+                # 401/403: token 无效/无权限, 换 token 由上层处理, 重试无意义
+                if res.status_code in (401, 403):
+                    logger.error(f'{self.name}鉴权失败(状态码 {res.status_code}), 放弃本次查询')
+                    return None
+                # 非200或无法解析: 属于瞬时故障, 重试
+                if attempt < self._query_retry_times:
+                    self._sleep_retry(attempt, '响应异常')
+                    continue
+                return None
+
+            code = parsed['code']
+            data = parsed['data'] or {}
+            msg = parsed['message']
+            answer = data.get('answer')
+
+            if not code:
                 # 如果是因为TOKEN次数到期, 则更换token
-                if self._times == 0 or '次数不足' in res_json['data']['answer']:
+                answer_text = str(answer or '')
+                if self._times == 0 or '次数不足' in answer_text:
                     logger.info(f'TOKEN查询次数不足, 将会更换并重新搜题')
                     self._token_index += 1
                     self.load_token()
-                    # 重新查询
+                    # 重新查询(重置attempt计数, 交由新token处理) 
                     return self._query(q_info)
+                remaining = data.get('times', f'{self._times}(仅参考)')
                 logger.error(
-                    f'{self.name}查询失败:\n\t剩余查询数{res_json["data"].get("times", f"{self._times}(仅参考)")}:\n\t消息:{res_json["message"]}')
+                    f'{self.name}查询失败:\n\t剩余查询数{remaining}\n\t消息:{msg}')
                 return None
-            self._times = res_json["data"].get("times", self._times)
-            return res_json['data']['answer'].strip()
-        else:
-            logger.error(f'{self.name}查询失败:\n{res.text}')
+
+            # 查询成功
+            if data.get('times') is not None:
+                self._times = data['times']
+            if answer is None or str(answer).strip() == '':
+                logger.info(f'{self.name}未命中: {msg}')
+                return None
+            return str(answer).strip()
+
         return None
+
+    def _request_once(self, q_info: dict, attempt: int):
+        """发送单次查询请求, 网络异常时记录并按需重试."""
+        try:
+            return requests.get(
+                self.api,
+                params={
+                    'question': q_info['title'],
+                    'token': self._token,
+                    # 'type':q_info['type'], #修复478题目类型与答案类型不符（不想写后处理了）
+                    # 没用，就算有type和options，言溪题库还是可能返回类型不符，问了客服，type仅用于收集
+                },
+                verify=False,
+                timeout=self._timeout
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(f'{self.name}查询异常 ({attempt}/{self._query_retry_times}): {e}')
+            return None
+
+    def _parse_response(self, res: requests.Response):
+        """解析言溪响应, 返回 {code, data, message}; 无法解析时返回 None.
+
+        code 统一归一化为 int, data 统一校验为 dict 或 None, 避免上游返回
+        "0"/[] 等异常类型时在 _query 里被误判为成功或抛 AttributeError.
+        """
+        if res.status_code != 200:
+            logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
+            return None
+        try:
+            res_json = res.json()
+        except ValueError:
+            logger.error(f'{self.name}查询失败: 响应不是有效JSON: {res.text}')
+            return None
+        if not isinstance(res_json, dict):
+            logger.error(f'{self.name}查询失败: 响应JSON格式异常')
+            return None
+
+        code = res_json.get('code', 0)
+        if isinstance(code, str):
+            try:
+                code = int(code.strip())
+            except (ValueError, AttributeError):
+                logger.error(f'{self.name}查询失败: code格式异常 {code!r}')
+                return None
+        if isinstance(code, bool) or not isinstance(code, int):
+            logger.error(f'{self.name}查询失败: code格式异常 {code!r}')
+            return None
+
+        data = res_json.get('data')
+        if data is not None and not isinstance(data, dict):
+            logger.error(f'{self.name}查询失败: data格式异常 {type(data).__name__}')
+            return None
+
+        message = res_json.get('message', '')
+        if not isinstance(message, str):
+            message = str(message)
+
+        return {
+            'code': code,
+            'data': data,
+            'message': message,
+        }
+
+    def _sleep_retry(self, attempt: int, reason: str) -> None:
+        sleep_seconds = self._retry_backoff * attempt
+        logger.warning(f'{self.name}{reason}，{sleep_seconds:.1f}s 后重试 ({attempt}/{self._query_retry_times})')
+        time.sleep(sleep_seconds)
 
     def load_token(self):
         token_list = self._conf['tokens'].split(',')
