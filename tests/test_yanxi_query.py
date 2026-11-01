@@ -161,5 +161,112 @@ class YanxiQueryFailureTest(unittest.TestCase):
         self.assertEqual(tiku._token_index, 1)
 
 
+class YanxiAuthNoRetryTest(unittest.TestCase):
+    """401/403 属于凭据问题, 用同一 token 重试只会白等退避时间."""
+
+    def test_401_returns_none_without_retry(self):
+        """401 只发一次请求就放弃, 不重试."""
+        tiku = _make_tiku()
+        resp = _fake_response(status_code=401, text='Unauthorized')
+        with patch.object(requests, 'get', return_value=resp) as mock_get:
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 1)
+
+    def test_403_returns_none_without_retry(self):
+        """403 只发一次请求就放弃, 不重试."""
+        tiku = _make_tiku()
+        resp = _fake_response(status_code=403, text='Forbidden')
+        with patch.object(requests, 'get', return_value=resp) as mock_get:
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 1)
+
+    def test_429_still_retries(self):
+        """429 是瞬时故障, 应保留重试."""
+        tiku = _make_tiku()
+        resp = _fake_response(status_code=429, text='Too Many Requests')
+        with patch.object(requests, 'get', return_value=resp) as mock_get:
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, tiku._query_retry_times)
+
+    def test_500_still_retries(self):
+        """5xx 是瞬时故障, 应保留重试."""
+        tiku = _make_tiku()
+        resp = _fake_response(status_code=502, text='Bad Gateway')
+        with patch.object(requests, 'get', return_value=resp) as mock_get:
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, tiku._query_retry_times)
+
+
+class YanxiParseTypeValidationTest(unittest.TestCase):
+    """_parse_response 需归一化 code 类型并校验 data 类型."""
+
+    def test_data_is_list_does_not_raise(self):
+        """data 为非空 list 时不应抛 AttributeError, 直接判失败."""
+        tiku = _make_tiku()
+        resp = _fake_response(json_data={'code': 1, 'data': ['a', 'b'], 'message': 'ok'})
+        with patch.object(requests, 'get', return_value=resp):
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+
+    def test_string_code_zero_is_failure(self):
+        """code 为字符串 "0" 时应按失败处理, 不能当成成功扣次数."""
+        tiku = _make_tiku()
+        tiku._times = 50
+        resp = _fake_response(json_data={
+            'code': '0',
+            'data': {'answer': '假的答案', 'times': 49},
+            'message': '请求失败',
+        })
+        with patch.object(requests, 'get', return_value=resp):
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+        self.assertEqual(tiku._times, 50, '失败响应不应更新剩余次数')
+
+    def test_string_code_one_is_success(self):
+        """code 为字符串 "1" 时归一化为 int, 按成功处理."""
+        tiku = _make_tiku()
+        resp = _fake_response(json_data={
+            'code': '1',
+            'data': {'answer': 'C', 'times': 42},
+            'message': 'ok',
+        })
+        with patch.object(requests, 'get', return_value=resp):
+            result = tiku._query({'title': '某题'})
+        self.assertEqual(result, 'C')
+        self.assertEqual(tiku._times, 42)
+
+    def test_non_numeric_code_is_failure(self):
+        """code 为无法转 int 的字符串时判失败, 不抛异常."""
+        tiku = _make_tiku()
+        resp = _fake_response(json_data={
+            'code': 'error',
+            'data': {'answer': 'X', 'times': 10},
+            'message': 'ok',
+        })
+        with patch.object(requests, 'get', return_value=resp):
+            result = tiku._query({'title': '某题'})
+        self.assertIsNone(result)
+
+    def test_parse_response_normalizes_fields(self):
+        """_parse_response 直接校验返回值类型契约."""
+        tiku = _make_tiku()
+        resp = _fake_response(json_data={'code': '1', 'data': {'answer': 'A'}, 'message': 123})
+        parsed = tiku._parse_response(resp)
+        self.assertIsNotNone(parsed)
+        self.assertIsInstance(parsed['code'], int)
+        self.assertIsInstance(parsed['data'], dict)
+        self.assertIsInstance(parsed['message'], str)
+
+    def test_parse_response_rejects_list_data(self):
+        """data 为 list 时 _parse_response 直接返回 None."""
+        tiku = _make_tiku()
+        resp = _fake_response(json_data={'code': 1, 'data': [], 'message': 'ok'})
+        self.assertIsNone(tiku._parse_response(resp))
+
+
 if __name__ == '__main__':
     unittest.main()

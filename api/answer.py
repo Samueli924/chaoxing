@@ -582,6 +582,11 @@ class TikuYanxi(Tiku):
         self._retry_backoff = 1.5  # 重试退避基数(秒)
 
     def _query(self, q_info: dict):
+        """查询言溪题库, 命中返回答案文本, 未命中/失败返回 None.
+
+        仅对瞬时故障(网络异常/429/5xx/响应无法解析)重试; 401/403 属于凭据
+        问题, 用同一 token 重试只会白等退避时间, 直接放弃并交给上层切换题库.
+        """
         for attempt in range(1, self._query_retry_times + 1):
             res = self._request_once(q_info, attempt)
             if res is None:
@@ -593,6 +598,10 @@ class TikuYanxi(Tiku):
 
             parsed = self._parse_response(res)
             if parsed is None:
+                # 401/403: token 无效/无权限, 换 token 由上层处理, 重试无意义
+                if res.status_code in (401, 403):
+                    logger.error(f'{self.name}鉴权失败(状态码 {res.status_code}), 放弃本次查询')
+                    return None
                 # 非200或无法解析: 属于瞬时故障, 重试
                 if attempt < self._query_retry_times:
                     self._sleep_retry(attempt, '响应异常')
@@ -647,7 +656,11 @@ class TikuYanxi(Tiku):
             return None
 
     def _parse_response(self, res: requests.Response):
-        """解析言溪响应, 返回 {code, data, message}; 无法解析时返回 None."""
+        """解析言溪响应, 返回 {code, data, message}; 无法解析时返回 None.
+
+        code 统一归一化为 int, data 统一校验为 dict 或 None, 避免上游返回
+        "0"/[] 等异常类型时在 _query 里被误判为成功或抛 AttributeError.
+        """
         if res.status_code != 200:
             logger.error(f'{self.name}查询失败: 状态码 {res.status_code}, 响应: {res.text}')
             return None
@@ -659,10 +672,31 @@ class TikuYanxi(Tiku):
         if not isinstance(res_json, dict):
             logger.error(f'{self.name}查询失败: 响应JSON格式异常')
             return None
+
+        code = res_json.get('code', 0)
+        if isinstance(code, str):
+            try:
+                code = int(code.strip())
+            except (ValueError, AttributeError):
+                logger.error(f'{self.name}查询失败: code格式异常 {code!r}')
+                return None
+        if isinstance(code, bool) or not isinstance(code, int):
+            logger.error(f'{self.name}查询失败: code格式异常 {code!r}')
+            return None
+
+        data = res_json.get('data')
+        if data is not None and not isinstance(data, dict):
+            logger.error(f'{self.name}查询失败: data格式异常 {type(data).__name__}')
+            return None
+
+        message = res_json.get('message', '')
+        if not isinstance(message, str):
+            message = str(message)
+
         return {
-            'code': res_json.get('code', 0),
-            'data': res_json.get('data'),
-            'message': res_json.get('message', ''),
+            'code': code,
+            'data': data,
+            'message': message,
         }
 
     def _sleep_retry(self, attempt: int, reason: str) -> None:
