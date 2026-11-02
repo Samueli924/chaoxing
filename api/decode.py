@@ -154,7 +154,9 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
     return point_list
 
 
-def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def decode_course_card(
+    html_text: str, force_video_time: bool = False
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     解析任务点列表页面，提取任务点信息
     
@@ -186,7 +188,7 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
-    job_list = _process_attachment_cards(cards)
+    job_list = _process_attachment_cards(cards, force_video_time=force_video_time)
 
     return job_list, job_info
 
@@ -217,12 +219,15 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_attachment_cards(
+    cards: List[Dict[str, Any]], force_video_time: bool = False
+) -> List[Dict[str, Any]]:
     """
     处理所有附件任务卡片，强化直播任务识别逻辑
     
     Args:
         cards: 附件任务卡片列表
+        force_video_time: 是否开启强制刷音视频时长模式
         
     Returns:
         处理后的任务列表
@@ -230,12 +235,32 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
     job_list = []
 
     for index, card in enumerate(cards):
-        # 跳过已通过的任务
+        card_type = card.get("type", "").lower()
+        property_data = card.get("property", {}) or {}
+        prop_type = property_data.get("type", "").lower()
+        prop_module = property_data.get("module", "").lower()
+        resource_type = property_data.get("resourceType", "").lower()
+
+        is_video_or_audio = (
+            card_type in ("video", "audio")
+            or prop_module in ("insertvideo", "insertaudio")
+            or prop_type in (".mp4", ".mp3", "video", "audio")
+        )
+
+        # 跳过已通过的任务（若开启强制刷音视频时长，则不跳过音视频任务）
         if card.get("isPassed", False):
-            continue
+            if not (force_video_time and is_video_or_audio):
+                continue
 
         # 处理无job字段的特殊任务
         if card.get("job") is None:
+            if force_video_time and is_video_or_audio:
+                if "otherInfo" in card:
+                    card["otherInfo"] = card["otherInfo"].split("&")[0]
+                video_job = _process_video_task(card)
+                if video_job:
+                    job_list.append(video_job)
+                continue
             # 尝试识别阅读任务
             read_job = _process_read_task(card)
             if read_job:
@@ -248,12 +273,6 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             logger.trace("Fixing other info...")
             card["otherInfo"] = card["otherInfo"].split("&")[0]
             logger.trace(f"New info: {card['otherInfo']}")
-
-        # 多维度判断是否为直播任务
-        card_type = card.get("type", "").lower()
-        property_data = card.get("property", {})
-        prop_type = property_data.get("type", "").lower()
-        resource_type = property_data.get("resourceType", "").lower()
 
         # 直播任务特征：包含liveId、streamName等字段，
         # 或类型标识包含live（因为live和video有点类似，怕超星又搞出什么幺蛾子就加了一些关键字识别）
@@ -272,7 +291,7 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             live_job = _process_live_task(card)
             if live_job:
                 job_list.append(live_job)
-        elif card_type == "video":
+        elif card_type == "video" or is_video_or_audio:
             video_job = _process_video_task(card)
             if video_job:
                 job_list.append(video_job)
@@ -334,16 +353,28 @@ def _process_read_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def _process_video_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """处理视频类型任务"""
     try:
+        prop = card.get("property", {}) or {}
+        mid = card.get("mid") or prop.get("mid")
+        objectid = (
+            card.get("objectId")
+            or card.get("objectid")
+            or prop.get("objectid")
+            or prop.get("objectId", "")
+        )
+        if not mid or not objectid:
+            logger.warning("出现转码失败视频，已跳过...")
+            return None
+        jobid = card.get("jobid") or prop.get("jobid") or prop.get("_jobid", "")
         return {
             "type": "video",
-            "jobid": card.get("jobid", ""),
-            "name": card.get("property", {}).get("name", ""),
+            "jobid": jobid,
+            "name": prop.get("name", ""),
             "otherinfo": card.get("otherInfo", ""),
-            "mid": card["mid"],  # 必须字段，如果不存在会抛出异常
-            "objectid": card.get("objectId", ""),
+            "mid": mid,
+            "objectid": objectid,
             "aid": card.get("aid", ""),
             "playTime": card.get("playTime", 0),
-            "rt": card.get("property", {}).get("rt", ""),
+            "rt": prop.get("rt", ""),
             "attDuration": card.get("attDuration", ""),
             "attDurationEnc": card.get("attDurationEnc", ""),
             "videoFaceCaptureEnc": card.get("videoFaceCaptureEnc", ""),

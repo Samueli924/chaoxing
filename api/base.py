@@ -386,6 +386,7 @@ class Chaoxing:
         self.cipher = AESCipher()
         self.tiku = tiku
         self.kwargs = kwargs
+        self.force_video_time = bool(kwargs.get("force_video_time", False))
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
@@ -636,7 +637,9 @@ class Chaoxing:
                 logger.error(_resp.text)
                 return [], {}
 
-            _job_list, _job_info = decode_course_card(_resp.text)
+            _job_list, _job_info = decode_course_card(
+                _resp.text, force_video_time=self.force_video_time
+            )
             if _job_info.get("notOpen", False):
                 # 直接返回, 节省一次请求
                 logger.info("该章节未开放")
@@ -645,7 +648,7 @@ class Chaoxing:
             job_list += _job_list
             job_info.update(_job_info)
 
-        if not job_list:
+        if not job_list and not point.get("has_finished", False):
             self.study_emptypage(course, point)
 
         logger.trace(f"原始任务点列表内容:\n{_resp.text}")
@@ -769,7 +772,7 @@ class Chaoxing:
                 resp = perform_request(rt)
                 if resp.status_code == 200:
                     logger.trace(resp.text)
-                    return resp.json()["isPassed"], 200
+                    return resp.json().get("isPassed", False), 200
                 elif resp.status_code == 403:
                     logger.warning("出现403报错, 正常尝试切换rt")
                 else:
@@ -781,7 +784,7 @@ class Chaoxing:
 
         if resp.status_code == 200:
             logger.trace(resp.text)
-            return resp.json()["isPassed"], 200
+            return resp.json().get("isPassed", False), 200
 
         elif resp.status_code == 403:
             logger.debug(
@@ -873,30 +876,44 @@ class Chaoxing:
         # Time in the video (can be scaled with the speed factor): duration, play_time, last_log_time, wait_time
 
         duration = int(_video_info["duration"])
-        play_time = int(_job["playTime"]) // 1000
+        play_time = 0 if self.force_video_time else int(_job["playTime"]) // 1000
         last_log_time = 0
         last_iter = time.time()
-        wait_time = int(random.uniform(30, 90))
+        wait_time = int(random.uniform(30, 58)) if self.force_video_time else int(random.uniform(30, 90))
 
-        logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
+        logger.info(
+            f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s"
+            + (" [强制刷时长模式]" if self.force_video_time else "")
+        )
+
+        if duration <= 0:
+            logger.info("视频时长为0，跳过: {}", _job['name'])
+            return StudyResult.SUCCESS
 
         forbidden_retry = 0
         max_forbidden_retry = 2
 
-        passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
-                                                _type, headers=headers, _isdrag=4)
-        if passed:
-            logger.info("任务瞬间完成: {}", _job['name'])
-            return StudyResult.SUCCESS
+        if not self.force_video_time:
+            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
+                                                    _type, headers=headers, _isdrag=4)
+            if passed:
+                logger.info("任务瞬间完成: {}", _job['name'])
+                return StudyResult.SUCCESS
+        else:
+            # 强制刷时长模式：禁用秒过，先上报 0s 起始播放心跳
+            passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, 0,
+                                                    _type, headers=headers, _isdrag=0)
+            last_iter = time.time()
 
         pbar = None
+        finished_full_duration = False
         try:
-            while not passed:
+            while not passed or (self.force_video_time and not finished_full_duration):
                 # Sometimes the last request needs to be sent several times to complete the task
                 if play_time - last_log_time >= wait_time or play_time == duration:
-
+                    isdrag_val = (4 if int(play_time) >= duration else 0) if self.force_video_time else 3
                     passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
-                                                            int(play_time), _type, headers=headers)
+                                                            int(play_time), _type, _isdrag=isdrag_val, headers=headers)
 
                     if state == 403:
                         if forbidden_retry >= max_forbidden_retry:
@@ -914,7 +931,7 @@ class Chaoxing:
                             _dtoken = refreshed_meta["dtoken"]
                             duration = int(refreshed_meta["duration"])
                             refreshed_play_time = refreshed_meta.get("playTime")
-                            if refreshed_play_time is not None:
+                            if refreshed_play_time is not None and not self.force_video_time:
                                 play_time = int(refreshed_play_time)
 
                             logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, duration, play_time)
@@ -927,7 +944,12 @@ class Chaoxing:
                     elif not passed and state != 200:
                         return StudyResult.ERROR
 
-                    wait_time = int(random.uniform(30, 90))
+                    if self.force_video_time and int(play_time) >= duration and state == 200:
+                        finished_full_duration = True
+                        passed = True
+                        break
+
+                    wait_time = int(random.uniform(30, 58)) if self.force_video_time else int(random.uniform(30, 90))
                     last_log_time = play_time
 
                     logger.trace("Progress logged")
@@ -1646,13 +1668,33 @@ class Chaoxing:
                 # 第 1 步：从 HTML 中提取 setlog URL 并执行（真正的计次 API）
                 self._extract_and_send_setlog(html_text)
 
-                # 第 2 步：立即发送 monitor 心跳包（模拟 fn()）
+                # 第 2 步：请求章节卡片内容页（触发服务端章节阅读/looktime统计）
+                try:
+                    _session = SessionManager.get_session()
+                    _session.get(
+                        "https://mooc1.chaoxing.com/mooc-ans/knowledge/cards",
+                        params={
+                            "clazzid": course["clazzId"],
+                            "courseid": course["courseId"],
+                            "knowledgeid": point["id"],
+                            "num": "0",
+                            "ut": "s",
+                            "cpi": course["cpi"],
+                            "v": "2025-0424-1038-3",
+                            "mooc2": 1,
+                        },
+                        timeout=8,
+                    )
+                except Exception as e:
+                    logger.trace(f"Chapter cards read ping failed (non-critical): {e}")
+
+                # 第 3 步：立即发送 monitor 心跳包（模拟 fn()）
                 self._send_monitor_heartbeat(course, point)
 
-                # 第 3 步：停留 30 秒（模拟前端 setInterval 间隔）
+                # 第 4 步：停留 30 秒（模拟前端 setInterval 间隔）
                 time.sleep(30)
 
-                # 第 4 步：再次发送 monitor 心跳包（模拟 setInterval 触发的第二次心跳）
+                # 第 5 步：再次发送 monitor 心跳包（模拟 setInterval 触发的第二次心跳）
                 self._send_monitor_heartbeat(course, point)
 
                 total += 1
