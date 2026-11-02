@@ -108,6 +108,12 @@ def parse_args():
         default=100,
         help="章节学习次数目标总次数 (默认100)",
     )
+    parser.add_argument(
+        "-fvt",
+        "--force-video-time",
+        action="store_true",
+        help="强制刷音视频时长模式：禁用视频秒过，并重新完整播放已完成章节中的音视频以累计观看时长",
+    )
 
     # 在解析之前捕获 -h 的行为
     if len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}:
@@ -160,6 +166,8 @@ def load_config_from_file(config_path):
             common_config["add_learning_count"] = str_to_bool(common_config["add_learning_count"])
         if "target_count" in common_config:
             common_config["target_count"] = int(common_config["target_count"])
+        if "force_video_time" in common_config:
+            common_config["force_video_time"] = str_to_bool(common_config["force_video_time"])
         if "username" in common_config and common_config["username"] is not None:
             common_config["username"] = common_config["username"].strip()
         if "password" in common_config and common_config["password"] is not None:
@@ -193,6 +201,7 @@ def build_config_from_args(args):
         "retry_interval": args.retry_interval or 1.0,
         "add_learning_count": args.add_learning_count,
         "target_count": args.target_count,
+        "force_video_time": args.force_video_time,
     }
     return common_config, {}, {}
 
@@ -203,6 +212,8 @@ def init_config():
 
     if args.config:
         common_config, tiku_config, notification_config = load_config_from_file(args.config)
+        if args.force_video_time:
+            common_config["force_video_time"] = True
     else:
         common_config, tiku_config, notification_config = build_config_from_args(args)
     return common_config, tiku_config, notification_config, args.config
@@ -251,6 +262,9 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
     # 是否允许自动重做(默认false: 仅检查并记录成绩, 适用于只允许作答一次的课程)
     work_redo_enabled = common_config.get("work_redo_enabled", False)
 
+    # 是否开启强制刷音视频时长模式
+    force_video_time = str_to_bool(common_config.get("force_video_time", False))
+
     # 实例化超星API
     chaoxing = Chaoxing(
         account=account,
@@ -258,6 +272,7 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
         query_delay=query_delay,
         work_max_retries=work_max_retries,
         work_redo_enabled=work_redo_enabled,
+        force_video_time=force_video_time,
     )
 
     return chaoxing
@@ -447,7 +462,7 @@ class JobProcessor:
 def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
-    if point["has_finished"]:
+    if point["has_finished"] and not getattr(chaoxing, "force_video_time", False):
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
         return ChapterResult.SUCCESS
 
@@ -519,14 +534,15 @@ def filter_courses(all_course, course_list):
         except Exception as e:
             raise InputFormatError("输入格式错误") from e
 
-    # 筛选需要学习的课程
+    # 筛选需要学习的课程（按 course_list 指定的先后顺序排列）
     course_task = []
     seen_keys = set()
-    for course in all_course:
-        key = (course["courseId"], course["clazzId"])
-        if course["courseId"] in course_list and key not in seen_keys:
-            course_task.append(course)
-            seen_keys.add(key)
+    for cid in course_list:
+        for course in all_course:
+            key = (course["courseId"], course["clazzId"])
+            if course["courseId"] == cid and key not in seen_keys:
+                course_task.append(course)
+                seen_keys.add(key)
     
     # 如果没有指定课程，则学习所有课程
     if not course_task:
@@ -588,14 +604,16 @@ def main():
         tqdm.format_sizeof = format_time
 
         tasks = []
+        task_index = 0
         for course in course_task:
             logger.info(f"正在读取课程章节: {course['title']}")
             point_list = chaoxing.get_course_point(
                 course["courseId"], course["clazzId"], course["cpi"]
             )
-            for i, point in enumerate(point_list["points"]):
-                task = ChapterTask(point=point, index=i, course=course)
+            for point in point_list["points"]:
+                task = ChapterTask(point=point, index=task_index, course=course)
                 tasks.append(task)
+                task_index += 1
 
         # 全局并发执行所有课程的任务点
         p = JobProcessor(chaoxing, tasks, common_config)
