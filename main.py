@@ -212,6 +212,8 @@ def init_config():
 
     if args.config:
         common_config, tiku_config, notification_config = load_config_from_file(args.config)
+        if args.force_video_time:
+            common_config["force_video_time"] = True
     else:
         common_config, tiku_config, notification_config = build_config_from_args(args)
     return common_config, tiku_config, notification_config, args.config
@@ -532,14 +534,15 @@ def filter_courses(all_course, course_list):
         except Exception as e:
             raise InputFormatError("输入格式错误") from e
 
-    # 筛选需要学习的课程
+    # 筛选需要学习的课程（按 course_list 指定的先后顺序排列）
     course_task = []
     seen_keys = set()
-    for course in all_course:
-        key = (course["courseId"], course["clazzId"])
-        if course["courseId"] in course_list and key not in seen_keys:
-            course_task.append(course)
-            seen_keys.add(key)
+    for cid in course_list:
+        for course in all_course:
+            key = (course["courseId"], course["clazzId"])
+            if course["courseId"] == cid and key not in seen_keys:
+                course_task.append(course)
+                seen_keys.add(key)
     
     # 如果没有指定课程，则学习所有课程
     if not course_task:
@@ -601,14 +604,16 @@ def main():
         tqdm.format_sizeof = format_time
 
         tasks = []
+        task_index = 0
         for course in course_task:
             logger.info(f"正在读取课程章节: {course['title']}")
             point_list = chaoxing.get_course_point(
                 course["courseId"], course["clazzId"], course["cpi"]
             )
-            for i, point in enumerate(point_list["points"]):
-                task = ChapterTask(point=point, index=i, course=course)
+            for point in point_list["points"]:
+                task = ChapterTask(point=point, index=task_index, course=course)
                 tasks.append(task)
+                task_index += 1
 
         # 全局并发执行所有课程的任务点
         p = JobProcessor(chaoxing, tasks, common_config)

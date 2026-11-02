@@ -382,6 +382,7 @@ def normalize_answer_text(ans) -> str:
 
 class Chaoxing:
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
+        """初始化超星客户端实例."""
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
@@ -611,6 +612,7 @@ class Chaoxing:
         return decode_course_point(_resp.text)
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
+        """获取指定章节下的任务点列表与配置信息."""
         _session = SessionManager.get_session()
         self.rate_limiter.limit_rate()
         job_list = []
@@ -674,7 +676,7 @@ class Chaoxing:
             _isdrag: int = 3,
             headers: Optional[dict] = None,
     ) -> tuple[bool, int]:
-
+        """向超星多媒体服务端上报音视频播放进度并返回 (是否通过, HTTP状态码)."""
         if headers is None:
             logger.warning("null headers")
             headers = gc.VIDEO_HEADERS
@@ -855,8 +857,15 @@ class Chaoxing:
                 logger.trace(f"关闭进度条失败: {e}")
         return None
 
+    def _get_wait_time(self) -> int:
+        """获取音视频进度上报的随机等待间隔秒数."""
+        if self.force_video_time:
+            return 30 + secrets.randbelow(29)
+        return 30 + secrets.randbelow(61)
+
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+        """模拟学习音视频任务点并周期性上报播放进度."""
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -879,7 +888,7 @@ class Chaoxing:
         play_time = 0 if self.force_video_time else int(_job["playTime"]) // 1000
         last_log_time = 0
         last_iter = time.time()
-        wait_time = int(random.uniform(30, 58)) if self.force_video_time else int(random.uniform(30, 90))
+        wait_time = self._get_wait_time()
 
         logger.info(
             f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s"
@@ -907,6 +916,8 @@ class Chaoxing:
 
         pbar = None
         finished_full_duration = False
+        full_duration_retries = 0
+        max_full_duration_retries = 3
         try:
             while not passed or (self.force_video_time and not finished_full_duration):
                 # Sometimes the last request needs to be sent several times to complete the task
@@ -924,7 +935,7 @@ class Chaoxing:
                             "出现403报错, 正在尝试刷新会话状态 (第{}次)",
                             forbidden_retry,
                         )
-                        time.sleep(random.uniform(2, 4))
+                        time.sleep(2 + secrets.randbelow(3))
                         refreshed_meta = self._recover_after_forbidden(_session, _job, _type)
                         if refreshed_meta and refreshed_meta.get("dtoken") and refreshed_meta.get(
                                 "duration") is not None:
@@ -945,11 +956,16 @@ class Chaoxing:
                         return StudyResult.ERROR
 
                     if self.force_video_time and int(play_time) >= duration and state == 200:
-                        finished_full_duration = True
-                        passed = True
-                        break
+                        if passed or not _job.get("jobid"):
+                            finished_full_duration = True
+                            passed = True
+                            break
+                        full_duration_retries += 1
+                        if full_duration_retries >= max_full_duration_retries:
+                            logger.warning("已达到完整时长但服务端未确认完成，已重试{}次: {}", full_duration_retries, _job['name'])
+                            return StudyResult.ERROR
 
-                    wait_time = int(random.uniform(30, 58)) if self.force_video_time else int(random.uniform(30, 90))
+                    wait_time = self._get_wait_time()
                     last_log_time = play_time
 
                     logger.trace("Progress logged")

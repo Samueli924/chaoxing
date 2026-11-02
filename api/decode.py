@@ -219,6 +219,64 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_video_or_audio_card(card: Dict[str, Any]) -> bool:
+    """判断附件卡片是否为视频或音频类型."""
+    card_type = card.get("type", "").lower()
+    property_data = card.get("property", {}) or {}
+    prop_type = property_data.get("type", "").lower()
+    prop_module = property_data.get("module", "").lower()
+    return (
+        card_type in ("video", "audio")
+        or prop_module in ("insertvideo", "insertaudio")
+        or prop_type in (".mp4", ".mp3", "video", "audio")
+    )
+
+
+def _is_live_card(card: Dict[str, Any]) -> bool:
+    """判断附件卡片是否为直播任务类型."""
+    card_type = card.get("type", "").lower()
+    property_data = card.get("property", {}) or {}
+    prop_type = property_data.get("type", "").lower()
+    resource_type = property_data.get("resourceType", "").lower()
+    return (
+        "live" in card_type
+        or "live" in prop_type
+        or "live" in resource_type
+        or "livestream" in card_type
+        or property_data.get("liveId") is not None
+        or property_data.get("streamName") is not None
+        or property_data.get("vdoid") is not None
+    )
+
+
+def _handle_null_job_card(
+    card: Dict[str, Any], force_video_time: bool, is_video_or_audio: bool
+) -> Optional[Dict[str, Any]]:
+    """处理 job 字段为 None 的卡片（强制刷时长模式下的章节媒体或普通阅读任务）."""
+    if force_video_time and is_video_or_audio:
+        if "otherInfo" in card:
+            card["otherInfo"] = card["otherInfo"].split("&")[0]
+        return _process_video_task(card)
+    return _process_read_task(card)
+
+
+def _dispatch_card_by_type(
+    card: Dict[str, Any], card_type: str, is_video_or_audio: bool
+) -> Optional[Dict[str, Any]]:
+    """根据卡片类型分发解析任务."""
+    if _is_live_card(card):
+        return _process_live_task(card)
+    if card_type == "video" or is_video_or_audio:
+        return _process_video_task(card)
+    if card_type == "document":
+        return _process_document_task(card)
+    if card_type == "workid":
+        return _process_work_task(card)
+    logger.warning(f"Unknown card type: {card_type}")
+    logger.warning(card)
+    return None
+
+
 def _process_attachment_cards(
     cards: List[Dict[str, Any]], force_video_time: bool = False
 ) -> List[Dict[str, Any]]:
@@ -234,78 +292,30 @@ def _process_attachment_cards(
     """
     job_list = []
 
-    for index, card in enumerate(cards):
+    for card in cards:
         card_type = card.get("type", "").lower()
-        property_data = card.get("property", {}) or {}
-        prop_type = property_data.get("type", "").lower()
-        prop_module = property_data.get("module", "").lower()
-        resource_type = property_data.get("resourceType", "").lower()
-
-        is_video_or_audio = (
-            card_type in ("video", "audio")
-            or prop_module in ("insertvideo", "insertaudio")
-            or prop_type in (".mp4", ".mp3", "video", "audio")
-        )
+        is_video_or_audio = _is_video_or_audio_card(card)
 
         # 跳过已通过的任务（若开启强制刷音视频时长，则不跳过音视频任务）
-        if card.get("isPassed", False):
-            if not (force_video_time and is_video_or_audio):
-                continue
+        if card.get("isPassed", False) and not (force_video_time and is_video_or_audio):
+            continue
 
         # 处理无job字段的特殊任务
         if card.get("job") is None:
-            if force_video_time and is_video_or_audio:
-                if "otherInfo" in card:
-                    card["otherInfo"] = card["otherInfo"].split("&")[0]
-                video_job = _process_video_task(card)
-                if video_job:
-                    job_list.append(video_job)
-                continue
-            # 尝试识别阅读任务
-            read_job = _process_read_task(card)
-            if read_job:
-                job_list.append(read_job)
+            special_job = _handle_null_job_card(card, force_video_time, is_video_or_audio)
+            if special_job:
+                job_list.append(special_job)
             continue
 
-        # 一开始就把超星api的屎山处理掉，不要用一个屎山行为掩盖另一个屎山 (指根据otherInfo中是否有courseId决定url拼接方式😂)
-        # 清理otherInfo字段中的无效参数，这里优化了一下(保留了作者原来的注释TAT）
+        # 清理otherInfo字段中的无效参数
         if "otherInfo" in card:
             logger.trace("Fixing other info...")
             card["otherInfo"] = card["otherInfo"].split("&")[0]
             logger.trace(f"New info: {card['otherInfo']}")
 
-        # 直播任务特征：包含liveId、streamName等字段，
-        # 或类型标识包含live（因为live和video有点类似，怕超星又搞出什么幺蛾子就加了一些关键字识别）
-        is_live = (
-                "live" in card_type
-                or "live" in prop_type
-                or "live" in resource_type
-                or "livestream" in card_type
-                or property_data.get("liveId") is not None
-                or property_data.get("streamName") is not None
-                or property_data.get("vdoid") is not None
-        )
-
-        # 根据任务类型处理
-        if is_live:
-            live_job = _process_live_task(card)
-            if live_job:
-                job_list.append(live_job)
-        elif card_type == "video" or is_video_or_audio:
-            video_job = _process_video_task(card)
-            if video_job:
-                job_list.append(video_job)
-        elif card_type == "document":
-            doc_job = _process_document_task(card)
-            if doc_job:
-                job_list.append(doc_job)
-        elif card_type == "workid":
-            work_job = _process_work_task(card)
-            if work_job:
-                job_list.append(work_job)
-        else:
-            logger.warning(f"Unknown card type: {card_type}")
-            logger.warning(card)
+        parsed_job = _dispatch_card_by_type(card, card_type, is_video_or_audio)
+        if parsed_job:
+            job_list.append(parsed_job)
 
     return job_list
 
