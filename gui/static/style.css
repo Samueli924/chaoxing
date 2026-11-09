@@ -168,7 +168,7 @@ textarea.input { height: 64px; padding: 8px 10px; resize: vertical; }
 .user-chip .phone { color: var(--text-2); }
 
 .body { flex: 1; display: flex; min-height: 0; }
-.main { flex: 1; overflow: auto; min-width: 0; container-type: inline-size; }
+.main { flex: 1; overflow: auto; min-width: 0; }
 .page { max-width: 1080px; margin: 0 auto; padding: 18px 24px 24px; }
 
 /* ---------- 课程列表 ---------- */
@@ -239,7 +239,9 @@ textarea.input { height: 64px; padding: 8px 10px; resize: vertical; }
 .overall .line { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); }
 
 .run-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; }
-@container (max-width: 760px) { .run-grid { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
+/* 不用容器查询：WebKit 中滚动区域内有 container-type 元素时，内容一更新滚动位置就会被重置到顶部。
+   1010px ≈ 侧栏 248px + 主区域 760px */
+@media (max-width: 1010px) { .run-grid { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
 .section { padding: 14px 16px; }
 .section + .section { margin-top: 14px; }
 .section h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; white-space: nowrap; }
