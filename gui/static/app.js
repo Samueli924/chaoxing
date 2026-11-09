@@ -771,9 +771,12 @@ async function pollRun(a, token) {
       if (token !== S.viewToken) return;
       fails = 0;
       const run = j.run;
-      if (run.seq < P.logSeq || (P.run && run.started !== P.run.started && run.status !== 'queued')) {
+      const newRun = P.run && P.run.started && run.started !== P.run.started && run.status !== 'queued';
+      if (run.seq < P.logSeq || newRun) {
+        // 后台重启或开始了新的一轮：清空日志后从头拉取。先记下这一轮的状态，否则下次请求会再次判定为新的一轮而反复重拉
+        P.run = run;
         P.logs = []; P.logSeq = 0; renderLogs(P, true);
-        if (run.seq) continue; // 重新拉取完整日志
+        if (run.seq) continue;
       }
       P.run = run;
       if (run.logs.length) {
