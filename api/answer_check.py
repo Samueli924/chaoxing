@@ -48,11 +48,14 @@ def check_answer(answer, type, tiku):  # 只会写小杯代码，这里用个tik
     if getattr(tiku, 'is_manual', False) or getattr(tiku, 'skip_answer_validation', False):
         return True
 
+    # 选择题的选项内容可能就是数字 0 / 1（如计算题），不能当作判断题的"错/对"舍弃
+    looks_like_judgement = check_judgement(answer, tiku.true_list, tiku.false_list) != -1 \
+        and str(answer).strip() not in ('0', '1')
     if type == 'single':
-        if check_single(answer) and check_judgement(answer, tiku.true_list, tiku.false_list) == -1:
+        if check_single(answer) and not looks_like_judgement:
             return True
     elif type == 'multiple':
-        if check_multiple(answer) and check_judgement(answer, tiku.true_list, tiku.false_list) == -1:
+        if check_multiple(answer) and not looks_like_judgement:
             return True
     elif type == 'completion':
         if check_completion(answer):

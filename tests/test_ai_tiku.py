@@ -175,7 +175,24 @@ class QueryTest(unittest.TestCase):
         ai = make_ai(ai_vision="false", ai_disable_thinking="true")
         q = {"type": "judgement", "title": "泊松分布的期望等于方差", "options": ""}
         _, client = self.run_query(ai, [completion('{"Answer": ["正确"]}')], q=q)
-        self.assertTrue(client.calls[0]["messages"][-1]["content"].endswith("/no_think"))
+        messages = client.calls[0]["messages"]
+        self.assertEqual(messages[-1], {"role": "assistant", "content": "<think>\n\n</think>\n\n"})
+        self.assertTrue(messages[-2]["content"].endswith("/no_think"))
+
+    def test_thinking_enabled_by_default(self):
+        ai = make_ai(ai_vision="false")
+        q = {"type": "judgement", "title": "泊松分布的期望等于方差", "options": ""}
+        _, client = self.run_query(ai, [completion('{"Answer": ["正确"]}')], q=q)
+        self.assertEqual(client.calls[0]["messages"][-1]["role"], "user")
+
+    def test_vision_fallback_with_thinking_disabled(self):
+        ai = make_ai(ai_disable_thinking="true")
+        with mock.patch.object(AI, "_fetch_image", return_value="data:image/png;base64,xx"):
+            ans, client = self.run_query(ai, [bad_request(), completion('{"Answer": ["6m/s"]}')])
+        self.assertEqual(ans, "6m/s")
+        retry = client.calls[1]["messages"]
+        self.assertEqual(retry[-1]["role"], "assistant")
+        self.assertIsInstance(retry[-2]["content"], str)
 
     def test_text_question_unchanged(self):
         ai = make_ai()
@@ -190,6 +207,52 @@ class QueryTest(unittest.TestCase):
         kwargs = ctor.call_args.kwargs
         self.assertEqual(kwargs["timeout"], 45)
         self.assertEqual(kwargs["max_retries"], 0)
+
+
+class AnswerCheckTest(unittest.TestCase):
+    def test_numeric_option_answers_kept(self):
+        from api.answer_check import check_answer
+        tiku = SimpleNamespace(true_list=["正确", "对"], false_list=["错误", "错"])
+        self.assertTrue(check_answer("0", "single", tiku))
+        self.assertTrue(check_answer("1", "single", tiku))
+        self.assertTrue(check_answer("30 m/s", "single", tiku))
+        self.assertFalse(check_answer("正确", "single", tiku))  # 选择题答成判断仍然舍弃
+        self.assertFalse(check_answer("错误", "multiple", tiku))
+        self.assertTrue(check_answer("0", "judgement", tiku))
+
+
+class QuizOrderTest(unittest.TestCase):
+    """多个章节检测同时作答时，一个检测答完再答下一个，并上报进度."""
+
+    def test_quizzes_answered_one_after_another(self):
+        import threading
+        import time as _time
+        ai = make_ai(ai_vision="false")
+        order, events = [], []
+        ai.progress_callback = lambda done, total, waiting=False: events.append((threading.current_thread().name, done, total, waiting))
+
+        def fake_query(q):
+            order.append(q["title"][:1])
+            _time.sleep(0.02)
+            return "正确"
+
+        quiz_a = [{"type": "judgement", "title": f"A{i}题目", "options": ""} for i in range(3)]
+        quiz_b = [{"type": "judgement", "title": f"B{i}题目", "options": ""} for i in range(3)]
+        with mock.patch.object(AI, "_query", side_effect=fake_query), \
+                mock.patch.object(answer_mod.CacheDAO, "get_cache", return_value=None), \
+                mock.patch.object(answer_mod.CacheDAO, "add_cache"), \
+                mock.patch.object(answer_mod, "check_answer", return_value=True):
+            ta = threading.Thread(target=ai.query_all, args=(quiz_a,), name="A")
+            tb = threading.Thread(target=ai.query_all, args=(quiz_b,), name="B")
+            ta.start()
+            _time.sleep(0.01)
+            tb.start()
+            ta.join()
+            tb.join()
+        self.assertEqual("".join(order), "AAABBB")
+        self.assertIn(("B", 0, 3, True), events)  # B 排队等待时上报 waiting
+        self.assertEqual([e[1] for e in events if e[0] == "A"], [0, 1, 2, 3])
+        self.assertEqual(events[-1], ("B", 3, 3, False))
 
 
 if __name__ == "__main__":

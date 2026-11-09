@@ -144,6 +144,10 @@ class Tiku(ABC):
     COVER_RATE = 0.8  # 覆盖率
     true_list = None
     false_list = None
+    # 查题进度回调 callback(已完成题数, 本次需查询的题数, waiting=是否在排队)，供图形界面等显示进度
+    progress_callback = None
+    # 是否为每道题记录一条用时日志（查询较慢的题库开启）
+    LOG_EACH_QUERY = False
 
     def __init__(self, config_path: Optional[str] = None) -> None:
         """
@@ -340,20 +344,35 @@ class Tiku(ABC):
         """
         pass
 
+    def _notify_progress(self, done: int, total: int, waiting: bool = False) -> None:
+        callback = self.progress_callback
+        if callback:
+            try:
+                callback(done, total, waiting=waiting)
+            except Exception as e:
+                logger.debug(f"查题进度回调出错: {e}")
+
     def _query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
         """
         批量查询的实现接口，默认循环调用单个查询 _query。
         子类若有批量查询或交互需求（如手动模式），可重写此方法。
         """
         results = []
-        for q in q_list:
+        total = len(q_list)
+        self._notify_progress(0, total)
+        for i, q in enumerate(q_list, 1):
             if query_delay > 0:
                 time.sleep(query_delay)
+            start = time.time()
             try:
-                results.append(self._query(q))
+                answer = self._query(q)
             except Exception as e:
                 logger.error(f"{self.name} 查询单个题目发生异常: {e}")
-                results.append(None)
+                answer = None
+            results.append(answer)
+            if self.LOG_EACH_QUERY:
+                logger.info(f"查题进度 {i}/{total}：{'已作答' if answer else '未获得答案'}，用时 {time.time() - start:.0f} 秒")
+            self._notify_progress(i, total)
         return results
 
     @staticmethod
@@ -1171,7 +1190,22 @@ class AI(Tiku):
         self.name = 'AI大模型答题'
         self.last_request_time = None
         self._lock = threading.Lock()
+        # 多个章节检测同时作答时，一个检测的题目全部答完再答下一个，
+        # 避免各检测的题目交错排队、全部拖到最后才一起完成
+        self._quiz_lock = threading.Lock()
         self.work_feedback = None  # 章节检测错误反馈（重做时参考）
+
+    LOG_EACH_QUERY = True
+
+    def query_all(self, q_list: list[dict], query_delay: float = 0.0) -> list[Optional[str]]:
+        if not self._quiz_lock.acquire(blocking=False):
+            logger.info(f"等待其他章节检测答完（本检测共 {len(q_list)} 题）")
+            self._notify_progress(0, len(q_list), waiting=True)
+            self._quiz_lock.acquire()
+        try:
+            return super().query_all(q_list, query_delay=query_delay)
+        finally:
+            self._quiz_lock.release()
 
     def set_work_feedback(self, feedback) -> None:
         """
@@ -1374,6 +1408,9 @@ class AI(Tiku):
             messages.append({"role": "system", "content": feedback_text})
         user_content = self._build_user_content(q_info)
         messages.append({"role": "user", "content": user_content})
+        if self.disable_thinking:
+            # 预先给出空的思考内容，让 Qwen3 等思考型模型直接输出答案（仅 /no_think 对部分模型无效）
+            messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
 
         self._wait_for_interval()
         self.last_request_time = time.time()
@@ -1389,7 +1426,7 @@ class AI(Tiku):
                 # 模型可能不支持图片输入：关闭识图后用纯文字重试
                 logger.warning(f"当前模型不支持图片输入，已改为纯文字作答：{e}")
                 self._vision_ok = False
-                messages[-1]["content"] = self._build_user_content(q_info)
+                messages[-2 if self.disable_thinking else -1]["content"] = self._build_user_content(q_info)
                 try:
                     completion = client.chat.completions.create(**self._completion_kwargs(
                         model=self.model, messages=messages, max_tokens=self.max_tokens))
