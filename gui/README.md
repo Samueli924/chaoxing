@@ -12,6 +12,7 @@
   - 限制同时运行的账号数量，超出的自动排队
   - 相邻两个账号的启动时间在设定范围内随机错开
   - 每个账号使用独立的 cookie 文件和日志，互不干扰
+- 题库使用本机 LM Studio 时，开始学习前自动加载模型，所有账号学完或停止后自动卸载，释放内存
 - 学习期间阻止系统休眠，完成或出错时弹出系统通知
 
 ## 使用方法
@@ -46,6 +47,7 @@ gui/build_app.sh ~/Applications/刷课助手.app
 | `scheduler.py` | 多账号排队调度（同时运行数量、随机错开启动） |
 | `configio.py` | 读写 `config.ini`，只改动指定的键，保留注释 |
 | `keychain.py` | 系统凭据库读写 |
+| `llm_manager.py` | 本地大模型（LM Studio）自动加载 / 卸载 |
 | `platform_utils.py` | 系统通知、防休眠、在文件管理器中显示文件 |
 | `static/` | 界面（原生 HTML/CSS/JS，无需构建） |
 | `mac/` | macOS 外壳（Swift + WKWebView）和图标生成 |
@@ -58,7 +60,18 @@ gui/build_app.sh ~/Applications/刷课助手.app
 max_parallel_accounts = 2   ; 最多同时运行的账号数
 stagger_min_minutes = 2     ; 相邻账号启动间隔（分钟，随机取值范围）
 stagger_max_minutes = 5
+auto_manage_local_model = true   ; 使用本机 LM Studio 时自动加载 / 卸载模型
 ```
+
+### 使用本地大模型答题
+
+在 LM Studio 中下载模型并打开本地服务（默认端口 1234），然后在设置的「题库」里选择「AI 大模型」：
+
+- API 地址：`http://127.0.0.1:1234/v1`
+- API Key：任意填写，例如 `lm-studio`
+- 模型名称：LM Studio 中的模型标识，例如 `qwen3.8-27b-mlx`
+
+开启「自动加载 / 卸载本地模型」后，不需要提前手动加载模型。只会卸载这次刷课用过的模型；所有账号结束后会等待 15 秒再卸载，方便马上重新开始。
 
 ## 注意
 

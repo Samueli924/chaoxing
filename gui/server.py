@@ -43,7 +43,7 @@ from werkzeug.serving import make_server  # noqa: E402
 
 from api.base import Account, Chaoxing, SessionManager  # noqa: E402
 from api.config import GlobalConst  # noqa: E402
-from gui import configio, keychain, platform_utils  # noqa: E402
+from gui import configio, keychain, llm_manager, platform_utils  # noqa: E402
 from gui.scheduler import Scheduler  # noqa: E402
 
 CONFIG = ROOT / "config.ini"
@@ -158,9 +158,10 @@ class Run:
         self.selected: list[dict] = []
 
     def add_log(self, level, msg, ts=None):
-        self.seq += 1
-        self.logs.append({"seq": self.seq, "level": level, "msg": msg,
-                          "ts": ts or time.strftime("%H:%M:%S")})
+        with self.lock:
+            self.seq += 1
+            self.logs.append({"seq": self.seq, "level": level, "msg": msg,
+                              "ts": ts or time.strftime("%H:%M:%S")})
 
     def counts(self):
         finished = sum(1 for c in self.courses for ch in c["chapters"] if ch["status"] in ("done", "success"))
@@ -224,6 +225,14 @@ class Run:
         acct = self.acct
         cfg = configio.read_config(str(CONFIG))
         common = common_from_config(cfg)
+        with self.lock:
+            self.status, self.phase = "starting", "正在启动…"
+            self.started = self.started or time.time()
+        prepare_local_model(self, cfg)
+        with self.lock:
+            if self.stop_requested:
+                self.status, self.phase, self.ended = "stopped", "已停止", time.time()
+                return
         payload = {
             "username": acct.phone,
             "password": acct.password or keychain.load_password(acct.phone) or "",
@@ -235,7 +244,7 @@ class Run:
             "config_path": str(CONFIG),
         }
         with self.lock:
-            self.status, self.phase, self.started = "starting", "正在启动…", time.time()
+            self.phase = "正在启动…"
             self.speed = common["speed"]
             err = open(acct.log_path, "w", encoding="utf8")
             try:
@@ -286,7 +295,11 @@ class Run:
     def stop(self):
         with self.lock:
             proc = self.proc
-            if self.status not in ACTIVE or not proc:
+            if self.status not in ACTIVE:
+                return
+            if not proc or proc.poll() is not None:  # 还在加载模型，launch 会在加载完后放弃启动
+                self.stop_requested = True
+                self.phase = "正在停止…"
                 return
             self.stop_requested = True
             self.phase = "正在停止…"
@@ -478,10 +491,67 @@ def _scheduler_loop():
             for phone in SCHED.due(active_count()):
                 acct = ACCOUNTS.get(phone)
                 if acct and acct.run.status == "queued":
-                    acct.run.launch()
+                    with acct.run.lock:  # 先标记为启动中，避免加载模型期间被重复计入空位
+                        acct.run.status, acct.run.started = "starting", time.time()
+                    threading.Thread(target=acct.run.launch, daemon=True).start()
+            busy = any(a.run.status in BUSY for a in ACCOUNTS.values())
+            for backend, model in UNLOADER.tick(busy):
+                threading.Thread(target=unload_local_model, args=(backend, model), daemon=True).start()
         except Exception as e:
             sys.stderr.write(f"scheduler error: {e}\n")
         time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# 本地大模型自动加载 / 卸载
+# ---------------------------------------------------------------------------
+UNLOADER = llm_manager.AutoUnloader(grace=15)
+MODEL_LOCK = threading.Lock()
+
+
+def auto_manage_enabled(cfg=None) -> bool:
+    g = (cfg or configio.read_config(str(CONFIG))).get("gui", {})
+    return _bool(g.get("auto_manage_local_model"), True)
+
+
+def prepare_local_model(run: "Run", cfg: dict):
+    """题库使用本机 LM Studio 时，在启动刷课进程前确保模型已加载。"""
+    if not auto_manage_enabled(cfg):
+        return
+    target = llm_manager.local_target(cfg.get("tiku", {}))
+    if not target:
+        return
+    root, model = target
+    backend = llm_manager.LMStudio(root)
+    if not backend.probe():
+        run.add_log("WARNING", f"连不上本地大模型服务 {root}，请确认 LM Studio 已打开并启动了本地服务")
+        return
+    with run.lock:
+        run.phase = "正在加载本地大模型…"
+    with MODEL_LOCK:  # 多个账号同时启动时只加载一次
+        try:
+            t0 = time.time()
+            if backend.ensure_loaded(model):
+                run.add_log("INFO", f"已加载本地模型 {model}（用时 {time.time() - t0:.0f} 秒）")
+            else:
+                run.add_log("INFO", f"本地模型 {model} 已在运行")
+            UNLOADER.used(backend, model)
+        except Exception as e:
+            run.add_log("WARNING", f"加载本地模型 {model} 失败：{e}")
+
+
+def unload_local_model(backend: "llm_manager.LMStudio", model: str):
+    with MODEL_LOCK:
+        try:
+            n = backend.unload(model)
+        except Exception as e:
+            sys.stderr.write(f"卸载本地模型失败: {e}\n")
+            return
+    if n:
+        msg = f"所有账号已结束，已卸载本地模型 {model}，释放内存"
+        for acct in list(ACCOUNTS.values()):
+            if acct.run.status in ("done", "stopped", "error"):
+                acct.run.add_log("INFO", msg)
 
 
 def enqueue(acct: Acct, keys: list[str]) -> str | None:
@@ -736,7 +806,7 @@ EDITABLE = {
              "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
              "likeapi_search", "likeapi_vision"},
     "notification": {"provider", "url", "tg_chat_id"},
-    "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes"},
+    "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes", "auto_manage_local_model"},
 }
 
 
@@ -746,7 +816,8 @@ def api_settings():
     max_parallel, lo, hi = scheduler_settings(cfg)
     settings = {sec: {k: v for k, v in cfg.get(sec, {}).items() if k in keys} for sec, keys in EDITABLE.items()}
     settings["gui"] = {"max_parallel_accounts": str(max_parallel),
-                       "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}"}
+                       "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}",
+                       "auto_manage_local_model": "true" if auto_manage_enabled(cfg) else "false"}
     return ok(settings=settings)
 
 
@@ -799,6 +870,11 @@ def _shutdown(*_):
         if proc and proc.poll() is None:
             acct.run.stop_requested = True
             terminate(proc)
+    for backend, model in UNLOADER.take_all():  # 刷课用过的本地模型随应用退出一起卸载
+        try:
+            backend.unload(model)
+        except Exception:
+            pass
     os._exit(0)
 
 

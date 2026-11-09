@@ -967,7 +967,9 @@ function tikuBlocks() {
       + F.text('tiku', 'key', 'API Key', { secret: true, placeholder: 'sk-…' })
       + F.text('tiku', 'model', '模型名称', { placeholder: '例如 deepseek-chat、gpt-4o-mini' })
       + F.number('tiku', 'min_interval_seconds', '请求间隔（秒）', { min: 0, max: 60, def: 3 })
-      + F.text('tiku', 'http_proxy', '代理（可选）', { placeholder: 'http://127.0.0.1:7890' }),
+      + F.text('tiku', 'http_proxy', '代理（可选）', { placeholder: 'http://127.0.0.1:7890' })
+      + F.toggle('gui', 'auto_manage_local_model', '自动加载 / 卸载本地模型',
+        `API 地址是本机的 ${link('https://lmstudio.ai/', 'LM Studio')} 时生效：开始学习前自动加载模型，所有账号学完或停止后自动卸载，释放内存`),
     SiliconFlow: F.text('tiku', 'siliconflow_key', '硅基流动 API Key', { secret: true, hint: `在 ${link('https://cloud.siliconflow.cn/account/ak', '硅基流动控制台')} 获取` })
       + F.text('tiku', 'siliconflow_model', '模型', { placeholder: 'deepseek-ai/DeepSeek-V3' })
       + F.text('tiku', 'siliconflow_endpoint', '接口地址', { placeholder: 'https://api.siliconflow.cn/v1/chat/completions' }),
