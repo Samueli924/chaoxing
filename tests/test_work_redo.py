@@ -127,6 +127,13 @@ class StudyWorkTest(unittest.TestCase):
         self.assertEqual(result, StudyResult.SUCCESS)
         self.assertFalse(any(u.endswith("/work/retest") for u in session.calls))
 
+    def test_redo_fetch_error_is_retried_later(self):
+        # 申请重做成功后取题遇到临时错误：不能算成功，返回失败让章节稍后重试（审查意见）
+        session = FakeSession([graded_page(65.0, 2), "<html>服务器繁忙</html>"],
+                              retest_json={"status": True, "url": "/mooc-ans/work/doHomeWorkNew?x=1"})
+        _, result = self.run_work(session, work_min_score=90)
+        self.assertEqual(result, StudyResult.ERROR)
+
     def test_retest_rejected(self):
         session = FakeSession([graded_page(65.0, 2)], retest_json={"status": False, "msg": "已超过截止时间"})
         _, result = self.run_work(session, work_min_score=90)

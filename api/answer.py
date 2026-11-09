@@ -1260,6 +1260,13 @@ class AI(Tiku):
         )
 
     def _completion_kwargs(self, **kwargs):
+        # 输出上限：0 表示不限制（不发送该参数）；OpenAI 官方接口的新模型只接受 max_completion_tokens
+        limit = kwargs.pop('max_tokens', None)
+        if limit:
+            if 'api.openai.com' in (self.endpoint or '').lower():
+                kwargs['max_completion_tokens'] = limit
+            else:
+                kwargs['max_tokens'] = limit
         if self._is_deepseek_v4():
             # DeepSeek V4 defaults to thinking mode, which can leave message.content empty.
             kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
@@ -1307,23 +1314,55 @@ class AI(Tiku):
         from urllib.parse import urljoin
         return urljoin(cls._IMAGE_BASE_URL, html.unescape(url.strip()))
 
+    # 只有学习通自己的域名才带上登录 cookie，避免题目里的外站图片或跳转拿到会话信息
+    _TRUSTED_IMAGE_DOMAINS = ("chaoxing.com",)
+    _IMAGE_CACHE_MAX = 200
+
+    @classmethod
+    def _is_trusted_image_host(cls, url: str) -> bool:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+        return any(host == d or host.endswith("." + d) for d in cls._TRUSTED_IMAGE_DOMAINS)
+
+    @classmethod
+    def _image_session(cls, url: str) -> requests.Session:
+        """下载图片用的独立会话：不自动重试（避免卡住答题队列），仅对学习通域名携带登录 cookie."""
+        from api.base import SessionManager  # 延迟导入，避免循环引用
+        logged_in = SessionManager.get_session()
+        session = requests.Session()
+        session.headers.update({k: v for k, v in logged_in.headers.items() if k.lower() != "cookie"})
+        if cls._is_trusted_image_host(url):
+            session.cookies.update(logged_in.cookies)
+        return session
+
     def _fetch_image(self, url: str) -> Optional[str]:
-        """用已登录的学习通会话下载题目图片，返回 data URL；失败返回 None."""
+        """下载题目图片，返回 data URL；失败返回 None."""
+        from urllib.parse import urljoin
         url = self._resolve_image_url(url)
         if url in self._image_cache:
             return self._image_cache[url]
-        data_url = None
+        data_url, cache_result = None, False
         try:
-            from api.base import SessionManager  # 延迟导入，避免循环引用
-            resp = SessionManager.get_session().get(url, timeout=15)
+            current = url
+            for _ in range(4):  # 手动跟随跳转：每一跳重新判断是否可以携带登录 cookie
+                resp = self._image_session(current).get(current, timeout=(5, 15), allow_redirects=False)
+                location = resp.headers.get("Location")
+                if resp.status_code in (301, 302, 303, 307, 308) and location:
+                    current = urljoin(current, location)
+                    continue
+                break
             ctype = self._image_type(resp.content or b'', resp.headers.get('Content-Type', ''))
             if resp.status_code == 200 and ctype:
-                data_url = self._to_data_url(resp.content, ctype)
+                data_url, cache_result = self._to_data_url(resp.content, ctype), True
             else:
                 logger.warning(f"题目图片下载失败({resp.status_code} {resp.headers.get('Content-Type', '')}): {url}")
+                cache_result = 400 <= resp.status_code < 500  # 4xx 重试也没用；超时、5xx 等下次还可以再试
         except Exception as e:
             logger.warning(f"题目图片下载失败: {url} {e}")
-        self._image_cache[url] = data_url
+        if cache_result:
+            if len(self._image_cache) >= self._IMAGE_CACHE_MAX:
+                self._image_cache.pop(next(iter(self._image_cache)))
+            self._image_cache[url] = data_url
         return data_url
 
     @staticmethod
@@ -1453,9 +1492,13 @@ class AI(Tiku):
                 answer = json.loads(cand)['Answer']
             except Exception:
                 continue
-            if isinstance(answer, str):
+            if answer is None:
+                continue
+            if not isinstance(answer, list):  # 如 {"Answer": true} / {"Answer": 5} / {"Answer": "正确"}
                 answer = [answer]
-            return "\n".join(str(a) for a in answer).strip()
+            items = [str(a).strip() for a in answer if a is not None and str(a).strip()]
+            if items:
+                return "\n".join(items)
         return None
 
     def _client(self) -> OpenAI:
@@ -1491,16 +1534,17 @@ class AI(Tiku):
             return None
         except BadRequestError as e:
             if isinstance(user_content, list):
-                # 模型可能不支持图片输入：关闭识图后用纯文字重试
-                logger.warning(f"当前模型不支持图片输入，已改为纯文字作答：{e}")
+                # 可能是模型不支持图片：用纯文字重试，重试成功才说明是图片导致的，之后不再发送图片
                 self._vision_ok = False
                 messages[-2 if self._thinking_off() else -1]["content"] = self._build_user_content(q_info)
                 try:
                     completion = client.chat.completions.create(**self._completion_kwargs(
                         model=self.model, messages=messages, max_tokens=self.max_tokens))
                 except Exception as e2:
-                    logger.error(f"大模型请求失败：{e2}")
+                    self._vision_ok = True  # 纯文字也失败，不是图片的问题，保留识图
+                    logger.error(f"大模型请求失败：{e}；纯文字重试也失败：{e2}")
                     return None
+                logger.warning(f"当前模型不支持图片输入，之后改为纯文字作答：{e}")
             else:
                 logger.error(f"大模型请求失败：{e}")
                 return None
@@ -1533,20 +1577,26 @@ class AI(Tiku):
                 value = default
             return default if value is None or str(value).strip() == '' else str(value).strip()
 
+        def _positive(key, default):
+            """读取正数配置；无法解析、非正数、无穷大或 NaN 时使用默认值."""
+            import math
+            try:
+                value = float(_get(key, str(default)))
+            except ValueError:
+                return float(default)
+            return value if math.isfinite(value) and value > 0 else float(default)
+
         self.vision = _get('ai_vision', 'true').lower() == 'true'
         self.disable_thinking = _get('ai_disable_thinking', 'false').lower() == 'true'
-        try:
-            self.request_timeout = float(_get('ai_timeout', '120'))
-        except ValueError:
-            self.request_timeout = 120.0
+        self.request_timeout = _positive('ai_timeout', 120)
+        self.redo_timeout = _positive('ai_redo_timeout', 300)
+        # 输出上限：0 表示不限制（不发送该参数，适用于不接受 max_tokens 的接口）；负数或无效值使用默认 4096
         try:
             self.max_tokens = int(_get('ai_max_tokens', '4096'))
         except ValueError:
             self.max_tokens = 4096
-        try:
-            self.redo_timeout = float(_get('ai_redo_timeout', '300'))
-        except ValueError:
-            self.redo_timeout = 300.0
+        if self.max_tokens < 0:
+            self.max_tokens = 4096
         self._vision_ok = True
         self._image_cache = {}
         # 联网搜索：填写 SearXNG 地址后，每道题先搜索题干，把搜索结果作为参考资料交给模型
@@ -1555,10 +1605,7 @@ class AI(Tiku):
             self.search_results = max(1, int(_get('ai_search_results', '3')))
         except ValueError:
             self.search_results = 3
-        try:
-            self.search_timeout = float(_get('ai_search_timeout', '10'))
-        except ValueError:
-            self.search_timeout = 10.0
+        self.search_timeout = _positive('ai_search_timeout', 10)
         self._search_cache = {}
 
     def check_llm_connection(self) -> bool:

@@ -65,6 +65,20 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(ai.request_timeout, 120)
         self.assertEqual(ai.max_tokens, 4096)
 
+    def test_invalid_values_fall_back(self):
+        for bad in ("0", "-5", "nan", "inf", "abc"):
+            ai = make_ai(ai_timeout=bad, ai_search_timeout=bad, ai_redo_timeout=bad)
+            self.assertEqual((ai.request_timeout, ai.search_timeout, ai.redo_timeout), (120, 10, 300), bad)
+        self.assertEqual(make_ai(ai_max_tokens="-1").max_tokens, 4096)
+        self.assertEqual(make_ai(ai_max_tokens="0").max_tokens, 0)  # 0 表示不限制
+
+    def test_token_parameter(self):
+        ai = make_ai()
+        self.assertEqual(ai._completion_kwargs(model="m", max_tokens=100), {"model": "m", "max_tokens": 100})
+        self.assertEqual(ai._completion_kwargs(model="m", max_tokens=0), {"model": "m"})
+        ai.endpoint = "https://api.openai.com/v1"
+        self.assertEqual(ai._completion_kwargs(model="m", max_tokens=100), {"model": "m", "max_completion_tokens": 100})
+
     def test_custom_values(self):
         ai = make_ai(ai_vision="false", ai_disable_thinking="true", ai_timeout="30", ai_max_tokens="1000")
         self.assertFalse(ai.vision)
@@ -84,6 +98,11 @@ class ParseTest(unittest.TestCase):
         self.assertIsNone(p(''))
         self.assertIsNone(p(None))
         self.assertIsNone(p('我不知道'))
+        # 审查意见：非列表的 Answer 不能报错
+        self.assertEqual(p('{"Answer": true}'), "True")
+        self.assertEqual(p('{"Answer": 5}'), "5")
+        self.assertIsNone(p('{"Answer": null}'))
+        self.assertEqual(p('{"Answer": ["A", null, ""]}'), "A")
 
 
 class ImageUrlTest(unittest.TestCase):
@@ -104,17 +123,62 @@ class ImageUrlTest(unittest.TestCase):
         self.assertIsNone(t(b"<html>403</html>", "text/html"))
         self.assertIsNone(t(b"", "image/png"))
 
+    def fetch(self, ai, url, responses):
+        """模拟图片下载：responses 依次返回；记录每次请求的地址和是否带了登录 cookie."""
+        import requests as _requests
+        logged_in = _requests.Session()
+        logged_in.cookies.set("_uid", "secret-uid")
+        calls = []
+        responses = list(responses)
+
+        def fake_get(self_session, url, **kw):
+            calls.append((url, self_session.cookies.get("_uid"), kw.get("allow_redirects"), kw.get("timeout")))
+            r = responses.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        with mock.patch("api.base.SessionManager.get_session", return_value=logged_in), \
+                mock.patch.object(answer_mod.requests.Session, "get", fake_get):
+            data = ai._fetch_image(url)
+        return data, calls
+
+    @staticmethod
+    def resp(status=200, content=b"\xff\xd8\xffjpeg", ctype="application/octet-stream, image/jpeg", location=None):
+        headers = {"Content-Type": ctype}
+        if location:
+            headers["Location"] = location
+        return SimpleNamespace(status_code=status, headers=headers, content=content)
+
     def test_fetch_uses_resolved_url(self):
-        ai = make_ai()
-        resp = SimpleNamespace(status_code=200, headers={"Content-Type": "application/octet-stream, image/jpeg"},
-                               content=b"\xff\xd8\xffjpeg")
-        session = mock.Mock()
-        session.get.return_value = resp
-        with mock.patch("api.base.SessionManager.get_session", return_value=session):
-            data = ai._fetch_image("/ananas/latex/p/635513")
-        session.get.assert_called_once()
-        self.assertEqual(session.get.call_args.args[0], "https://mooc1.chaoxing.com/ananas/latex/p/635513")
+        data, calls = self.fetch(make_ai(), "/ananas/latex/p/635513", [self.resp()])
+        self.assertEqual(calls[0][0], "https://mooc1.chaoxing.com/ananas/latex/p/635513")
+        self.assertEqual(calls[0][1], "secret-uid")  # 学习通域名带登录 cookie
+        self.assertFalse(calls[0][2])  # 不自动跟随跳转
+        self.assertEqual(calls[0][3], (5, 15))
         self.assertTrue(data.startswith("data:image/jpeg;base64,"))
+
+    def test_no_cookies_for_other_hosts_or_redirects(self):
+        _, calls = self.fetch(make_ai(), "https://evil.example/a.png", [self.resp()])
+        self.assertIsNone(calls[0][1])
+        _, calls = self.fetch(make_ai(), "https://p.ananas.chaoxing.com/a.png",
+                              [self.resp(302, b"", "text/html", "https://evil.example/b.png"), self.resp()])
+        self.assertEqual([c[1] for c in calls], ["secret-uid", None])  # 跳到外站后不再带 cookie
+        self.assertEqual(calls[1][0], "https://evil.example/b.png")
+
+    def test_transient_failures_not_cached(self):
+        ai = make_ai()
+        data, _ = self.fetch(ai, "https://p.ananas.chaoxing.com/a.png", [OSError("timeout")])
+        self.assertIsNone(data)
+        data, calls = self.fetch(ai, "https://p.ananas.chaoxing.com/a.png", [self.resp(503, b"", "text/html")])
+        self.assertEqual(len(calls), 1)  # 超时没有缓存，再次尝试
+        data, calls = self.fetch(ai, "https://p.ananas.chaoxing.com/a.png", [self.resp()])
+        self.assertTrue(data)  # 5xx 也没有缓存，第三次成功
+        _, calls = self.fetch(ai, "https://p.ananas.chaoxing.com/a.png", [])
+        self.assertEqual(calls, [])  # 成功结果命中缓存
+        self.fetch(ai, "https://p.ananas.chaoxing.com/404.png", [self.resp(404, b"", "text/html")])
+        _, calls = self.fetch(ai, "https://p.ananas.chaoxing.com/404.png", [])
+        self.assertEqual(calls, [])  # 4xx 缓存，不再重试
 
 
 class QueryTest(unittest.TestCase):
@@ -160,6 +224,13 @@ class QueryTest(unittest.TestCase):
             # 之后的题目不再尝试发送图片
             _, client2 = self.run_query(ai, [completion('{"Answer": ["6m/s"]}')])
         self.assertIsInstance(client2.calls[0]["messages"][-1]["content"], str)
+
+    def test_vision_kept_when_text_retry_also_fails(self):
+        ai = make_ai()
+        with mock.patch.object(AI, "_fetch_image", return_value="data:image/png;base64,xx"):
+            ans, client = self.run_query(ai, [bad_request(), bad_request()])
+        self.assertIsNone(ans)
+        self.assertTrue(ai._vision_ok)  # 不是图片导致的 400，不关闭识图
 
     def test_timeout_skips_question(self):
         ai = make_ai(ai_vision="false")
@@ -238,8 +309,21 @@ class ImageOptionTest(unittest.TestCase):
         self.assertEqual(exact_option_letter("B", opts), "B")
         self.assertEqual(exact_option_letter("B.", opts), "B")
         self.assertEqual(exact_option_letter(opts[0], opts), "A")
-        self.assertEqual(exact_option_letter("b", ["A b", "B a"]), "")  # 小写内容不当作字母
-        self.assertEqual(exact_option_letter("2dx", ["A 2dx", "B 6dx"]), "")
+        self.assertEqual(exact_option_letter("b", ["A b", "B a"]), "A")  # 按内容匹配，而不是当作字母
+        self.assertEqual(exact_option_letter("2dx", ["A 2dx", "B 6dx"]), "A")
+        # 审查意见：内容优先于字母；数字和包含关系不能靠模糊匹配
+        self.assertEqual(exact_option_letter("B", ["A B", "B C"]), "A")
+        self.assertEqual(exact_option_letter("0", ["A10", "B0"]), "B")
+        self.assertEqual(exact_option_letter("乙丙", ["A甲乙丙", "B乙丙"]), "B")
+        self.assertEqual(exact_option_letter("C.", ["A甲", "B乙", "C丙"]), "C")
+        self.assertEqual(exact_option_letter("x", ["A甲", "B乙"]), "")
+
+    def test_numeric_answers_not_fuzzy_matched(self):
+        from api.base import _is_numeric_answer
+        self.assertTrue(_is_numeric_answer("0"))
+        self.assertTrue(_is_numeric_answer("-1.5"))
+        self.assertFalse(_is_numeric_answer("0 m/s"))
+        self.assertFalse(_is_numeric_answer(""))
 
     def test_prompt_asks_for_letters_when_options_are_images(self):
         ai = make_ai()

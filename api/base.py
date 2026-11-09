@@ -300,20 +300,33 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
 
 
 def exact_option_letter(answer, options: list) -> str:
-    """答案就是某个选项的字母（如 "B"）或与某个选项完全相同时，直接返回该选项字母.
+    """答案与某个选项完全相同、等于某个选项的内容，或就是某个选项的字母时，返回该选项字母.
 
-    选项内容为图片时，选项文本里含有图片地址，模糊的子序列匹配可能把单个字母误匹配到别的选项上。
+    依次判断：完整选项 -> 选项内容（去掉字母编号）-> 选项字母。先比内容再比字母，
+    这样选项为「A B」「B C」时答案 "B" 会选中内容为 B 的 A，而不是字母 B；
+    选项为「A10」「B0」时答案 "0" 选中 B。选项是图片时内容是图片地址，才会落到按字母匹配。
     """
     text = str(answer).strip()
     if not text:
         return ""
-    letter = re.sub(r'^([A-Za-z])\s*[.、:：)）]?$', r'\1', text)
+    squeezed = re.sub(r"\s+", "", text)
     for o in options:
-        o = o.strip()
-        # 只认大写字母，避免把内容恰好是小写字母的选项（如 a、b）当成选项编号
-        if o == text or (len(letter) == 1 and letter.isupper() and o[:1] == letter):
-            return o[:1]
+        if o.strip() == text:
+            return o.strip()[:1]
+    for o in options:
+        if re.sub(r"\s+", "", get_option_text(o)) == squeezed:
+            return o.strip()[:1]
+    letter = re.sub(r'^([A-Za-z])\s*[.、:：)）]?$', r'\1', text)
+    if len(letter) == 1 and letter.isupper():  # 只认大写字母，避免把小写内容（如 a、b）当成编号
+        for o in options:
+            if o.strip()[:1] == letter:
+                return letter
     return ""
+
+
+def _is_numeric_answer(text: str) -> bool:
+    """纯数字答案（如 0、1、12）不能靠子序列模糊匹配，否则 "0" 会匹配到 "A10"."""
+    return bool(re.fullmatch(r"-?\d+(?:\.\d+)?", str(text).strip()))
 
 
 def is_subsequence(a, o):
@@ -1274,10 +1287,10 @@ class Chaoxing:
                 continue
             except Exception as e:
                 if attempt > 0:
-                    # 上一轮已经提交成功，只是不能重做（课程仅允许作答一次），不应把章节判为失败而反复重试
-                    logger.warning(f"无法重做章节检测，保留已提交的成绩 {last_submitted_score} 分"
-                                   f"（该课程可能仅允许作答一次，可在设置中关闭「答错后自动重做」）: {e}")
-                    return StudyResult.SUCCESS
+                    # 已确认不能重做的情况（拿到批改页）在上面按成绩处理；这里多为网络或服务器的临时错误，
+                    # 返回失败让章节稍后整体重试，重试时会重新读取批改页再决定
+                    logger.warning(f"重做章节检测时获取题目失败（上一轮成绩 {last_submitted_score} 分），稍后重试: {e}")
+                    return StudyResult.ERROR
                 else:
                     logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
                 return StudyResult.ERROR
@@ -1320,12 +1333,15 @@ class Chaoxing:
                         options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
                         res_list = multi_cut(res, _ORIGIN_HTML_CONTENT)
                         if res_list is not None and options_list is not None:
-                            for _a in clean_res(res_list):
+                            for _raw, _a in zip(res_list, clean_res(res_list)):
                                 matched = False
-                                exact = exact_option_letter(_a, options_list)
+                                # 先按原始答案精确匹配（"B." 清理后会变成空字符串）
+                                exact = exact_option_letter(_raw, options_list) or exact_option_letter(_a, options_list)
                                 if exact:
                                     answer += exact
                                     continue
+                                if not _a or _is_numeric_answer(_a):
+                                    continue  # 空答案或纯数字答案不做模糊匹配
                                 for o in options_list:
                                     if (
                                             is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
@@ -1345,14 +1361,15 @@ class Chaoxing:
                         options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
                         if options_list is not None:
                             t_res = clean_res(res)
-                            answer = exact_option_letter(res, options_list)
+                            answer = exact_option_letter(res, options_list) or exact_option_letter(t_res[0], options_list)
+                            fuzzy_ok = bool(t_res[0]) and not _is_numeric_answer(t_res[0])
                             for o in options_list:
-                                if answer:
+                                if answer or not fuzzy_ok:
                                     break
                                 if is_subsequence(t_res[0], o):
                                     answer = o[:1]
                                     break
-                            if not answer and t_res:
+                            if not answer and t_res and fuzzy_ok:
                                 answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
                     elif q["type"] == "judgement":
                         answer = "true" if self.tiku.judgement_select(res) else "false"
