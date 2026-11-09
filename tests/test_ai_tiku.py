@@ -365,6 +365,49 @@ class ImageOptionTest(unittest.TestCase):
         self.assertEqual(len(content), 3)
 
 
+class ImagePrepareTest(unittest.TestCase):
+    """公式图片：透明背景铺白底、小图放大（审查实际刷课日志发现模型读错透明背景的公式）."""
+
+    def decode(self, data_url):
+        import base64, io
+        from PIL import Image
+        return Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
+
+    def test_transparent_small_formula(self):
+        import io
+        from PIL import Image, ImageDraw
+        img = Image.new("RGBA", (74, 19), (0, 0, 0, 0))
+        ImageDraw.Draw(img).text((2, 2), "x=4t-2t2", fill=(0, 0, 0, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        out = self.decode(AI._to_data_url(buf.getvalue(), "image/jpeg"))
+        self.assertEqual(out.mode, "RGB")
+        self.assertEqual(out.getpixel((0, 0)), (255, 255, 255))  # 透明处变成白色
+        self.assertGreaterEqual(out.height, 64)  # 放大
+        self.assertEqual(out.format, "PNG")
+
+    def test_normal_image_untouched(self):
+        import io
+        from PIL import Image
+        img = Image.new("RGB", (400, 300), "white")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        raw = buf.getvalue()
+        url = AI._to_data_url(raw, "image/jpeg")
+        self.assertTrue(url.startswith("data:image/jpeg;base64,"))
+        import base64
+        self.assertEqual(base64.b64decode(url.split(",", 1)[1]), raw)  # 正常图片原样发送
+
+    def test_large_image_downscaled(self):
+        import io
+        from PIL import Image
+        img = Image.new("RGB", (3000, 1000), "white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        out = self.decode(AI._to_data_url(buf.getvalue(), "image/png"))
+        self.assertLessEqual(max(out.size), 1280)
+
+
 class WebSearchTest(unittest.TestCase):
     def make_session(self, payload=None, exc=None):
         session = mock.Mock()

@@ -1286,11 +1286,11 @@ class AI(Tiku):
 
     # 各题型的系统提示词
     _PROMPTS = {
-        'single': "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-        'multiple': "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-        'completion': "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-        'judgement': "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-        'other': "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
+        'single': "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果题目后附有参考资料，请结合参考资料判断，但不要在回答中复述资料",
+        'multiple': "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果题目后附有参考资料，请结合参考资料判断，但不要在回答中复述资料",
+        'completion': "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果题目后附有参考资料，请结合参考资料判断，但不要在回答中复述资料",
+        'judgement': "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果题目后附有参考资料，请结合参考资料判断，但不要在回答中复述资料",
+        'other': "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果题目后附有参考资料，请结合参考资料判断，但不要在回答中复述资料",
     }
     _IMG_RE = re.compile(r'<img\b[^>]*?\bsrc\s*=\s*["\']([^"\']+)["\'][^>]*>', re.IGNORECASE)
     _TAG_RE = re.compile(r'<[^>]+>')
@@ -1385,20 +1385,47 @@ class AI(Tiku):
         return None
 
     @staticmethod
-    def _to_data_url(content: bytes, ctype: str, max_side: int = 1280) -> str:
-        """转成 base64 data URL；图片过大时缩小，减少模型的图像 token."""
+    def _to_data_url(content: bytes, ctype: str, max_side: int = 1280, min_height: int = 64) -> str:
+        """整理成适合模型识别的图片并转成 base64 data URL.
+
+        - 透明背景铺成白底：学习通的公式图片（/ananas/latex）是透明背景的黑字 PNG，
+          直接发给模型会被当成黑底，实测模型完全读错公式
+        - 很小的图片（公式常见 74×19）放大并留白，过大的图片缩小以减少图像 token
+        """
+        import base64
         try:
             import io
             from PIL import Image
             img = Image.open(io.BytesIO(content))
+            img.load()
+            changed = False
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                rgba = img.convert("RGBA")
+                flat = Image.new("RGB", rgba.size, "white")
+                flat.paste(rgba, mask=rgba.split()[-1])
+                img, changed = flat, True
+            elif img.mode not in ("RGB", "L"):
+                img, changed = img.convert("RGB"), True
+            if img.height < min_height:
+                scale = min(8, -(-min_height // max(img.height, 1)))
+                img = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+                padded = Image.new(img.mode, (img.width + 32, img.height + 32), "white")
+                padded.paste(img, (16, 16))
+                img, changed = padded, True
             if max(img.size) > max_side:
                 img.thumbnail((max_side, max_side))
+                changed = True
+            if changed:
                 buf = io.BytesIO()
-                img.convert('RGB').save(buf, format='JPEG', quality=90)
-                content, ctype = buf.getvalue(), 'image/jpeg'
+                if max(img.size) > 600:
+                    img.convert("RGB").save(buf, format="JPEG", quality=90)
+                    ctype = "image/jpeg"
+                else:
+                    img.save(buf, format="PNG")
+                    ctype = "image/png"
+                content = buf.getvalue()
         except Exception:
             pass
-        import base64
         return f"data:{ctype};base64,{base64.b64encode(content).decode()}"
 
     def _build_user_content(self, q_info: dict):
@@ -1439,6 +1466,8 @@ class AI(Tiku):
             logger.info(f"题目图片：成功附上 {len(loaded)}/{len(urls)} 张")
         if not loaded:
             return text
+        if all(images):
+            text = "（题目和选项中的 [图1]、[图2]… 依次对应下面附上的图片，请先看清图片内容再作答）\n" + text
         return [{"type": "text", "text": text}] + [
             {"type": "image_url", "image_url": {"url": img}} for img in loaded
         ]
