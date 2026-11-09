@@ -154,6 +154,13 @@ def load_config_from_file(config_path):
             common_config["work_max_retries"] = 3
         if "work_redo_enabled" in common_config:
             common_config["work_redo_enabled"] = str_to_bool(common_config["work_redo_enabled"])
+        if "work_recheck_finished" in common_config:
+            common_config["work_recheck_finished"] = str_to_bool(common_config["work_recheck_finished"])
+        if "work_min_score" in common_config:
+            try:
+                common_config["work_min_score"] = float(common_config["work_min_score"])
+            except ValueError:
+                common_config["work_min_score"] = 100.0
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
         if "add_learning_count" in common_config:
@@ -258,6 +265,8 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
         query_delay=query_delay,
         work_max_retries=work_max_retries,
         work_redo_enabled=work_redo_enabled,
+        work_min_score=common_config.get("work_min_score", 100.0),
+        work_recheck_finished=common_config.get("work_recheck_finished", False),
     )
 
     return chaoxing
@@ -447,7 +456,10 @@ class JobProcessor:
 def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
+    recheck = bool(getattr(chaoxing, "kwargs", {}).get("work_recheck_finished", False))
     if point["has_finished"]:
+        if recheck:
+            return recheck_finished_chapter(chaoxing, course, point, speed)
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
         return ChapterResult.SUCCESS
 
@@ -456,7 +468,10 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
 
     # 获取当前章节的所有任务点
     job_info = None
-    jobs, job_info = chaoxing.get_job_list(course, point)
+    if recheck:  # 回查时同时取出已通过的章节检测
+        jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True)
+    else:
+        jobs, job_info = chaoxing.get_job_list(course, point)
 
     # 发现未开放章节, 根据配置处理
     if job_info.get("notOpen", False):
@@ -476,6 +491,28 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
             return ChapterResult.ERROR
 
     return ChapterResult.SUCCESS
+
+
+def recheck_finished_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any],
+                             speed: float) -> ChapterResult:
+    """回查已完成章节中的章节检测：成绩低于要求且还有重做机会时重新作答（见 Chaoxing.study_work）."""
+    chapter_key = f'chapter:{course["courseId"]}:{point["id"]}'
+    if chaoxing.work_cache_get(chapter_key):
+        logger.debug(f'章节 {point["title"]} 的章节检测已确认达标，跳过回查')
+        return ChapterResult.SUCCESS
+
+    chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
+    jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True, study_empty=False)
+    works = [job for job in jobs if job.get("type") == "workid"]
+    if not works:
+        chaoxing.work_cache_set(chapter_key, "no-work")
+        return ChapterResult.SUCCESS
+
+    logger.info(f'回查章节检测成绩: {point["title"]}')
+    results = [process_job(chaoxing, course, job, job_info, speed) for job in works]
+    if all(chaoxing.work_cache_get("work:" + job["jobid"]) is not None for job in works):
+        chaoxing.work_cache_set(chapter_key, "ok")
+    return ChapterResult.ERROR if any(r.is_failure() for r in results) else ChapterResult.SUCCESS
 
 
 def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):

@@ -154,6 +154,7 @@ config*.ini
 .idea/
 .vscode/
 cache.json
+work_check_cache.json
 start*.bat
 .workbuddy/
 myConfig/

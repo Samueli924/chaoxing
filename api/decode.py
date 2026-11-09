@@ -154,7 +154,7 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
     return point_list
 
 
-def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def decode_course_card(html_text: str, include_passed_work: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     解析任务点列表页面，提取任务点信息
     
@@ -186,7 +186,8 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
-    job_list = _process_attachment_cards(cards)
+    job_info["attachmentCount"] = len(cards)
+    job_list = _process_attachment_cards(cards, include_passed_work=include_passed_work)
 
     return job_list, job_info
 
@@ -217,7 +218,7 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_attachment_cards(cards: List[Dict[str, Any]], include_passed_work: bool = False) -> List[Dict[str, Any]]:
     """
     处理所有附件任务卡片，强化直播任务识别逻辑
     
@@ -230,9 +231,10 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
     job_list = []
 
     for index, card in enumerate(cards):
-        # 跳过已通过的任务
+        # 跳过已通过的任务（回查章节检测成绩时保留已通过的章节检测）
         if card.get("isPassed", False):
-            continue
+            if not (include_passed_work and card.get("type", "").lower() == "workid"):
+                continue
 
         # 处理无job字段的特殊任务
         if card.get("job") is None:

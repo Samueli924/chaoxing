@@ -1193,7 +1193,29 @@ class AI(Tiku):
         # 多个章节检测同时作答时，一个检测的题目全部答完再答下一个，
         # 避免各检测的题目交错排队、全部拖到最后才一起完成
         self._quiz_lock = threading.Lock()
+        # 错题反馈和重做模式按线程保存：多个章节检测同时进行时互不影响
+        self._tl = threading.local()
         self.work_feedback = None  # 章节检测错误反馈（重做时参考）
+
+    @property
+    def work_feedback(self):
+        return getattr(self._tl, "feedback", None)
+
+    @work_feedback.setter
+    def work_feedback(self, value):
+        self._tl.feedback = value
+
+    def set_redo_mode(self, enabled: bool) -> None:
+        """重做章节检测时开启思考（忽略 ai_disable_thinking）并放宽单题超时，追求正确率."""
+        self._tl.redo = bool(enabled)
+
+    def _thinking_off(self) -> bool:
+        return self.disable_thinking and not getattr(self._tl, "redo", False)
+
+    def _timeout(self) -> float:
+        if getattr(self._tl, "redo", False):
+            return max(self.request_timeout, self.redo_timeout)
+        return self.request_timeout
 
     LOG_EACH_QUERY = True
 
@@ -1370,7 +1392,7 @@ class AI(Tiku):
             images = [self._fetch_image(u) for u in urls]
         if urls and (not images or not all(images)):
             text += "\n（题目中的部分图片无法提供，请根据已有信息直接给出最可能的答案，不要反复推敲）"
-        if self.disable_thinking:
+        if self._thinking_off():
             text += "\n/no_think"
 
         loaded = [img for img in images if img]
@@ -1437,9 +1459,10 @@ class AI(Tiku):
         return None
 
     def _client(self) -> OpenAI:
-        kwargs = dict(base_url=self.endpoint, api_key=self.key, timeout=self.request_timeout, max_retries=0)
+        timeout = self._timeout()
+        kwargs = dict(base_url=self.endpoint, api_key=self.key, timeout=timeout, max_retries=0)
         if self.http_proxy:
-            kwargs['http_client'] = httpx.Client(proxy=self.http_proxy, timeout=self.request_timeout)
+            kwargs['http_client'] = httpx.Client(proxy=self.http_proxy, timeout=timeout)
         return OpenAI(**kwargs)
 
     def _query_locked(self, q_info: dict):
@@ -1453,7 +1476,7 @@ class AI(Tiku):
             messages.append({"role": "system", "content": feedback_text})
         user_content = self._build_user_content(q_info)
         messages.append({"role": "user", "content": user_content})
-        if self.disable_thinking:
+        if self._thinking_off():
             # 预先给出空的思考内容，让 Qwen3 等思考型模型直接输出答案（仅 /no_think 对部分模型无效）
             messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
 
@@ -1464,14 +1487,14 @@ class AI(Tiku):
             completion = client.chat.completions.create(**self._completion_kwargs(
                 model=self.model, messages=messages, max_tokens=self.max_tokens))
         except APITimeoutError:
-            logger.warning(f"大模型答题超时（超过 {self.request_timeout:g} 秒），已跳过：{short_title}")
+            logger.warning(f"大模型答题超时（超过 {self._timeout():g} 秒），已跳过：{short_title}")
             return None
         except BadRequestError as e:
             if isinstance(user_content, list):
                 # 模型可能不支持图片输入：关闭识图后用纯文字重试
                 logger.warning(f"当前模型不支持图片输入，已改为纯文字作答：{e}")
                 self._vision_ok = False
-                messages[-2 if self.disable_thinking else -1]["content"] = self._build_user_content(q_info)
+                messages[-2 if self._thinking_off() else -1]["content"] = self._build_user_content(q_info)
                 try:
                     completion = client.chat.completions.create(**self._completion_kwargs(
                         model=self.model, messages=messages, max_tokens=self.max_tokens))
@@ -1520,6 +1543,10 @@ class AI(Tiku):
             self.max_tokens = int(_get('ai_max_tokens', '4096'))
         except ValueError:
             self.max_tokens = 4096
+        try:
+            self.redo_timeout = float(_get('ai_redo_timeout', '300'))
+        except ValueError:
+            self.redo_timeout = 300.0
         self._vision_ok = True
         self._image_cache = {}
         # 联网搜索：填写 SearXNG 地址后，每道题先搜索题干，把搜索结果作为参考资料交给模型
