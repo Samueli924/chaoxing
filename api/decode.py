@@ -540,4 +540,9 @@ def _extract_choices(element, font_decoder=None) -> str:
     if cleaned_content.endswith("选择"):
         cleaned_content = cleaned_content[:-2].rstrip()
 
+    # 选项内容是图片（如数学公式）时，文字里只剩选项字母，把图片也带上，便于识图作答
+    images = [f'<img src="{img.get("src")}">' for img in element.find_all("img") if img.get("src")]
+    if images and "<img" not in cleaned_content:
+        cleaned_content += "".join(images)
+
     return cleaned_content

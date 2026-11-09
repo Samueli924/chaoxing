@@ -216,6 +216,23 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
     return ""
 
 
+def exact_option_letter(answer, options: list) -> str:
+    """答案就是某个选项的字母（如 "B"）或与某个选项完全相同时，直接返回该选项字母.
+
+    选项内容为图片时，选项文本里含有图片地址，模糊的子序列匹配可能把单个字母误匹配到别的选项上。
+    """
+    text = str(answer).strip()
+    if not text:
+        return ""
+    letter = re.sub(r'^([A-Za-z])\s*[.、:：)）]?$', r'\1', text)
+    for o in options:
+        o = o.strip()
+        # 只认大写字母，避免把内容恰好是小写字母的选项（如 a、b）当成选项编号
+        if o == text or (len(letter) == 1 and letter.isupper() and o[:1] == letter):
+            return o[:1]
+    return ""
+
+
 def is_subsequence(a, o):
     iter_o = iter(o.lower())
     return all(c in iter_o for c in a.lower())
@@ -1072,8 +1089,10 @@ class Chaoxing:
                 return StudyResult.SUCCESS
             except Exception as e:
                 if attempt > 0:
-                    logger.error(f"重做轮无法获取题目(上一轮提交成绩 {last_submitted_score} 分), "
-                                 f"该课程可能仅允许作答一次: {e}")
+                    # 上一轮已经提交成功，只是不能重做（课程仅允许作答一次），不应把章节判为失败而反复重试
+                    logger.warning(f"无法重做章节检测，保留已提交的成绩 {last_submitted_score} 分"
+                                   f"（该课程可能仅允许作答一次，可在设置中关闭「答错后自动重做」）: {e}")
+                    return StudyResult.SUCCESS
                 else:
                     logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
                 return StudyResult.ERROR
@@ -1118,6 +1137,10 @@ class Chaoxing:
                         if res_list is not None and options_list is not None:
                             for _a in clean_res(res_list):
                                 matched = False
+                                exact = exact_option_letter(_a, options_list)
+                                if exact:
+                                    answer += exact
+                                    continue
                                 for o in options_list:
                                     if (
                                             is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
@@ -1137,7 +1160,10 @@ class Chaoxing:
                         options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
                         if options_list is not None:
                             t_res = clean_res(res)
+                            answer = exact_option_letter(res, options_list)
                             for o in options_list:
+                                if answer:
+                                    break
                                 if is_subsequence(t_res[0], o):
                                     answer = o[:1]
                                     break

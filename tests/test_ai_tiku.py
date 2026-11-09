@@ -221,6 +221,88 @@ class AnswerCheckTest(unittest.TestCase):
         self.assertTrue(check_answer("0", "judgement", tiku))
 
 
+class ImageOptionTest(unittest.TestCase):
+    """公式图片选项：解析时保留图片、要求模型用字母作答、按字母精确匹配."""
+
+    def test_decode_keeps_option_images(self):
+        from bs4 import BeautifulSoup
+        from api.decode import _extract_choices
+        li = BeautifulSoup('<li aria-label="B选择"><span>B</span><div><img src="/ananas/latex/p/1"></div></li>', "lxml").li
+        self.assertEqual(_extract_choices(li), 'B<img src="/ananas/latex/p/1">')
+        li2 = BeautifulSoup('<li aria-label="A 2dx选择"><span>A</span>2dx</li>', "lxml").li
+        self.assertEqual(_extract_choices(li2), "A 2dx")
+
+    def test_exact_option_letter(self):
+        from api.base import exact_option_letter
+        opts = ['A<img src="https://p.example/abc.png">', 'B<img src="https://p.example/bbb.png">']
+        self.assertEqual(exact_option_letter("B", opts), "B")
+        self.assertEqual(exact_option_letter("B.", opts), "B")
+        self.assertEqual(exact_option_letter(opts[0], opts), "A")
+        self.assertEqual(exact_option_letter("b", ["A b", "B a"]), "")  # 小写内容不当作字母
+        self.assertEqual(exact_option_letter("2dx", ["A 2dx", "B 6dx"]), "")
+
+    def test_prompt_asks_for_letters_when_options_are_images(self):
+        ai = make_ai()
+        q = {"type": "single", "title": "函数的导数为",
+             "options": 'A<img src="https://p.example/a.png">\nB<img src="https://p.example/b.png">'}
+        with mock.patch.object(AI, "_fetch_image", return_value="data:image/png;base64,xx"):
+            content = ai._build_user_content(q)
+        text = content[0]["text"]
+        self.assertIn("A. [图1]", text)
+        self.assertIn("B. [图2]", text)
+        self.assertIn("请用选项字母作答", text)
+        self.assertEqual(len(content), 3)
+
+
+class WebSearchTest(unittest.TestCase):
+    def make_session(self, payload=None, exc=None):
+        session = mock.Mock()
+        if exc:
+            session.get.side_effect = exc
+        else:
+            resp = mock.Mock()
+            resp.json.return_value = payload
+            resp.raise_for_status.return_value = None
+            session.get.return_value = resp
+        return session
+
+    def test_search_results_added_to_prompt(self):
+        ai = make_ai(ai_vision="false", ai_search_url="http://127.0.0.1:8888", ai_search_results="2")
+        payload = {"results": [
+            {"title": "黄河大合唱", "content": "1939年冼星海作曲"},
+            {"title": "空结果", "content": ""},
+            {"title": "冼星海", "content": "中国作曲家"},
+            {"title": "多余", "content": "不应出现"},
+        ]}
+        session = self.make_session(payload)
+        q = {"type": "single", "title": "【单选题】《黄河大合唱》的作曲者是", "options": "A冼星海\nB聂耳"}
+        with mock.patch.object(answer_mod.requests, "Session", return_value=session):
+            text = ai._build_user_content(q)
+            ai._build_user_content(q)  # 同一题第二次走缓存
+        self.assertEqual(session.get.call_count, 1)
+        params = session.get.call_args.kwargs["params"]
+        self.assertEqual(params["format"], "json")
+        self.assertNotIn("【", params["q"])
+        self.assertFalse(session.trust_env)
+        self.assertIn("1. 黄河大合唱：1939年冼星海作曲", text)
+        self.assertIn("2. 冼星海：中国作曲家", text)
+        self.assertNotIn("不应出现", text)
+
+    def test_search_failure_does_not_block(self):
+        ai = make_ai(ai_vision="false", ai_search_url="http://127.0.0.1:8888")
+        session = self.make_session(exc=OSError("connection refused"))
+        q = {"type": "judgement", "title": "牛顿第一定律又称惯性定律", "options": ""}
+        with mock.patch.object(answer_mod.requests, "Session", return_value=session):
+            text = ai._build_user_content(q)
+        self.assertNotIn("参考资料", text)
+
+    def test_search_off_by_default(self):
+        ai = make_ai(ai_vision="false")
+        with mock.patch.object(answer_mod.requests, "Session") as sess:
+            ai._build_user_content({"type": "judgement", "title": "牛顿第一定律又称惯性定律", "options": ""})
+        sess.assert_not_called()
+
+
 class QuizOrderTest(unittest.TestCase):
     """多个章节检测同时作答时，一个检测答完再答下一个，并上报进度."""
 

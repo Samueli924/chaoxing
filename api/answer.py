@@ -1346,10 +1346,24 @@ class AI(Tiku):
         title = self._split_images(q_info.get('title', ''), urls)
         text = f"题目：{title}"
         if q_info['type'] in ('single', 'multiple'):
-            # 去除选项字母，防止大模型直接输出字母而非内容
             options_list = (q_info.get('options') or '').split('\n')
-            cleaned = [re.sub(r"^[A-Z]\s*", "", self._split_images(o, urls)) for o in options_list]
-            text += "\n选项：" + "\n".join(cleaned)
+            if any('<img' in o for o in options_list):
+                # 选项是图片（如公式）时无法用文字对应选项，保留字母并要求用字母作答
+                lines = []
+                for o in options_list:
+                    m = re.match(r"^([A-Z])\s*(.*)$", o.strip())
+                    letter, body = (m.group(1), m.group(2)) if m else ("", o)
+                    lines.append(f"{letter}. {self._split_images(body, urls)}".strip())
+                text += "\n选项：\n" + "\n".join(lines)
+                text += "\n（选项内容是图片，请用选项字母作答，例如 {\"Answer\": [\"B\"]}）"
+            else:
+                # 去除选项字母，防止大模型直接输出字母而非内容
+                cleaned = [re.sub(r"^[A-Z]\s*", "", self._split_images(o, urls)) for o in options_list]
+                text += "\n选项：" + "\n".join(cleaned)
+        if self.search_url:
+            refs = self._web_search(title)
+            if refs:
+                text += "\n\n参考资料（网络搜索结果，仅供参考，可能不准确）：\n" + refs
 
         images = []
         if urls and self.vision and self._vision_ok:
@@ -1367,6 +1381,37 @@ class AI(Tiku):
         return [{"type": "text", "text": text}] + [
             {"type": "image_url", "image_url": {"url": img}} for img in loaded
         ]
+
+    def _web_search(self, title: str) -> str:
+        """用 SearXNG 搜索题干，返回整理好的参考资料文本；失败或没有结果时返回空字符串."""
+        query = re.sub(r"\[图\d+\]|【[^】]*】|[（(]\s*[）)]|_{2,}", " ", title or "")
+        query = re.sub(r"\s+", " ", query).strip()[:80]
+        if len(query) < 4:
+            return ""
+        if query in self._search_cache:
+            return self._search_cache[query]
+        refs = ""
+        try:
+            session = requests.Session()
+            session.trust_env = False  # 本机搜索服务不走系统代理
+            resp = session.get(f"{self.search_url.rstrip('/')}/search",
+                               params={"q": query, "format": "json", "language": "zh-CN"},
+                               timeout=self.search_timeout)
+            resp.raise_for_status()
+            lines = []
+            for r in resp.json().get("results", []):
+                content = re.sub(r"\s+", " ", r.get("content") or "").strip()
+                if not content:
+                    continue
+                lines.append(f"{len(lines) + 1}. {(r.get('title') or '').strip()}：{content[:300]}")
+                if len(lines) >= self.search_results:
+                    break
+            refs = "\n".join(lines)
+            logger.info(f"联网搜索：找到 {len(lines)} 条参考资料")
+        except Exception as e:
+            logger.warning(f"联网搜索失败（{self.search_url}）：{type(e).__name__}: {e}")
+        self._search_cache[query] = refs
+        return refs
 
     @staticmethod
     def _parse_answer(content: Optional[str]) -> Optional[str]:
@@ -1477,6 +1522,17 @@ class AI(Tiku):
             self.max_tokens = 4096
         self._vision_ok = True
         self._image_cache = {}
+        # 联网搜索：填写 SearXNG 地址后，每道题先搜索题干，把搜索结果作为参考资料交给模型
+        self.search_url = _get('ai_search_url', '')
+        try:
+            self.search_results = max(1, int(_get('ai_search_results', '3')))
+        except ValueError:
+            self.search_results = 3
+        try:
+            self.search_timeout = float(_get('ai_search_timeout', '10'))
+        except ValueError:
+            self.search_timeout = 10.0
+        self._search_cache = {}
 
     def check_llm_connection(self) -> bool:
         """
