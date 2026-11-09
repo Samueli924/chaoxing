@@ -1484,9 +1484,16 @@ class AI(Tiku):
         try:
             session = requests.Session()
             session.trust_env = False  # 本机搜索服务不走系统代理
-            resp = session.get(f"{self.search_url.rstrip('/')}/search",
-                               params={"q": query, "format": "json", "language": "zh-CN"},
-                               timeout=self.search_timeout)
+            for attempt in range(2):  # 超时或连接失败时重试一次（某个搜索引擎偶尔卡住）
+                try:
+                    resp = session.get(f"{self.search_url.rstrip('/')}/search",
+                                       params={"q": query, "format": "json", "language": "zh-CN"},
+                                       timeout=self.search_timeout)
+                    break
+                except (requests.Timeout, requests.ConnectionError):
+                    if attempt:
+                        raise
+                    logger.debug("联网搜索超时，重试一次")
             resp.raise_for_status()
             lines = []
             for r in resp.json().get("results", []):
@@ -1498,9 +1505,9 @@ class AI(Tiku):
                     break
             refs = "\n".join(lines)
             logger.info(f"联网搜索：找到 {len(lines)} 条参考资料")
+            self._search_cache[query] = refs  # 只缓存成功的搜索，失败的下次（如重做时）还会再搜
         except Exception as e:
             logger.warning(f"联网搜索失败（{self.search_url}）：{type(e).__name__}: {e}")
-        self._search_cache[query] = refs
         return refs
 
     @staticmethod

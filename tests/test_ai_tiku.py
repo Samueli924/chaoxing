@@ -450,6 +450,28 @@ class WebSearchTest(unittest.TestCase):
             text = ai._build_user_content(q)
         self.assertNotIn("参考资料", text)
 
+    def test_search_retries_once_on_timeout_and_does_not_cache_failures(self):
+        import requests as _requests
+        ai = make_ai(ai_vision="false", ai_search_url="http://127.0.0.1:8888")
+        ok = mock.Mock()
+        ok.json.return_value = {"results": [{"title": "惯性定律", "content": "牛顿第一定律又称惯性定律"}]}
+        ok.raise_for_status.return_value = None
+        session = mock.Mock()
+        session.get.side_effect = [_requests.ReadTimeout("slow"), ok]
+        q = {"type": "judgement", "title": "牛顿第一定律又称惯性定律", "options": ""}
+        with mock.patch.object(answer_mod.requests, "Session", return_value=session):
+            text = ai._build_user_content(q)
+        self.assertEqual(session.get.call_count, 2)  # 超时后重试成功
+        self.assertIn("惯性定律：牛顿第一定律又称惯性定律", text)
+
+        ai2 = make_ai(ai_vision="false", ai_search_url="http://127.0.0.1:8888")
+        failing = mock.Mock()
+        failing.get.side_effect = _requests.ReadTimeout("slow")
+        with mock.patch.object(answer_mod.requests, "Session", return_value=failing):
+            ai2._build_user_content(q)
+            ai2._build_user_content(q)
+        self.assertEqual(failing.get.call_count, 4)  # 两次都失败（各重试一次），失败结果没有缓存
+
     def test_search_off_by_default(self):
         ai = make_ai(ai_vision="false")
         with mock.patch.object(answer_mod.requests, "Session") as sess:
