@@ -62,8 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func confirmQuitIfRunning() -> Bool {
         guard isTaskRunning() else { return true }
         let alert = NSAlert()
-        alert.messageText = "正在学习中，确定要退出吗？"
-        alert.informativeText = "退出会停止学习。已完成的进度会保存在学习通，下次可以接着学。"
+        alert.messageText = "有账号正在学习或排队，确定要退出吗？"
+        alert.informativeText = "退出会停止所有账号的学习并取消排队。已完成的进度会保存在学习通，下次可以接着学。"
         alert.addButton(withTitle: "继续学习")
         alert.addButton(withTitle: "停止并退出")
         alert.buttons[1].hasDestructiveAction = true
@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func isTaskRunning() -> Bool {
-        guard let port = port, let url = URL(string: "http://127.0.0.1:\(port)/api/run?since=999999999") else { return false }
+        guard let port = port, let url = URL(string: "http://127.0.0.1:\(port)/api/state") else { return false }
         var req = URLRequest(url: url, timeoutInterval: 2)
         req.setValue(token, forHTTPHeaderField: "X-Token")
         let sem = DispatchSemaphore(value: 0)
@@ -79,9 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         URLSession.shared.dataTask(with: req) { data, _, _ in
             if let data = data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let run = obj["run"] as? [String: Any],
-               let status = run["status"] as? String {
-                running = ["starting", "running", "counting"].contains(status)
+               let busy = obj["any_busy"] as? Bool {
+                running = busy
             }
             sem.signal()
         }.resume()
@@ -192,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     @objc private func openSettings() {
-        webView.evaluateJavaScript("if (S.session && S.session.logged_in) openSettings();", completionHandler: nil)
+        webView.evaluateJavaScript("window.cxOpenSettings && window.cxOpenSettings();", completionHandler: nil)
     }
 
     @objc private func openProjectFolder() {
@@ -247,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 guard let self = self, !self.quitting else { return }
-                self.showError("后台服务意外退出（代码 \(proc.terminationStatus)）。\n\n\(self.stderrTail)\n\n请重新打开应用；如果反复出现，可以查看 gui/logs/server.log。")
+                self.showError("后台服务意外退出（代码 \(proc.terminationStatus)）。\n\n\(self.stderrTail)\n\n请重新打开应用；如果反复出现，可以查看 gui/data/logs/server.log。")
             }
         }
         do {

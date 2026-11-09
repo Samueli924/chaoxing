@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-刷课助手的本地后台：提供登录、课程列表、设置读写和任务控制接口，界面在 gui/static 下。
+刷课助手的本地后台：多账号管理、课程列表、设置读写、排队调度和任务控制，界面在 gui/static 下。
 只监听 127.0.0.1，所有 /api 请求都要带启动时生成的令牌。
 
-用法: .venv/bin/python gui/server.py [--port 0] [--open]
+用法:
+    python gui/server.py            # 启动并用浏览器打开界面（Windows / Linux / macOS 通用）
+    python gui/server.py --no-open  # 只启动后台，打印访问地址
+macOS 上也可以用 gui/build_app.sh 打包成独立应用。
 """
 import argparse
 import collections
+import contextlib
 import json
 import logging
 import os
+import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -20,8 +26,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GUI = ROOT / "gui"
-LOG_DIR = GUI / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+DATA = GUI / "data"
+LOG_DIR = DATA / "logs"
+COOKIE_DIR = DATA / "cookies"
+for _d in (DATA, LOG_DIR, COOKIE_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
@@ -34,11 +43,13 @@ from werkzeug.serving import make_server  # noqa: E402
 
 from api.base import Account, Chaoxing, SessionManager  # noqa: E402
 from api.config import GlobalConst  # noqa: E402
-from gui import configio, keychain  # noqa: E402
+from gui import configio, keychain, platform_utils  # noqa: E402
+from gui.scheduler import Scheduler  # noqa: E402
 
 CONFIG = ROOT / "config.ini"
 TEMPLATE = ROOT / "config_template.ini"
-WORKER_LOG = LOG_DIR / "worker.log"
+ACCOUNTS_FILE = DATA / "accounts.json"
+LEGACY_COOKIES = ROOT / "cookies.txt"
 TOKEN = os.environ.get("CXGUI_TOKEN") or secrets.token_urlsafe(24)
 EV_PREFIX = "@@CX "
 PLACEHOLDERS = {"", "xxx", "在这里填手机号", "在这里填密码"}
@@ -79,224 +90,6 @@ def static_files(name):
     return send_from_directory(GUI / "static", name)
 
 
-# ---------------------------------------------------------------------------
-# 账号
-# ---------------------------------------------------------------------------
-class Account_:
-    def __init__(self):
-        self.lock = threading.RLock()
-        self.logged_in = False
-        self.phone = ""
-        self.password = ""
-        self.name = ""
-        self.courses: list[dict] = []
-        self.progress: dict[str, dict] = {}
-        self.progress_gen = 0
-        self.progress_loading = False
-        self.auto_tried = False
-
-
-ACC = Account_()
-
-
-def _config_phone() -> str:
-    cfg = configio.read_config(str(CONFIG))
-    phone = cfg.get("common", {}).get("username", "").strip()
-    return "" if phone in PLACEHOLDERS else phone
-
-
-def _config_password() -> str:
-    cfg = configio.read_config(str(CONFIG))
-    pwd = cfg.get("common", {}).get("password", "").strip()
-    return "" if pwd in PLACEHOLDERS else pwd
-
-
-def _do_login(phone: str, password: str, use_cookies: bool) -> tuple[bool, str, str]:
-    """返回 (是否成功, 提示信息, 姓名)"""
-    try:
-        cx = Chaoxing(account=Account(phone, password))
-        res = cx.login(login_with_cookies=use_cookies)
-    except Exception as e:  # 网络错误或接口返回异常
-        return False, f"连接学习通失败：{type(e).__name__}，请检查网络后重试", ""
-    if not res.get("status"):
-        return False, res.get("msg") or "登录失败", ""
-    name = ""
-    try:
-        name = Chaoxing.get_name()
-    except Exception:
-        pass
-    return True, "登录成功", name
-
-
-def _session_info():
-    return {
-        "logged_in": ACC.logged_in,
-        "phone": ACC.phone or _config_phone(),
-        "name": ACC.name,
-        "remembered": bool(ACC.phone and keychain.load_password(ACC.phone)),
-        "running": RUN.is_active(),
-        "run_status": RUN.status,
-    }
-
-
-@app.get("/api/session")
-def api_session():
-    """首次打开时尝试用保存的 cookie / 钥匙串密码自动登录。"""
-    with ACC.lock:
-        if not ACC.logged_in and not ACC.auto_tried:
-            ACC.auto_tried = True
-            phone = _config_phone()
-            pwd = (keychain.load_password(phone) if phone else None) or _config_password()
-            has_cookie = (ROOT / GlobalConst.COOKIES_PATH).exists()
-            if phone and (has_cookie or pwd):
-                success, _msg, name = _do_login(phone, pwd or "", use_cookies=has_cookie)
-                if success:
-                    ACC.logged_in, ACC.phone, ACC.password, ACC.name = True, phone, pwd or "", name
-    return ok(**_session_info())
-
-
-@app.post("/api/login")
-def api_login():
-    data = request.get_json(force=True) or {}
-    phone = str(data.get("phone", "")).strip()
-    password = str(data.get("password", ""))
-    remember = bool(data.get("remember", True))
-    if not phone or not password:
-        return fail("请填写手机号和密码")
-    if RUN.is_active():
-        return fail("正在学习中，不能切换账号")
-    with ACC.lock:
-        SessionManager.get_session().cookies.clear()
-        success, msg, name = _do_login(phone, password, use_cookies=False)
-        if not success:
-            return fail(msg)
-        if ACC.phone and ACC.phone != phone:
-            ACC.courses, ACC.progress = [], {}
-        ACC.logged_in, ACC.phone, ACC.password, ACC.name = True, phone, password, name
-        configio.update_config(str(CONFIG), {"common": {"username": phone, "use_cookies": False}})
-        if remember:
-            keychain.save_password(phone, password)
-        else:
-            keychain.delete_password(phone)
-    return ok(**_session_info())
-
-
-@app.post("/api/logout")
-def api_logout():
-    if RUN.is_active():
-        return fail("正在学习中，请先停止")
-    with ACC.lock:
-        keychain.delete_password(ACC.phone)
-        try:
-            (ROOT / GlobalConst.COOKIES_PATH).unlink()
-        except FileNotFoundError:
-            pass
-        SessionManager.get_session().cookies.clear()
-        ACC.logged_in, ACC.password, ACC.name = False, "", ""
-        ACC.courses, ACC.progress = [], {}
-        ACC.progress_gen += 1
-    return ok(**_session_info())
-
-
-# ---------------------------------------------------------------------------
-# 课程
-# ---------------------------------------------------------------------------
-def _course_key(c: dict) -> str:
-    return f"{c['courseId']}_{c['clazzId']}"
-
-
-def _load_progress(gen: int, courses: list[dict]):
-    """后台逐个读取课程章节完成情况，显示在课程卡片上。"""
-    ACC.progress_loading = True
-    try:
-        cx = Chaoxing()
-        for c in courses:
-            if gen != ACC.progress_gen:
-                return
-            key = _course_key(c)
-            if key in ACC.progress:
-                continue
-            try:
-                pts = cx.get_course_point(c["courseId"], c["clazzId"], c["cpi"])["points"]
-                ACC.progress[key] = {
-                    "total": len(pts),
-                    "done": sum(1 for p in pts if p.get("has_finished")),
-                    "locked": any(p.get("need_unlock") for p in pts),
-                }
-            except Exception as e:
-                ACC.progress[key] = {"error": type(e).__name__}
-            time.sleep(0.3)
-    finally:
-        if gen == ACC.progress_gen:
-            ACC.progress_loading = False
-
-
-def _courses_payload():
-    return [
-        {**{k: c.get(k, "") for k in ("courseId", "clazzId", "title", "teacher", "desc")},
-         "key": _course_key(c), "progress": ACC.progress.get(_course_key(c))}
-        for c in ACC.courses
-    ]
-
-
-@app.get("/api/courses")
-def api_courses():
-    if not ACC.logged_in:
-        return fail("请先登录", 401)
-    refresh = request.args.get("refresh") == "1"
-    with ACC.lock:
-        if refresh or not ACC.courses:
-            try:
-                raw = Chaoxing().get_course_list()
-            except Exception as e:
-                return fail(f"读取课程失败：{type(e).__name__}，可能是登录已过期，请重新登录")
-            seen, courses = set(), []
-            for c in raw:
-                k = _course_key(c)
-                if k not in seen:
-                    seen.add(k)
-                    courses.append(c)
-            ACC.courses = courses
-            ACC.progress_gen += 1
-            if refresh:
-                ACC.progress = {}
-            threading.Thread(target=_load_progress, args=(ACC.progress_gen, list(courses)),
-                             daemon=True).start()
-    return ok(courses=_courses_payload(), loading=ACC.progress_loading)
-
-
-# ---------------------------------------------------------------------------
-# 设置
-# ---------------------------------------------------------------------------
-EDITABLE = {
-    "common": {"speed", "jobs", "notopen_action", "retry_interval", "add_learning_count",
-               "target_count", "work_redo_enabled", "work_max_retries"},
-    "tiku": {"provider", "submit", "cover_rate", "delay", "tokens", "url", "go_authorization",
-             "endpoint", "key", "model", "min_interval_seconds", "http_proxy", "siliconflow_key",
-             "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
-             "likeapi_search", "likeapi_vision"},
-    "notification": {"provider", "url", "tg_chat_id"},
-}
-
-
-@app.get("/api/settings")
-def api_settings():
-    cfg = configio.read_config(str(CONFIG))
-    return ok(settings={sec: {k: v for k, v in cfg.get(sec, {}).items() if k in keys}
-                        for sec, keys in EDITABLE.items()})
-
-
-@app.post("/api/settings")
-def api_save_settings():
-    data = request.get_json(force=True) or {}
-    updates = {}
-    for sec, keys in EDITABLE.items():
-        part = data.get(sec) or {}
-        updates[sec] = {k: v for k, v in part.items() if k in keys}
-    configio.update_config(str(CONFIG), updates)
-    return api_settings()
-
-
 def _bool(v, default=False):
     if v is None or v == "":
         return default
@@ -310,7 +103,666 @@ def _num(v, cast, default):
         return default
 
 
-def _common_from_config(cfg: dict) -> dict:
+def _course_key(c: dict) -> str:
+    return f"{c['courseId']}_{c['clazzId']}"
+
+
+# ---------------------------------------------------------------------------
+# 网络会话：项目原有代码只有一个全局会话，这里按账号切换 cookie 文件并串行访问
+# ---------------------------------------------------------------------------
+NET = threading.RLock()
+
+
+@contextlib.contextmanager
+def net_as(acct: "Acct"):
+    with NET:
+        GlobalConst.COOKIES_PATH = str(acct.cookies_path)
+        session = SessionManager.get_session()
+        session.cookies.clear()
+        SessionManager.update_cookies()
+        yield
+
+
+# ---------------------------------------------------------------------------
+# 单个账号的一次学习任务
+# ---------------------------------------------------------------------------
+STATUS_MAP = {"SUCCESS": "success", "NOT_OPEN": "waiting", "ERROR": "retry"}
+FINAL_MAP = {"SUCCESS": "success", "NOT_OPEN": "skipped", "ERROR": "failed", "PENDING": "failed"}
+ACTIVE = {"starting", "running", "counting"}
+BUSY = ACTIVE | {"queued"}
+
+
+class Run:
+    def __init__(self, acct: "Acct"):
+        self.acct = acct
+        self.lock = threading.RLock()
+        self.proc: subprocess.Popen | None = None
+        self.awake: subprocess.Popen | None = None
+        self.reset()
+
+    def reset(self):
+        self.status = "idle"
+        self.phase = ""
+        self.queued_at = None
+        self.started = None
+        self.ended = None
+        self.error = ""
+        self.stop_requested = False
+        self.courses: list[dict] = []
+        self.chapter_index: dict[tuple, dict] = {}
+        self.jobs: dict[int, dict] = {}
+        self.recent = collections.deque(maxlen=8)
+        self.logs = collections.deque(maxlen=3000)
+        self.seq = 0
+        self.speed = 1.0
+        self.selected: list[dict] = []
+
+    def add_log(self, level, msg, ts=None):
+        self.seq += 1
+        self.logs.append({"seq": self.seq, "level": level, "msg": msg,
+                          "ts": ts or time.strftime("%H:%M:%S")})
+
+    def counts(self):
+        finished = sum(1 for c in self.courses for ch in c["chapters"] if ch["status"] in ("done", "success"))
+        total = sum(len(c["chapters"]) for c in self.courses)
+        return finished, total
+
+    def handle(self, ev: dict):
+        t = ev.get("t")
+        with self.lock:
+            if t == "log":
+                self.add_log(ev.get("level", "INFO"), ev.get("msg", ""), ev.get("ts"))
+            elif t == "phase":
+                self.phase = ev.get("msg", "")
+                if "学习次数" in self.phase:
+                    self.status = "counting"
+            elif t == "plan":
+                self.courses, self.chapter_index = [], {}
+                for c in ev.get("courses", []):
+                    chapters = [{"id": ch["id"], "title": ch["title"],
+                                 "status": "done" if ch.get("finished") else "pending"}
+                                for ch in c.get("chapters", [])]
+                    self.courses.append({"key": c["key"], "title": c["title"],
+                                         "teacher": c.get("teacher", ""), "chapters": chapters})
+                    for ch in chapters:
+                        self.chapter_index[(c["key"], ch["id"])] = ch
+                self.status, self.phase = "running", "正在学习"
+            elif t == "ch_start":
+                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
+                if ch and ch["status"] != "done":
+                    ch["status"] = "running"
+            elif t == "ch_end":
+                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
+                if ch and ch["status"] != "done":
+                    ch["status"] = STATUS_MAP.get(ev.get("result"), "retry")
+            elif t == "job_start":
+                job = {k: ev.get(k) for k in ("jid", "kind", "name", "course", "chapter")}
+                job.update(n=0, total=0, started=time.time())
+                self.jobs[ev["jid"]] = job
+            elif t == "progress":
+                job = self.jobs.get(ev.get("jid"))
+                if job:
+                    job["n"], job["total"] = ev.get("n", 0), ev.get("total", 0)
+            elif t == "job_end":
+                job = self.jobs.pop(ev.get("jid"), None)
+                if job:
+                    job.update(result=ev.get("result"), ended=time.time())
+                    self.recent.appendleft(job)
+            elif t == "final":
+                for item in ev.get("chapters", []):
+                    ch = self.chapter_index.get((item["course"], item["id"]))
+                    if ch and ch["status"] != "done":
+                        ch["status"] = FINAL_MAP.get(item["result"], "failed")
+                self.jobs.clear()
+            elif t == "done":
+                self.status, self.phase, self.ended = "done", "全部完成", time.time()
+            elif t == "error":
+                self.status, self.ended = "error", time.time()
+                self.error = ev.get("msg") or "未知错误"
+
+    def launch(self):
+        acct = self.acct
+        cfg = configio.read_config(str(CONFIG))
+        common = common_from_config(cfg)
+        payload = {
+            "username": acct.phone,
+            "password": acct.password or keychain.load_password(acct.phone) or "",
+            "cookies_path": str(acct.cookies_path),
+            "common": common,
+            "tiku": cfg.get("tiku", {}),
+            "notification": cfg.get("notification", {}),
+            "courses": self.selected,
+            "config_path": str(CONFIG),
+        }
+        with self.lock:
+            self.status, self.phase, self.started = "starting", "正在启动…", time.time()
+            self.speed = common["speed"]
+            err = open(acct.log_path, "w", encoding="utf8")
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, "-u", "-m", "gui.worker"], cwd=ROOT,
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+                )
+            except Exception as e:
+                self.status, self.error, self.ended = "error", f"无法启动刷课进程：{e}", time.time()
+                return
+            finally:
+                err.close()
+            proc.stdin.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf8"))
+            proc.stdin.close()
+            self.proc = proc
+            self.awake = platform_utils.keep_awake_for(proc.pid)
+        threading.Thread(target=self._reader, args=(proc,), daemon=True).start()
+
+    def _reader(self, proc: subprocess.Popen):
+        for raw in proc.stdout:
+            line = raw.decode("utf8", errors="replace").rstrip("\r\n")
+            if not line.startswith(EV_PREFIX):
+                continue
+            try:
+                self.handle(json.loads(line[len(EV_PREFIX):]))
+            except Exception as e:
+                sys.stderr.write(f"bad event {line!r}: {e}\n")
+        code = proc.wait()
+        with self.lock:
+            if self.awake and self.awake.poll() is None:
+                self.awake.terminate()
+            if self.status in ACTIVE:
+                self.ended = time.time()
+                if self.stop_requested:
+                    self.status, self.phase = "stopped", "已停止"
+                else:
+                    self.status = "error"
+                    self.error = f"刷课进程意外退出（代码 {code}），详情见日志"
+            status, error = self.status, self.error
+            finished, total = self.counts()
+        who = self.acct.display()
+        if status == "done":
+            platform_utils.notify("刷课助手", f"{who} 学习完成：{finished}/{total} 个章节已完成")
+        elif status == "error":
+            platform_utils.notify("刷课助手", f"{who} 出错了：{error}")
+
+    def stop(self):
+        with self.lock:
+            proc = self.proc
+            if self.status not in ACTIVE or not proc:
+                return
+            self.stop_requested = True
+            self.phase = "正在停止…"
+        terminate(proc)
+
+    def snapshot(self, since: int, estimate=None):
+        with self.lock:
+            titles = {c["key"]: c["title"] for c in self.courses}
+            chapter_titles = {k: ch["title"] for k, ch in self.chapter_index.items()}
+
+            def job_view(j):
+                return {**j, "course_title": titles.get(j.get("course"), ""),
+                        "chapter_title": chapter_titles.get((j.get("course"), j.get("chapter")), "")}
+
+            return {
+                "status": self.status, "phase": self.phase, "error": self.error,
+                "queued_at": self.queued_at, "started": self.started, "ended": self.ended,
+                "now": time.time(), "speed": self.speed, "queue": estimate,
+                "courses": self.courses,
+                "jobs": [job_view(j) for j in self.jobs.values()],
+                "recent": [job_view(j) for j in self.recent],
+                "logs": [e for e in self.logs if e["seq"] > since],
+                "seq": self.seq,
+                "selected": [c["title"] for c in self.selected],
+                "selected_keys": [_course_key(c) for c in self.selected],
+            }
+
+
+# ---------------------------------------------------------------------------
+# 账号
+# ---------------------------------------------------------------------------
+def _safe_name(phone: str) -> str:
+    return re.sub(r"[^0-9A-Za-z_-]", "_", phone) or "account"
+
+
+class Acct:
+    def __init__(self, phone: str, name: str = "", selected=None):
+        self.phone = phone
+        self.name = name
+        self.selected: list[str] = list(selected or [])
+        self.password = ""  # 只保存在内存中
+        self.auth = "unknown"  # unknown / checking / ok / failed
+        self.auth_msg = ""
+        self.courses: list[dict] = []
+        self.progress: dict[str, dict] = {}
+        self.progress_gen = 0
+        self.progress_loading = False
+        self.lock = threading.RLock()
+        self.run = Run(self)
+
+    @property
+    def cookies_path(self) -> Path:
+        return COOKIE_DIR / f"{_safe_name(self.phone)}.txt"
+
+    @property
+    def log_path(self) -> Path:
+        return LOG_DIR / f"worker-{_safe_name(self.phone)}.log"
+
+    def display(self) -> str:
+        return self.name or mask_phone(self.phone)
+
+    def to_json(self):
+        return {"phone": self.phone, "name": self.name, "selected": self.selected}
+
+    def summary(self):
+        run = self.run
+        with run.lock:
+            finished, total = run.counts()
+            return {
+                "phone": self.phone, "name": self.name, "auth": self.auth, "auth_msg": self.auth_msg,
+                "status": run.status, "phase": run.phase, "error": run.error,
+                "finished": finished, "total": total,
+                "selected_count": len(self.selected),
+                "queue": SCHED.estimate(self.phone, active_count()) if run.status == "queued" else None,
+            }
+
+
+def mask_phone(p: str) -> str:
+    return p[:3] + "****" + p[-4:] if len(p) >= 7 else p
+
+
+ACCOUNTS: dict[str, Acct] = {}
+ACC_LOCK = threading.RLock()
+
+
+def save_accounts():
+    with ACC_LOCK:
+        data = [a.to_json() for a in ACCOUNTS.values()]
+    tmp = ACCOUNTS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf8")
+    os.replace(tmp, ACCOUNTS_FILE)
+
+
+def load_accounts():
+    if ACCOUNTS_FILE.exists():
+        try:
+            for item in json.loads(ACCOUNTS_FILE.read_text(encoding="utf8")):
+                if item.get("phone"):
+                    ACCOUNTS[item["phone"]] = Acct(item["phone"], item.get("name", ""), item.get("selected"))
+        except Exception as e:
+            sys.stderr.write(f"读取账号列表失败: {e}\n")
+        return
+    # 首次运行：沿用 config.ini 里的账号和根目录的 cookies.txt（命令行版留下的登录状态）
+    cfg = configio.read_config(str(CONFIG)).get("common", {})
+    phone = cfg.get("username", "").strip()
+    if phone and phone not in PLACEHOLDERS:
+        acct = Acct(phone)
+        if LEGACY_COOKIES.exists() and not acct.cookies_path.exists():
+            shutil.copyfile(LEGACY_COOKIES, acct.cookies_path)
+        pwd = cfg.get("password", "").strip()
+        if pwd and pwd not in PLACEHOLDERS:
+            acct.password = pwd
+        ACCOUNTS[phone] = acct
+        save_accounts()
+
+
+def get_acct(phone: str) -> Acct:
+    acct = ACCOUNTS.get(phone)
+    if not acct:
+        abort(404)
+    return acct
+
+
+def do_login(acct: Acct, password: str, use_cookies: bool) -> tuple[bool, str]:
+    with net_as(acct):
+        try:
+            res = Chaoxing(account=Account(acct.phone, password)).login(login_with_cookies=use_cookies)
+        except Exception as e:
+            return False, f"连接学习通失败：{type(e).__name__}，请检查网络后重试"
+        if not res.get("status"):
+            return False, res.get("msg") or "登录失败"
+        try:
+            name = Chaoxing.get_name()
+            if name:
+                acct.name = name
+        except Exception:
+            pass
+    return True, "登录成功"
+
+
+def check_login(acct: Acct):
+    """用保存的 cookie 或钥匙串密码自动登录。"""
+    acct.auth, acct.auth_msg = "checking", ""
+    pwd = acct.password or keychain.load_password(acct.phone) or ""
+    has_cookie = acct.cookies_path.exists()
+    if not has_cookie and not pwd:
+        acct.auth, acct.auth_msg = "failed", "需要重新登录"
+        return
+    success, msg = do_login(acct, pwd, use_cookies=has_cookie)
+    acct.auth = "ok" if success else "failed"
+    acct.auth_msg = "" if success else msg
+    if success:
+        acct.password = pwd
+        save_accounts()
+
+
+def _auto_login_all():
+    for acct in list(ACCOUNTS.values()):
+        if acct.auth == "unknown":
+            check_login(acct)
+
+
+# ---------------------------------------------------------------------------
+# 调度
+# ---------------------------------------------------------------------------
+SCHED = Scheduler()
+
+
+def scheduler_settings(cfg=None):
+    g = (cfg or configio.read_config(str(CONFIG))).get("gui", {})
+    max_parallel = max(1, min(10, _num(g.get("max_parallel_accounts"), int, 2)))
+    lo = max(0.0, _num(g.get("stagger_min_minutes"), float, 2))
+    hi = max(lo, _num(g.get("stagger_max_minutes"), float, 5))
+    return max_parallel, lo, hi
+
+
+def apply_scheduler_settings():
+    max_parallel, lo, hi = scheduler_settings()
+    SCHED.configure(max_parallel, (lo * 60, hi * 60))
+
+
+def active_count() -> int:
+    return sum(1 for a in ACCOUNTS.values() if a.run.status in ACTIVE)
+
+
+def _scheduler_loop():
+    while True:
+        try:
+            for phone in SCHED.due(active_count()):
+                acct = ACCOUNTS.get(phone)
+                if acct and acct.run.status == "queued":
+                    acct.run.launch()
+        except Exception as e:
+            sys.stderr.write(f"scheduler error: {e}\n")
+        time.sleep(1)
+
+
+def enqueue(acct: Acct, keys: list[str]) -> str | None:
+    """把账号加入排队，返回错误信息或 None。"""
+    if acct.auth != "ok":
+        return "这个账号还没有登录成功"
+    selected = [c for c in acct.courses if _course_key(c) in set(keys)]
+    if not selected:
+        return "请至少选择一门课程"
+    with acct.run.lock:
+        if acct.run.status in BUSY:
+            return "这个账号已经在学习或排队中了"
+        acct.run.reset()
+        acct.run.status, acct.run.phase, acct.run.queued_at = "queued", "排队中", time.time()
+        acct.run.selected = selected
+    acct.selected = [_course_key(c) for c in selected]
+    save_accounts()
+    SCHED.enqueue(acct.phone)
+    return None
+
+
+def cancel_or_stop(acct: Acct):
+    if SCHED.cancel(acct.phone) or acct.run.status == "queued":
+        with acct.run.lock:
+            acct.run.reset()
+        return
+    acct.run.stop()
+
+
+def terminate(proc: subprocess.Popen):
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+# ---------------------------------------------------------------------------
+# 接口：账号
+# ---------------------------------------------------------------------------
+@app.get("/api/state")
+def api_state():
+    max_parallel, lo, hi = scheduler_settings()
+    accounts = [a.summary() for a in ACCOUNTS.values()]
+    return ok(accounts=accounts, can_remember=keychain.available(),
+              scheduler={"max_parallel": max_parallel, "stagger_min": lo, "stagger_max": hi,
+                         "active": active_count(), "queued": len(SCHED.queue)},
+              any_busy=any(a["status"] in BUSY for a in accounts))
+
+
+@app.post("/api/accounts")
+def api_add_account():
+    """添加账号或重新登录已有账号。"""
+    data = request.get_json(force=True) or {}
+    phone = str(data.get("phone", "")).strip()
+    password = str(data.get("password", ""))
+    remember = bool(data.get("remember", True))
+    if not phone or not password:
+        return fail("请填写手机号和密码")
+    with ACC_LOCK:
+        existing = ACCOUNTS.get(phone)
+        if existing and existing.run.status in BUSY:
+            return fail("这个账号正在学习中，请先停止")
+        acct = existing or Acct(phone)
+        try:
+            acct.cookies_path.unlink()
+        except FileNotFoundError:
+            pass
+        success, msg = do_login(acct, password, use_cookies=False)
+        if not success:
+            if existing:
+                existing.auth, existing.auth_msg = "failed", msg
+            return fail(msg)
+        acct.password, acct.auth, acct.auth_msg = password, "ok", ""
+        ACCOUNTS[phone] = acct
+        save_accounts()
+    if remember:
+        keychain.save_password(phone, password)
+    else:
+        keychain.delete_password(phone)
+    return ok(account=acct.summary())
+
+
+@app.post("/api/accounts/<phone>/delete")
+def api_delete_account(phone):
+    acct = get_acct(phone)
+    if acct.run.status in BUSY:
+        return fail("这个账号正在学习或排队中，请先停止")
+    with ACC_LOCK:
+        ACCOUNTS.pop(phone, None)
+        acct.progress_gen += 1
+        save_accounts()
+    keychain.delete_password(phone)
+    try:
+        acct.cookies_path.unlink()
+    except FileNotFoundError:
+        pass
+    return ok()
+
+
+@app.post("/api/accounts/<phone>/check")
+def api_check_account(phone):
+    acct = get_acct(phone)
+    if acct.auth != "checking":
+        check_login(acct)
+    return ok(account=acct.summary())
+
+
+# ---------------------------------------------------------------------------
+# 接口：课程
+# ---------------------------------------------------------------------------
+def _load_progress(acct: Acct, gen: int, courses: list[dict]):
+    acct.progress_loading = True
+    try:
+        for c in courses:
+            if gen != acct.progress_gen:
+                return
+            key = _course_key(c)
+            if key in acct.progress:
+                continue
+            try:
+                with net_as(acct):
+                    pts = Chaoxing().get_course_point(c["courseId"], c["clazzId"], c["cpi"])["points"]
+                acct.progress[key] = {
+                    "total": len(pts),
+                    "done": sum(1 for p in pts if p.get("has_finished")),
+                    "locked": any(p.get("need_unlock") for p in pts),
+                }
+            except Exception as e:
+                acct.progress[key] = {"error": type(e).__name__}
+            time.sleep(0.3)
+    finally:
+        if gen == acct.progress_gen:
+            acct.progress_loading = False
+
+
+@app.get("/api/accounts/<phone>/courses")
+def api_courses(phone):
+    acct = get_acct(phone)
+    if acct.auth != "ok":
+        return fail("请先登录这个账号", 401)
+    refresh = request.args.get("refresh") == "1"
+    with acct.lock:
+        if refresh or not acct.courses:
+            try:
+                with net_as(acct):
+                    raw = Chaoxing().get_course_list()
+            except Exception as e:
+                return fail(f"读取课程失败：{type(e).__name__}，可能是登录已过期，请重新登录")
+            seen, courses = set(), []
+            for c in raw:
+                k = _course_key(c)
+                if k not in seen:
+                    seen.add(k)
+                    courses.append(c)
+            acct.courses = courses
+            acct.progress_gen += 1
+            if refresh:
+                acct.progress = {}
+            threading.Thread(target=_load_progress, args=(acct, acct.progress_gen, list(courses)),
+                             daemon=True).start()
+    payload = [
+        {**{k: c.get(k, "") for k in ("courseId", "clazzId", "title", "teacher", "desc")},
+         "key": _course_key(c), "progress": acct.progress.get(_course_key(c))}
+        for c in acct.courses
+    ]
+    return ok(courses=payload, loading=acct.progress_loading, selected=acct.selected)
+
+
+@app.post("/api/accounts/<phone>/selection")
+def api_selection(phone):
+    acct = get_acct(phone)
+    acct.selected = [str(k) for k in (request.get_json(force=True) or {}).get("keys", [])]
+    save_accounts()
+    return ok()
+
+
+# ---------------------------------------------------------------------------
+# 接口：任务
+# ---------------------------------------------------------------------------
+@app.post("/api/accounts/<phone>/start")
+def api_start(phone):
+    acct = get_acct(phone)
+    keys = (request.get_json(force=True) or {}).get("keys") or acct.selected
+    err = enqueue(acct, keys)
+    return fail(err) if err else ok(account=acct.summary())
+
+
+@app.post("/api/accounts/<phone>/stop")
+def api_stop(phone):
+    cancel_or_stop(get_acct(phone))
+    return ok()
+
+
+@app.post("/api/accounts/<phone>/clear")
+def api_clear(phone):
+    acct = get_acct(phone)
+    with acct.run.lock:
+        if acct.run.status in BUSY:
+            return fail("正在学习或排队中")
+        acct.run.reset()
+    return ok()
+
+
+@app.get("/api/accounts/<phone>/run")
+def api_run_state(phone):
+    acct = get_acct(phone)
+    since = _num(request.args.get("since"), int, 0)
+    est = SCHED.estimate(phone, active_count()) if acct.run.status == "queued" else None
+    return ok(run=acct.run.snapshot(since, est))
+
+
+@app.post("/api/start_all")
+def api_start_all():
+    started, skipped = [], []
+    for acct in list(ACCOUNTS.values()):
+        if acct.run.status in BUSY:
+            continue
+        if acct.auth != "ok":
+            skipped.append(f"{acct.display()}（未登录）")
+            continue
+        if not acct.courses:  # 还没打开过课程列表时，用保存的选择即可，但需要课程信息
+            try:
+                with net_as(acct):
+                    acct.courses = Chaoxing().get_course_list()
+            except Exception:
+                skipped.append(f"{acct.display()}（读取课程失败）")
+                continue
+        err = enqueue(acct, acct.selected)
+        (skipped if err else started).append(acct.display() + (f"（{err}）" if err else ""))
+    return ok(started=started, skipped=skipped)
+
+
+@app.post("/api/stop_all")
+def api_stop_all():
+    for acct in list(ACCOUNTS.values()):
+        if acct.run.status in BUSY:
+            cancel_or_stop(acct)
+    return ok()
+
+
+# ---------------------------------------------------------------------------
+# 接口：设置
+# ---------------------------------------------------------------------------
+EDITABLE = {
+    "common": {"speed", "jobs", "notopen_action", "retry_interval", "add_learning_count",
+               "target_count", "work_redo_enabled", "work_max_retries"},
+    "tiku": {"provider", "submit", "cover_rate", "delay", "tokens", "url", "go_authorization",
+             "endpoint", "key", "model", "min_interval_seconds", "http_proxy", "siliconflow_key",
+             "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
+             "likeapi_search", "likeapi_vision"},
+    "notification": {"provider", "url", "tg_chat_id"},
+    "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes"},
+}
+
+
+@app.get("/api/settings")
+def api_settings():
+    cfg = configio.read_config(str(CONFIG))
+    max_parallel, lo, hi = scheduler_settings(cfg)
+    settings = {sec: {k: v for k, v in cfg.get(sec, {}).items() if k in keys} for sec, keys in EDITABLE.items()}
+    settings["gui"] = {"max_parallel_accounts": str(max_parallel),
+                       "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}"}
+    return ok(settings=settings)
+
+
+@app.post("/api/settings")
+def api_save_settings():
+    data = request.get_json(force=True) or {}
+    updates = {}
+    for sec, keys in EDITABLE.items():
+        part = data.get(sec) or {}
+        updates[sec] = {k: v for k, v in part.items() if k in keys}
+    configio.update_config(str(CONFIG), updates)
+    apply_scheduler_settings()
+    return api_settings()
+
+
+def common_from_config(cfg: dict) -> dict:
     c = cfg.get("common", {})
     action = c.get("notopen_action", "retry")
     return {
@@ -325,270 +777,28 @@ def _common_from_config(cfg: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# 任务
-# ---------------------------------------------------------------------------
-STATUS_MAP = {"SUCCESS": "success", "NOT_OPEN": "waiting", "ERROR": "retry"}
-FINAL_MAP = {"SUCCESS": "success", "NOT_OPEN": "skipped", "ERROR": "failed", "PENDING": "failed"}
-
-
-class Run:
-    ACTIVE = {"starting", "running", "counting"}
-
-    def __init__(self):
-        self.lock = threading.RLock()
-        self.proc: subprocess.Popen | None = None
-        self.caffeinate: subprocess.Popen | None = None
-        self.reset()
-
-    def reset(self):
-        self.status = "idle"
-        self.phase = ""
-        self.started = None
-        self.ended = None
-        self.error = ""
-        self.stop_requested = False
-        self.courses: list[dict] = []
-        self.chapter_index: dict[tuple, dict] = {}
-        self.jobs: dict[int, dict] = {}
-        self.recent = collections.deque(maxlen=8)
-        self.logs = collections.deque(maxlen=3000)
-        self.seq = 0
-        self.speed = 1.0
-        self.selected: list[dict] = []
-
-    def is_active(self):
-        return self.status in self.ACTIVE
-
-    def add_log(self, level, msg, ts=None):
-        self.seq += 1
-        self.logs.append({"seq": self.seq, "level": level, "msg": msg,
-                          "ts": ts or time.strftime("%H:%M:%S")})
-
-    # 处理 worker 事件
-    def handle(self, ev: dict):
-        t = ev.get("t")
-        with self.lock:
-            if t == "log":
-                self.add_log(ev.get("level", "INFO"), ev.get("msg", ""), ev.get("ts"))
-            elif t == "phase":
-                self.phase = ev.get("msg", "")
-                if "学习次数" in self.phase:
-                    self.status = "counting"
-            elif t == "plan":
-                self.courses = []
-                self.chapter_index = {}
-                for c in ev.get("courses", []):
-                    chapters = [{"id": ch["id"], "title": ch["title"],
-                                 "status": "done" if ch.get("finished") else "pending"}
-                                for ch in c.get("chapters", [])]
-                    course = {"key": c["key"], "title": c["title"], "teacher": c.get("teacher", ""),
-                              "chapters": chapters}
-                    self.courses.append(course)
-                    for ch in chapters:
-                        self.chapter_index[(c["key"], ch["id"])] = ch
-                self.status = "running"
-                self.phase = "正在学习"
-            elif t == "ch_start":
-                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] != "done":
-                    ch["status"] = "running"
-            elif t == "ch_end":
-                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] != "done":
-                    ch["status"] = STATUS_MAP.get(ev.get("result"), "retry")
-            elif t == "job_start":
-                self.jobs[ev["jid"]] = {k: ev.get(k) for k in ("jid", "kind", "name", "course", "chapter")}
-                self.jobs[ev["jid"]].update(n=0, total=0, started=time.time())
-            elif t == "progress":
-                job = self.jobs.get(ev.get("jid"))
-                if job:
-                    job["n"], job["total"] = ev.get("n", 0), ev.get("total", 0)
-            elif t == "job_end":
-                job = self.jobs.pop(ev.get("jid"), None)
-                if job:
-                    job["result"] = ev.get("result")
-                    job["ended"] = time.time()
-                    self.recent.appendleft(job)
-            elif t == "final":
-                for item in ev.get("chapters", []):
-                    ch = self.chapter_index.get((item["course"], item["id"]))
-                    if ch and ch["status"] != "done":
-                        ch["status"] = FINAL_MAP.get(item["result"], "failed")
-                self.jobs.clear()
-            elif t == "done":
-                self.status = "done"
-                self.phase = "全部完成"
-                self.ended = time.time()
-            elif t == "error":
-                self.status = "error"
-                self.error = ev.get("msg") or "未知错误"
-                self.ended = time.time()
-
-    def snapshot(self, since: int):
-        with self.lock:
-            titles = {c["key"]: c["title"] for c in self.courses}
-            chapter_titles = {k: ch["title"] for k, ch in self.chapter_index.items()}
-
-            def job_view(j):
-                return {**j, "course_title": titles.get(j.get("course"), ""),
-                        "chapter_title": chapter_titles.get((j.get("course"), j.get("chapter")), "")}
-
-            return {
-                "status": self.status, "phase": self.phase, "error": self.error,
-                "started": self.started, "ended": self.ended, "now": time.time(),
-                "speed": self.speed,
-                "courses": self.courses,
-                "jobs": [job_view(j) for j in self.jobs.values()],
-                "recent": [job_view(j) for j in self.recent],
-                "logs": [entry for entry in self.logs if entry["seq"] > since],
-                "seq": self.seq,
-                "selected": [c["title"] for c in self.selected],
-                "selected_keys": [_course_key(c) for c in self.selected],
-            }
-
-
-RUN = Run()
-
-
-def _notify(title: str, msg: str):
-    def esc(s):
-        return s.replace("\\", "\\\\").replace('"', '\\"')
-    try:
-        subprocess.Popen(["/usr/bin/osascript", "-e",
-                          f'display notification "{esc(msg)}" with title "{esc(title)}" sound name "Glass"'],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
-
-def _reader(proc: subprocess.Popen):
-    for raw in proc.stdout:
-        line = raw.decode("utf8", errors="replace").rstrip("\n")
-        if not line.startswith(EV_PREFIX):
-            continue
-        try:
-            RUN.handle(json.loads(line[len(EV_PREFIX):]))
-        except Exception as e:
-            sys.stderr.write(f"bad event {line!r}: {e}\n")
-    code = proc.wait()
-    with RUN.lock:
-        if RUN.caffeinate and RUN.caffeinate.poll() is None:
-            RUN.caffeinate.terminate()
-        if RUN.status in Run.ACTIVE:
-            RUN.ended = time.time()
-            if RUN.stop_requested:
-                RUN.status, RUN.phase = "stopped", "已停止"
-            else:
-                RUN.status = "error"
-                RUN.error = f"后台进程意外退出（代码 {code}），详情见日志"
-        status, error = RUN.status, RUN.error
-        done = sum(1 for c in RUN.courses for ch in c["chapters"] if ch["status"] in ("done", "success"))
-        total = sum(len(c["chapters"]) for c in RUN.courses)
-    if status == "done":
-        _notify("刷课助手", f"学习完成：{done}/{total} 个章节已完成")
-    elif status == "error":
-        _notify("刷课助手", f"出错了：{error}")
-
-
-@app.post("/api/run")
-def api_run():
-    if not ACC.logged_in:
-        return fail("请先登录", 401)
-    data = request.get_json(force=True) or {}
-    keys = set(data.get("keys") or [])
-    selected = [c for c in ACC.courses if _course_key(c) in keys]
-    if not selected:
-        return fail("请至少选择一门课程")
-    with RUN.lock:
-        if RUN.is_active():
-            return fail("已经在学习中了")
-        cfg = configio.read_config(str(CONFIG))
-        common = _common_from_config(cfg)
-        payload = {
-            "username": ACC.phone,
-            "password": ACC.password,
-            "common": common,
-            "tiku": cfg.get("tiku", {}),
-            "notification": cfg.get("notification", {}),
-            "courses": selected,
-            "config_path": str(CONFIG),
-        }
-        RUN.reset()
-        RUN.status, RUN.phase, RUN.started = "starting", "正在启动…", time.time()
-        RUN.speed = common["speed"]
-        RUN.selected = selected
-        err = open(WORKER_LOG, "w", encoding="utf8")
-        proc = subprocess.Popen(
-            [sys.executable, "-u", "-m", "gui.worker"], cwd=ROOT,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        )
-        err.close()
-        proc.stdin.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf8"))
-        proc.stdin.close()
-        RUN.proc = proc
-        try:  # 学习期间阻止电脑休眠，进程结束后自动失效
-            RUN.caffeinate = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(proc.pid)])
-        except Exception:
-            RUN.caffeinate = None
-        threading.Thread(target=_reader, args=(proc,), daemon=True).start()
-    return ok()
-
-
-@app.post("/api/stop")
-def api_stop():
-    with RUN.lock:
-        proc = RUN.proc
-        if not RUN.is_active() or not proc:
-            return ok()
-        RUN.stop_requested = True
-        RUN.phase = "正在停止…"
-    _terminate(proc)
-    return ok()
-
-
-@app.post("/api/run/clear")
-def api_run_clear():
-    with RUN.lock:
-        if RUN.is_active():
-            return fail("正在学习中")
-        RUN.reset()
-    return ok()
-
-
-@app.get("/api/run")
-def api_run_state():
-    since = _num(request.args.get("since"), int, 0)
-    return ok(run=RUN.snapshot(since))
-
-
 @app.post("/api/reveal")
 def api_reveal():
-    what = (request.get_json(force=True) or {}).get("what")
-    targets = {"config": CONFIG, "log": ROOT / "chaoxing.log", "folder": ROOT}
-    path = targets.get(what)
-    if path and path.exists():
-        subprocess.Popen(["/usr/bin/open", "-R", str(path)] if what != "folder" else ["/usr/bin/open", str(path)])
+    data = request.get_json(force=True) or {}
+    what = data.get("what")
+    if what == "worker_log" and data.get("phone") in ACCOUNTS:
+        path = ACCOUNTS[data["phone"]].log_path
+    else:
+        path = {"config": CONFIG, "log": ROOT / "chaoxing.log", "folder": ROOT, "logs": LOG_DIR}.get(what)
+    if path:
+        platform_utils.reveal(path)
     return ok()
 
 
-def _terminate(proc: subprocess.Popen):
-    if proc.poll() is not None:
-        return
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-
-
+# ---------------------------------------------------------------------------
+# 启动 / 退出
+# ---------------------------------------------------------------------------
 def _shutdown(*_):
-    with RUN.lock:
-        RUN.stop_requested = True
-        proc = RUN.proc
-    if proc:
-        _terminate(proc)
+    for acct in list(ACCOUNTS.values()):
+        proc = acct.run.proc
+        if proc and proc.poll() is None:
+            acct.run.stop_requested = True
+            terminate(proc)
     os._exit(0)
 
 
@@ -600,9 +810,9 @@ def _watch_parent(ppid: int):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=0)
-    parser.add_argument("--open", action="store_true", help="用浏览器打开界面（调试用）")
+    parser = argparse.ArgumentParser(description="刷课助手图形界面")
+    parser.add_argument("--port", type=int, default=0, help="监听端口，默认随机")
+    parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, _shutdown)
@@ -610,13 +820,20 @@ def main():
     if os.environ.get("CXGUI_WATCH_PARENT") == "1":
         threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True).start()
 
+    load_accounts()
+    apply_scheduler_settings()
+    threading.Thread(target=_auto_login_all, daemon=True).start()
+    threading.Thread(target=_scheduler_loop, daemon=True).start()
+
     server = make_server("127.0.0.1", args.port, app, threaded=True)
     port = server.server_port
     url = f"http://127.0.0.1:{port}/?t={TOKEN}"
-    _real_stdout.write(f"CXGUI_READY {port}\n{url}\n")
+    _real_stdout.write(f"CXGUI_READY {port}\n")
+    _real_stdout.write(f"刷课助手已启动，在浏览器中打开: {url}\n按 Ctrl+C 退出\n")
     _real_stdout.flush()
-    if args.open:
-        subprocess.Popen(["/usr/bin/open", url])
+    # 由 macOS 外壳启动时（设置了 CXGUI_TOKEN）不打开浏览器
+    if not args.no_open and not os.environ.get("CXGUI_TOKEN"):
+        platform_utils.open_url(url)
     server.serve_forever()
 
 

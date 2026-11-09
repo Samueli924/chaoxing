@@ -31,10 +31,12 @@ import main as cx  # noqa: E402  项目根目录下的 main.py
 import api.base as cx_base  # noqa: E402
 from api.answer import Tiku, DummyTiku  # noqa: E402
 from api.base import Chaoxing, Account  # noqa: E402
+from api.config import GlobalConst  # noqa: E402
 from api.exceptions import LoginError  # noqa: E402
 from api.logger import logger  # noqa: E402
 from api.notification import Notification  # noqa: E402
 from api.process import increase_learning_count_for_course  # noqa: E402
+from gui.platform_utils import keep_awake_self  # noqa: E402
 
 
 def _log_sink(message):
@@ -237,6 +239,10 @@ def run(payload: dict):
 def main():
     line = sys.stdin.readline()
     payload = json.loads(line or "{}")
+    # 每个账号使用自己的 cookie 文件，多个账号同时运行时互不覆盖（必须在创建会话之前设置）
+    if payload.get("cookies_path"):
+        GlobalConst.COOKIES_PATH = payload["cookies_path"]
+    keep_awake_self()
     try:
         run(payload)
     except BaseException as e:
