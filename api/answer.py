@@ -1556,9 +1556,49 @@ class AI(Tiku):
         answer = self._parse_answer(choice.message.content if choice else None)
         if answer is None:
             if choice is not None and choice.finish_reason == 'length':
-                logger.warning(f"大模型输出超过长度上限（{self.max_tokens} tokens），已跳过：{short_title}")
+                answer = self._force_answer(client, messages, choice.message, short_title)
             else:
                 logger.error("无法解析大模型输出内容")
+        return answer
+
+    # 思考超限后强制作答：保留的思考内容长度（字符）与作答的输出上限
+    _FORCE_REASONING_CHARS = 6000
+    _FORCE_ANSWER_TOKENS = 512
+
+    @staticmethod
+    def _reasoning_of(message) -> str:
+        """取出模型的思考内容：LM Studio 等放在 reasoning_content，部分服务直接写在 content 的 <think> 中."""
+        extra = getattr(message, "model_extra", None) or {}
+        text = getattr(message, "reasoning_content", None) or extra.get("reasoning_content") or extra.get("reasoning")
+        if not text:
+            content = getattr(message, "content", None) or ""
+            m = re.search(r"<think>(.*?)(?:</think>|$)", content, re.DOTALL)
+            text = m.group(1) if m else ""
+        return (text or "").strip()
+
+    def _force_answer(self, client, messages: list, message, short_title: str) -> Optional[str]:
+        """思考达到输出上限时，把已有的思考交还给模型并要求直接作答，避免整题作废."""
+        reasoning = self._reasoning_of(message)
+        if not reasoning:
+            logger.warning(f"大模型输出超过长度上限（{self.max_tokens} tokens），已跳过：{short_title}")
+            return None
+        if len(reasoning) > self._FORCE_REASONING_CHARS:  # 只保留最后一段，避免超出模型的上下文长度
+            reasoning = "……" + reasoning[-self._FORCE_REASONING_CHARS:]
+        base = [m for m in messages if m.get("role") != "assistant"]  # 去掉关闭思考时预填的空思考
+        prefill = {"role": "assistant",
+                   "content": f"<think>\n{reasoning}\n\n思考时间已用完，现在根据以上分析直接给出最终答案。\n</think>\n\n"}
+        try:
+            completion = client.chat.completions.create(**self._completion_kwargs(
+                model=self.model, messages=base + [prefill], max_tokens=self._FORCE_ANSWER_TOKENS))
+        except Exception as e:
+            logger.warning(f"大模型思考超过长度上限，强制作答失败：{type(e).__name__}: {e}；已跳过：{short_title}")
+            return None
+        choice = completion.choices[0] if completion.choices else None
+        answer = self._parse_answer(choice.message.content if choice else None)
+        if answer is None:
+            logger.warning(f"大模型思考超过长度上限，强制作答也没有给出有效答案，已跳过：{short_title}")
+        else:
+            logger.info(f"大模型思考超过长度上限（{self.max_tokens} tokens），已根据已有思考强制作答：{short_title}")
         return answer
 
     def _init_tiku(self):

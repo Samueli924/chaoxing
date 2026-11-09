@@ -239,7 +239,34 @@ class QueryTest(unittest.TestCase):
 
     def test_length_limit_returns_none(self):
         ai = make_ai(ai_vision="false")
-        ans, _ = self.run_query(ai, [completion("", finish="length")])
+        ans, _ = self.run_query(ai, [completion("", finish="length")])  # 没有思考内容可用
+        self.assertIsNone(ans)
+
+    def test_length_limit_forces_answer_from_reasoning(self):
+        ai = make_ai(ai_vision="false", ai_disable_thinking="true")
+        truncated = completion("", finish="length")
+        truncated.choices[0].message.reasoning_content = "先求导，v=4-4t，代入 t=1 得 0，" * 500
+        ans, client = self.run_query(ai, [truncated, completion('{"Answer": ["0"]}')])
+        self.assertEqual(ans, "0")
+        second = client.calls[1]
+        self.assertEqual(second["max_tokens"], 512)
+        last = second["messages"][-1]
+        self.assertEqual(last["role"], "assistant")
+        self.assertIn("思考时间已用完", last["content"])
+        self.assertLessEqual(len(last["content"]), 6100)  # 思考内容被截短
+        self.assertEqual(sum(m["role"] == "assistant" for m in second["messages"]), 1)  # 去掉了空思考预填
+
+    def test_reasoning_inline_think_tag(self):
+        msg = SimpleNamespace(content="<think>推理过程到一半", model_extra={})
+        self.assertEqual(AI._reasoning_of(msg), "推理过程到一半")
+        msg2 = SimpleNamespace(content="", model_extra={"reasoning_content": "附加字段里的推理"})
+        self.assertEqual(AI._reasoning_of(msg2), "附加字段里的推理")
+
+    def test_force_answer_failure_returns_none(self):
+        ai = make_ai(ai_vision="false")
+        truncated = completion("", finish="length")
+        truncated.choices[0].message.reasoning_content = "想了很久"
+        ans, _ = self.run_query(ai, [truncated, completion("还是不知道")])
         self.assertIsNone(ans)
 
     def test_disable_thinking_appends_no_think(self):
