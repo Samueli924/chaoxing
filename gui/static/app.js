@@ -919,7 +919,13 @@ function renderRun(a) {
 function jobHTML(j, speed) {
   const where = [j.course_title, j.chapter_title].filter(Boolean).join(' · ');
   let body;
-  if (j.total > 0) {
+  if (j.unit === '题') {
+    const pct = j.total ? Math.min(100, Math.round((j.n / j.total) * 100)) : 0;
+    body = j.waiting
+      ? '<div class="hint">排队中：等前一个章节检测答完再开始，避免互相拖慢</div>'
+      : `<div class="bar"><i style="width:${pct}%"></i></div>
+        <div class="time"><span>查题作答 ${j.n} / ${j.total} 题</span><span>${j.n >= j.total ? '正在提交…' : ''}</span></div>`;
+  } else if (j.total > 0) {
     const pct = Math.min(100, Math.round((j.n / j.total) * 100));
     body = `<div class="bar"><i style="width:${pct}%"></i></div>
       <div class="time"><span>${fmtTime(j.n)} / ${fmtTime(j.total)}</span><span>还需约 ${fmtDuration((j.total - j.n) / (speed || 1))}</span></div>`;

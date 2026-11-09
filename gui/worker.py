@@ -152,6 +152,19 @@ cx.process_chapter = _process_chapter
 
 
 # ---- 主流程 ----------------------------------------------------------------
+def _tiku_progress(done: int, total: int, waiting: bool = False):
+    """题库查题进度（章节检测第几题），上报到当前线程正在处理的任务点."""
+    jid = getattr(_ctx, "jid", None)
+    if jid is not None:
+        emit("progress", jid=jid, n=done, total=total, unit="题", waiting=waiting)
+
+
+def _attach_progress(tiku):
+    tiku.progress_callback = _tiku_progress
+    for sub in getattr(tiku, "providers", None) or []:  # 多题库回退时每个题库都上报
+        sub.progress_callback = _tiku_progress
+
+
 def build_tiku(tiku_conf: dict, config_path: str):
     provider = (tiku_conf.get("provider") or "").strip()
     if not provider:
@@ -159,6 +172,7 @@ def build_tiku(tiku_conf: dict, config_path: str):
         return DummyTiku(config_path=config_path)
     tiku = Tiku.get_tiku_from_config(tiku_conf, config_path=config_path)
     tiku.init_tiku()
+    _attach_progress(tiku)
     providers = [p.strip() for p in provider.split(",") if p.strip()]
     if any(p in ("AI", "SiliconFlow") for p in providers) and \
             str(tiku_conf.get("check_llm_connection", "true")).lower() == "true":

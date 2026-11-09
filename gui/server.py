@@ -204,6 +204,7 @@ class Run:
                 job = self.jobs.get(ev.get("jid"))
                 if job:
                     job["n"], job["total"] = ev.get("n", 0), ev.get("total", 0)
+                    job["unit"], job["waiting"] = ev.get("unit"), bool(ev.get("waiting"))
             elif t == "job_end":
                 job = self.jobs.pop(ev.get("jid"), None)
                 if job:
