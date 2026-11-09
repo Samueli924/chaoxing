@@ -849,7 +849,7 @@ def api_stop_all():
 # ---------------------------------------------------------------------------
 EDITABLE = {
     "common": {"speed", "jobs", "notopen_action", "retry_interval", "add_learning_count",
-               "target_count", "work_redo_enabled", "work_max_retries"},
+               "target_count", "work_redo_enabled", "work_max_retries", "work_min_score", "work_recheck_finished"},
     "tiku": {"provider", "submit", "cover_rate", "delay", "tokens", "url", "go_authorization",
              "endpoint", "key", "model", "min_interval_seconds", "http_proxy", "siliconflow_key",
              "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
@@ -899,6 +899,8 @@ def common_from_config(cfg: dict) -> dict:
         "target_count": _num(c.get("target_count"), int, 100),
         "work_redo_enabled": _bool(c.get("work_redo_enabled")),
         "work_max_retries": _num(c.get("work_max_retries"), int, 3),
+        "work_min_score": max(0.0, min(100.0, _num(c.get("work_min_score"), float, 100.0))),
+        "work_recheck_finished": _bool(c.get("work_recheck_finished")),
     }
 
 

@@ -1083,7 +1083,10 @@ async function openSettings(focus) {
           <div data-prov-any>
             ${F.toggle('tiku', 'submit', '答完自动提交', '关闭时只保存答案，你可以去学习通检查后再手动提交；需要解锁下一章的课程建议开启')}
             ${F.range('tiku', 'cover_rate', '最低题库覆盖率', { min: 0.5, max: 1, step: 0.05, fmt: '%', def: 0.9, hint: { text: '搜到答案的题目比例达到这个值才会自动提交' } })}
-            ${F.toggle('common', 'work_redo_enabled', '答错后自动重做', '只对 AI 题库有用；只允许作答一次的课程不要开')}
+            ${F.number('common', 'work_min_score', '章节检测目标分数', { min: 0, max: 100, def: 100, hint: '提交后低于这个分数算不达标' })}
+            ${F.toggle('common', 'work_redo_enabled', '不达标时自动重做', '开启 AI 思考，并参考上次的错题和正确答案重新作答；页面显示只剩最后 1 次重做机会时不再自动重做')}
+            ${F.number('common', 'work_max_retries', '每个检测最多重做几轮', { min: 1, max: 5, def: 3 })}
+            ${F.toggle('common', 'work_recheck_finished', '回查已完成的章节检测', '已完成的章节也检查检测成绩，不达标且还有重做机会就自动重做；已确认达标的会记住，下次不再重复检查')}
           </div>
         </div></div>
 

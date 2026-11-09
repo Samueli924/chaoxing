@@ -202,6 +202,8 @@ def run(payload: dict):
         query_delay=delay,
         work_max_retries=common.get("work_max_retries", 3),
         work_redo_enabled=common.get("work_redo_enabled", False),
+        work_min_score=common.get("work_min_score", 100.0),
+        work_recheck_finished=common.get("work_recheck_finished", False),
     )
 
     notification = Notification()
