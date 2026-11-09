@@ -848,6 +848,20 @@ def common_from_config(cfg: dict) -> dict:
     }
 
 
+@app.post("/api/client_log")
+def api_client_log():
+    """界面与后台的连接中断恢复后上报的情况，写入 server.log 便于排查。"""
+    data = request.get_json(force=True) or {}
+    failures = data.get("failures") or []
+    paths = sorted({str(f.get("path", ""))[:60] for f in failures})
+    errors = sorted({str(f.get("err", ""))[:80] for f in failures})
+    sys.stderr.write(
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 界面连接中断 {float(data.get('seconds', 0)):.1f} 秒后恢复，"
+        f"失败 {len(failures)} 次{'（期间电脑可能处于睡眠）' if data.get('slept') else ''}；"
+        f"接口: {', '.join(paths)}；错误: {'; '.join(errors)}\n")
+    return ok()
+
+
 @app.post("/api/reveal")
 def api_reveal():
     data = request.get_json(force=True) or {}

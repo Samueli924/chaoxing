@@ -373,3 +373,13 @@ textarea.input { height: 64px; padding: 8px 10px; resize: vertical; }
 .login-inline .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); }
 .login-inline .err, .login .err { color: var(--red); font-size: 13px; background: var(--red-soft); padding: 8px 10px; border-radius: 8px; }
 .modal .login-inline { margin-top: 4px; }
+
+/* ---------- 连接中断横幅 ---------- */
+#net-banner {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 45;
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 20px;
+  background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); animation: pop .2s ease;
+}
+#net-banner .spinner { border-color: var(--amber-soft); border-top-color: var(--amber); }

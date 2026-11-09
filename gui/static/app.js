@@ -8,18 +8,72 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const enc = encodeURIComponent;
 
+/* 连接中断处理：电脑睡眠唤醒、网络切换等会让进行中的请求失败。
+   读取类请求自动重试；持续失败时显示「正在重连」横幅而不是报错；恢复后把失败情况记到后台日志。 */
+const NET = { since: 0, failures: [], lastTick: Date.now() };
+
+function noteNetFailure(path, e) {
+  if (!NET.since) NET.since = Date.now();
+  if (NET.failures.length < 20) NET.failures.push({ path, err: String(e), at: new Date().toLocaleTimeString() });
+  updateNetBanner();
+}
+
+function noteNetSuccess() {
+  if (!NET.since) return;
+  const report = { seconds: (Date.now() - NET.since) / 1000, failures: NET.failures, slept: NET.slept || false };
+  NET.since = 0; NET.failures = []; NET.slept = false;
+  updateNetBanner();
+  fetch('/api/client_log', { method: 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(report) }).catch(() => {});
+}
+
+function updateNetBanner() {
+  let el = document.getElementById('net-banner');
+  const down = NET.since ? (Date.now() - NET.since) / 1000 : 0;
+  if (down < 4) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'net-banner'; document.body.appendChild(el); }
+  el.innerHTML = down < 30
+    ? '<span class="spinner sm"></span> 与后台的连接中断，正在重连…'
+    : '后台服务长时间没有响应，可以尝试退出后重新打开应用';
+}
+
+// 定时检查：横幅计时；计时器明显"迟到"说明电脑刚从睡眠中唤醒，立即刷新状态
+setInterval(() => {
+  const now = Date.now();
+  if (now - NET.lastTick > 15000) {
+    NET.slept = true;
+    if (S.accounts.some((a) => ACTIVE.includes(a.status))) {
+      toast(`电脑睡眠了约 ${fmtDuration((now - NET.lastTick) / 1000)}，期间学习暂停，现在继续进行。合上盖子会让电脑睡眠`);
+    }
+    if (S.view !== 'welcome' && S.accounts.length) {
+      api('/state').then((st) => { applyState(st); renderSidebar(); renderTopActions(); route(false); }).catch(() => {});
+    }
+  }
+  NET.lastTick = now;
+  updateNetBanner();
+}, 1000);
+
 async function api(path, body) {
-  const opts = { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN } };
-  if (body !== undefined) {
+  const isGet = body === undefined;
+  const opts = { method: isGet ? 'GET' : 'POST', headers: { 'X-Token': TOKEN } };
+  if (!isGet) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
   let r;
-  try {
-    r = await fetch('/api' + path, opts);
-  } catch (e) {
-    throw new Error('无法连接后台服务，请重新打开应用');
+  for (let attempt = 0; ; attempt++) {
+    try {
+      r = await fetch('/api' + path, opts);
+      break;
+    } catch (e) {
+      noteNetFailure(path, e);
+      // 只自动重试读取类请求；提交类请求可能已经被后台执行，交给用户决定是否重试
+      if (isGet && attempt < 2) { await sleep(attempt ? 1500 : 500); continue; }
+      const err = new Error('与后台的连接暂时中断了，请稍后再试');
+      err.network = true;
+      throw err;
+    }
   }
+  noteNetSuccess();
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.ok === false) {
     const err = new Error(j.msg || `请求失败（${r.status}）`);
@@ -731,7 +785,8 @@ async function pollRun(a, token) {
       renderRun(a);
       if (run.status === 'idle') { S.viewKey = ''; return route(true); }
     } catch (e) {
-      if (++fails === 3) toast(e.message, 'error');
+      // 连接中断由顶部横幅提示；其他错误连续出现时才弹出
+      if (!e.network && ++fails === 3) toast(e.message, 'error');
     }
     await sleep(P.run && BUSY.includes(P.run.status) ? 1000 : 3000);
   }
