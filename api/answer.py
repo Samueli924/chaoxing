@@ -1241,23 +1241,53 @@ class AI(Tiku):
         text = cls._IMG_RE.sub(repl, text or "")
         return cls._TAG_RE.sub("", text)
 
+    # 题目页面所在的站点，用于补全图片的相对地址（如公式图片 /ananas/latex/p/123）
+    _IMAGE_BASE_URL = "https://mooc1.chaoxing.com/"
+
+    @classmethod
+    def _resolve_image_url(cls, url: str) -> str:
+        """把题目 HTML 中的图片地址补全为完整的 URL（处理相对路径、协议相对路径和 HTML 实体）."""
+        import html
+        from urllib.parse import urljoin
+        return urljoin(cls._IMAGE_BASE_URL, html.unescape(url.strip()))
+
     def _fetch_image(self, url: str) -> Optional[str]:
         """用已登录的学习通会话下载题目图片，返回 data URL；失败返回 None."""
+        url = self._resolve_image_url(url)
         if url in self._image_cache:
             return self._image_cache[url]
         data_url = None
         try:
             from api.base import SessionManager  # 延迟导入，避免循环引用
             resp = SessionManager.get_session().get(url, timeout=15)
-            ctype = resp.headers.get('Content-Type', '').split(';')[0].strip()
-            if resp.status_code == 200 and resp.content and ctype.startswith('image/'):
+            ctype = self._image_type(resp.content or b'', resp.headers.get('Content-Type', ''))
+            if resp.status_code == 200 and ctype:
                 data_url = self._to_data_url(resp.content, ctype)
             else:
-                logger.warning(f"题目图片下载失败({resp.status_code} {ctype}): {url}")
+                logger.warning(f"题目图片下载失败({resp.status_code} {resp.headers.get('Content-Type', '')}): {url}")
         except Exception as e:
             logger.warning(f"题目图片下载失败: {url} {e}")
         self._image_cache[url] = data_url
         return data_url
+
+    @staticmethod
+    def _image_type(content: bytes, header: str = '') -> Optional[str]:
+        """按文件内容识别图片格式（服务器的 Content-Type 有时是 "application/octet-stream, image/jpeg" 这类混合值）."""
+        signatures = [
+            (b'\xff\xd8\xff', 'image/jpeg'), (b'\x89PNG\r\n\x1a\n', 'image/png'),
+            (b'GIF87a', 'image/gif'), (b'GIF89a', 'image/gif'), (b'BM', 'image/bmp'),
+        ]
+        for sig, mime in signatures:
+            if content.startswith(sig):
+                return mime
+        if content[:4] == b'RIFF' and content[8:12] == b'WEBP':
+            return 'image/webp'
+        if content:
+            for part in re.split(r'[,;]', header or ''):
+                part = part.strip().lower()
+                if part.startswith('image/') and part != 'image/svg+xml':
+                    return part
+        return None
 
     @staticmethod
     def _to_data_url(content: bytes, ctype: str, max_side: int = 1280) -> str:
@@ -1296,6 +1326,8 @@ class AI(Tiku):
             text += "\n/no_think"
 
         loaded = [img for img in images if img]
+        if images:
+            logger.info(f"题目图片：成功附上 {len(loaded)}/{len(urls)} 张")
         if not loaded:
             return text
         return [{"type": "text", "text": text}] + [

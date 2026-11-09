@@ -86,6 +86,37 @@ class ParseTest(unittest.TestCase):
         self.assertIsNone(p('我不知道'))
 
 
+class ImageUrlTest(unittest.TestCase):
+    def test_resolve_relative_and_absolute(self):
+        r = AI._resolve_image_url
+        self.assertEqual(r("/ananas/latex/p/635513"), "https://mooc1.chaoxing.com/ananas/latex/p/635513")
+        self.assertEqual(r("//p.ananas.chaoxing.com/a.png"), "https://p.ananas.chaoxing.com/a.png")
+        self.assertEqual(r("https://p.ananas.chaoxing.com/a.png"), "https://p.ananas.chaoxing.com/a.png")
+        self.assertEqual(r("http://p.ananas.chaoxing.com/a.png"), "http://p.ananas.chaoxing.com/a.png")
+        self.assertEqual(r(" /ananas/latex/p/1?a=1&amp;b=2 "), "https://mooc1.chaoxing.com/ananas/latex/p/1?a=1&b=2")
+
+    def test_image_type_detection(self):
+        t = AI._image_type
+        self.assertEqual(t(b"\xff\xd8\xff\xe0rest", "application/octet-stream, image/jpeg"), "image/jpeg")
+        self.assertEqual(t(b"\x89PNG\r\n\x1a\nrest", "application/octet-stream"), "image/png")
+        self.assertEqual(t(b"RIFF1234WEBPVP8 ", ""), "image/webp")
+        self.assertEqual(t(b"unknown", "application/octet-stream, image/jpeg"), "image/jpeg")
+        self.assertIsNone(t(b"<html>403</html>", "text/html"))
+        self.assertIsNone(t(b"", "image/png"))
+
+    def test_fetch_uses_resolved_url(self):
+        ai = make_ai()
+        resp = SimpleNamespace(status_code=200, headers={"Content-Type": "application/octet-stream, image/jpeg"},
+                               content=b"\xff\xd8\xffjpeg")
+        session = mock.Mock()
+        session.get.return_value = resp
+        with mock.patch("api.base.SessionManager.get_session", return_value=session):
+            data = ai._fetch_image("/ananas/latex/p/635513")
+        session.get.assert_called_once()
+        self.assertEqual(session.get.call_args.args[0], "https://mooc1.chaoxing.com/ananas/latex/p/635513")
+        self.assertTrue(data.startswith("data:image/jpeg;base64,"))
+
+
 class QueryTest(unittest.TestCase):
     def run_query(self, ai, results, q=IMG_Q):
         client = FakeClient(results)
