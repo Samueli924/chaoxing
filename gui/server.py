@@ -804,7 +804,8 @@ EDITABLE = {
     "tiku": {"provider", "submit", "cover_rate", "delay", "tokens", "url", "go_authorization",
              "endpoint", "key", "model", "min_interval_seconds", "http_proxy", "siliconflow_key",
              "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
-             "likeapi_search", "likeapi_vision"},
+             "likeapi_search", "likeapi_vision", "ai_vision", "ai_timeout", "ai_max_tokens",
+             "ai_disable_thinking"},
     "notification": {"provider", "url", "tg_chat_id"},
     "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes", "auto_manage_local_model"},
 }
@@ -815,6 +816,8 @@ def api_settings():
     cfg = configio.read_config(str(CONFIG))
     max_parallel, lo, hi = scheduler_settings(cfg)
     settings = {sec: {k: v for k, v in cfg.get(sec, {}).items() if k in keys} for sec, keys in EDITABLE.items()}
+    for k, v in {"ai_vision": "true", "ai_timeout": "120", "ai_disable_thinking": "false"}.items():
+        settings["tiku"].setdefault(k, v)  # 旧配置文件里没有这些键时，显示答题代码的默认值
     settings["gui"] = {"max_parallel_accounts": str(max_parallel),
                        "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}",
                        "auto_manage_local_model": "true" if auto_manage_enabled(cfg) else "false"}
