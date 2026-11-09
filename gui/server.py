@@ -230,6 +230,7 @@ class Run:
             self.status, self.phase = "starting", "正在启动…"
             self.started = self.started or time.time()
         prepare_local_model(self, cfg)
+        prepare_search(self, cfg)
         with self.lock:
             if self.stop_requested:
                 self.status, self.phase, self.ended = "stopped", "已停止", time.time()
@@ -513,6 +514,53 @@ MODEL_LOCK = threading.Lock()
 def auto_manage_enabled(cfg=None) -> bool:
     g = (cfg or configio.read_config(str(CONFIG))).get("gui", {})
     return _bool(g.get("auto_manage_local_model"), True)
+
+
+# ---------------------------------------------------------------------------
+# 本地搜索服务（SearXNG）：联网搜索地址指向本机且服务没开时，用配置的启动命令拉起，应用退出时一起关闭
+# ---------------------------------------------------------------------------
+SEARCH_PROC: subprocess.Popen | None = None
+SEARCH_LOCK = threading.Lock()
+
+
+def _search_alive(url: str) -> bool:
+    import urllib.request
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 本机服务不走系统代理
+        with opener.open(f"{url.rstrip('/')}/healthz", timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def prepare_search(run: "Run", cfg: dict):
+    global SEARCH_PROC
+    tiku = cfg.get("tiku", {})
+    url = (tiku.get("ai_search_url") or "").strip()
+    providers = [p.strip() for p in str(tiku.get("provider", "")).split(",")]
+    if not url or "AI" not in providers or llm_manager.urlparse(url).hostname not in llm_manager.LOCAL_HOSTS:
+        return
+    with SEARCH_LOCK:
+        if _search_alive(url):
+            return
+        command = (cfg.get("gui", {}).get("searxng_command") or "").strip()
+        if not command or not Path(command).exists():
+            run.add_log("WARNING", f"联网搜索服务 {url} 没有运行，本次不使用搜索（可在设置里填写 SearXNG 启动脚本，自动启动）")
+            return
+        with run.lock:
+            run.phase = "正在启动本地搜索服务…"
+        if SEARCH_PROC is None or SEARCH_PROC.poll() is not None:
+            log = open(LOG_DIR / "searxng.log", "a", encoding="utf8")
+            SEARCH_PROC = subprocess.Popen([command], cwd=str(Path(command).parent), stdout=log, stderr=log)
+            log.close()
+        for _ in range(60):
+            if _search_alive(url):
+                run.add_log("INFO", f"已启动本地搜索服务 {url}")
+                return
+            if SEARCH_PROC.poll() is not None:
+                break
+            time.sleep(0.5)
+        run.add_log("WARNING", f"本地搜索服务启动失败，本次不使用搜索，详见 {LOG_DIR / 'searxng.log'}")
 
 
 def prepare_local_model(run: "Run", cfg: dict):
@@ -806,9 +854,10 @@ EDITABLE = {
              "endpoint", "key", "model", "min_interval_seconds", "http_proxy", "siliconflow_key",
              "siliconflow_model", "siliconflow_endpoint", "check_llm_connection", "likeapi_model",
              "likeapi_search", "likeapi_vision", "ai_vision", "ai_timeout", "ai_max_tokens",
-             "ai_disable_thinking"},
+             "ai_disable_thinking", "ai_search_url", "ai_search_results"},
     "notification": {"provider", "url", "tg_chat_id"},
-    "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes", "auto_manage_local_model"},
+    "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes", "auto_manage_local_model",
+            "searxng_command"},
 }
 
 
@@ -821,7 +870,8 @@ def api_settings():
         settings["tiku"].setdefault(k, v)  # 旧配置文件里没有这些键时，显示答题代码的默认值
     settings["gui"] = {"max_parallel_accounts": str(max_parallel),
                        "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}",
-                       "auto_manage_local_model": "true" if auto_manage_enabled(cfg) else "false"}
+                       "auto_manage_local_model": "true" if auto_manage_enabled(cfg) else "false",
+                       "searxng_command": cfg.get("gui", {}).get("searxng_command", "")}
     return ok(settings=settings)
 
 
@@ -888,6 +938,8 @@ def _shutdown(*_):
         if proc and proc.poll() is None:
             acct.run.stop_requested = True
             terminate(proc)
+    if SEARCH_PROC is not None and SEARCH_PROC.poll() is None:  # 由本应用启动的搜索服务一起关闭
+        terminate(SEARCH_PROC)
     for backend, model in UNLOADER.take_all():  # 刷课用过的本地模型随应用退出一起卸载
         try:
             backend.unload(model)

@@ -1035,6 +1035,8 @@ function tikuBlocks() {
       + F.toggle('tiku', 'ai_vision', '识别题目图片', '把题目里的图片一起发给模型（需要模型支持识图，不支持时自动改为纯文字）')
       + F.toggle('tiku', 'ai_disable_thinking', '关闭思考', '适用于 Qwen3 等思考型本地模型，答题更快；在线大模型一般不用开')
       + F.number('tiku', 'ai_timeout', '单题最长等待（秒）', { min: 10, max: 600, def: 120, hint: '超时就跳过这道题，避免一道题卡住整个章节检测' })
+      + F.text('tiku', 'ai_search_url', '联网搜索（SearXNG 地址）', { placeholder: 'http://127.0.0.1:8888', hint: `每道题先搜索题干，把搜到的资料交给模型参考，每题多花几秒。需要 ${link('https://docs.searxng.org/', 'SearXNG')} 并开启 JSON 格式；留空则不搜索` })
+      + F.text('gui', 'searxng_command', 'SearXNG 启动脚本（可选）', { placeholder: '/path/to/searxng/start.sh', hint: '填写后，搜索服务没开时会自动启动，退出应用时一起关闭' })
       + F.toggle('gui', 'auto_manage_local_model', '自动加载 / 卸载本地模型',
         `API 地址是本机的 ${link('https://lmstudio.ai/', 'LM Studio')} 时生效：开始学习前自动加载模型，所有账号学完或停止后自动卸载，释放内存`),
     SiliconFlow: F.text('tiku', 'siliconflow_key', '硅基流动 API Key', { secret: true, hint: `在 ${link('https://cloud.siliconflow.cn/account/ak', '硅基流动控制台')} 获取` })

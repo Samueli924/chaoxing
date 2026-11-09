@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from typing import Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse  # noqa: F401  (server.py 也通过本模块使用)
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 

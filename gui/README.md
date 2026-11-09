@@ -71,6 +71,10 @@ auto_manage_local_model = true   ; 使用本机 LM Studio 时自动加载 / 卸�
 - API Key：任意填写，例如 `lm-studio`
 - 模型名称：LM Studio 中的模型标识，例如 `qwen3.8-27b-mlx`
 
+### 联网搜索
+
+在「AI 大模型」设置中填写 SearXNG 地址（例如 `http://127.0.0.1:8888`，需要在 SearXNG 的 `settings.yml` 中给 `search.formats` 加上 `json`）后，每道题会先搜索题干，再把搜索结果作为参考资料交给模型。如果再填写 SearXNG 的启动脚本，搜索服务没开时会自动启动，退出应用时一起关闭。
+
 开启「自动加载 / 卸载本地模型」后，不需要提前手动加载模型。只会卸载这次刷课用过的模型；所有账号结束后会等待 15 秒再卸载，方便马上重新开始。
 
 ## 注意
