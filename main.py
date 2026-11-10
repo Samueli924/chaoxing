@@ -456,10 +456,7 @@ class JobProcessor:
 def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
-    recheck = bool(getattr(chaoxing, "kwargs", {}).get("work_recheck_finished", False))
     if point["has_finished"]:
-        if recheck:
-            return recheck_finished_chapter(chaoxing, course, point, speed)
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
         return ChapterResult.SUCCESS
 
@@ -468,10 +465,7 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
 
     # 获取当前章节的所有任务点
     job_info = None
-    if recheck:  # 回查时同时取出已通过的章节检测
-        jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True)
-    else:
-        jobs, job_info = chaoxing.get_job_list(course, point)
+    jobs, job_info = chaoxing.get_job_list(course, point)
 
     # 发现未开放章节, 根据配置处理
     if job_info.get("notOpen", False):
@@ -493,26 +487,60 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
     return ChapterResult.SUCCESS
 
 
-def recheck_finished_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any],
-                             speed: float) -> ChapterResult:
-    """回查已完成章节中的章节检测：成绩低于要求且还有重做机会时重新作答（见 Chaoxing.study_work）."""
-    chapter_key = f'chapter:{course["courseId"]}:{point["id"]}'
-    if chaoxing.work_cache_get(chapter_key):
-        logger.debug(f'章节 {point["title"]} 的章节检测已确认达标，跳过回查')
-        return ChapterResult.SUCCESS
+def recheck_courses(chaoxing: Chaoxing, courses: list[dict[str, Any]], progress=None) -> dict[str, int]:
+    """开始刷课前，先回查所选课程所有章节里已提交的章节检测.
 
-    chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
-    jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True, study_empty=False)
-    works = [job for job in jobs if job.get("type") == "workid"]
-    if not works:
-        chaoxing.work_cache_set(chapter_key, "no-work")
-        return ChapterResult.SUCCESS
+    成绩低于目标分数且还有重做机会的，开启思考重新作答（见 Chaoxing.study_work）；
+    只剩最后一次机会、没有机会或重做后仍未达标的，标注「需手动完成」。
+    未提交的检测留到刷课阶段正常作答。已确认达标的检测和章节会写入缓存，下次跳过。
 
-    logger.info(f'回查章节检测成绩: {point["title"]}')
-    results = [process_job(chaoxing, course, job, job_info, speed) for job in works]
-    if all(chaoxing.work_cache_get("work:" + job["jobid"]) is not None for job in works):
-        chaoxing.work_cache_set(chapter_key, "ok")
-    return ChapterResult.ERROR if any(r.is_failure() for r in results) else ChapterResult.SUCCESS
+    Args:
+        progress: 可选回调 progress(课程名, 第几章, 章节总数)
+    Returns:
+        统计 {"chapters": 回查章节数, "works": 检测数, "manual": 需手动完成数}
+    """
+    stats = {"chapters": 0, "works": 0, "manual": 0}
+    original_callback = chaoxing.work_result_callback
+
+    def count(result):
+        if result.get("status") == "manual":
+            stats["manual"] += 1
+        if original_callback:
+            original_callback(result)
+
+    chaoxing.work_result_callback = count
+    try:
+        logger.info(f"开始回查所选 {len(courses)} 门课程的章节检测成绩")
+        for course in courses:
+            points = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])["points"]
+            for index, point in enumerate(points, 1):
+                if progress:
+                    progress(course["title"], index, len(points))
+                chapter_key = f'chapter:{course["courseId"]}:{point["id"]}'
+                if chaoxing.work_cache_get(chapter_key):
+                    continue  # 已确认没有检测或检测都已达标
+                chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
+                jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True, study_empty=False)
+                if job_info.get("notOpen", False):
+                    continue
+                stats["chapters"] += 1
+                works = [job for job in jobs if job.get("type") == "workid"]
+                if not works:
+                    chaoxing.work_cache_set(chapter_key, "no-work")
+                    continue
+                for job in works:
+                    stats["works"] += 1
+                    try:
+                        chaoxing.study_work(course, job, job_info, recheck_only=True)
+                    except Exception as e:
+                        logger.error(f'回查章节检测出错（{course["title"]} - {point["title"]}）: {e}')
+                if all(chaoxing.work_cache_get("work:" + job["jobid"]) is not None for job in works):
+                    chaoxing.work_cache_set(chapter_key, "ok")
+    finally:
+        chaoxing.work_result_callback = original_callback
+    logger.info(f'章节检测回查完成：检查了 {stats["chapters"]} 个章节、{stats["works"]} 个检测，'
+                f'需手动完成 {stats["manual"]} 个')
+    return stats
 
 
 def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
@@ -623,6 +651,10 @@ def main():
 
         _old_format_sizeof = tqdm.format_sizeof
         tqdm.format_sizeof = format_time
+
+        # 开始刷新内容前，先回查所选课程已提交的章节检测（低于目标分数的开启思考重做）
+        if common_config.get("work_recheck_finished"):
+            recheck_courses(chaoxing, course_task)
 
         tasks = []
         for course in course_task:

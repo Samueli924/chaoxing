@@ -157,27 +157,34 @@ def parse_graded_work(html: str) -> Optional[dict]:
     }
 
 
+# 需要人工处理（标注「需手动完成」）的情况
+MANUAL_CODES = {"no_score", "redo_disabled", "uncertain", "rounds_exhausted", "no_redo", "last_chance", "retest_failed"}
+
+
 def decide_work_redo(score: Optional[float], remaining: Optional[int], min_score: float,
-                     redo_enabled: bool, rounds_left: int, uncertain: bool = False) -> tuple[str, str]:
-    """根据成绩决定是否重做章节检测，返回 (动作, 说明)，动作为 pass / keep / redo.
+                     redo_enabled: bool, rounds_left: int, uncertain: bool = False) -> tuple[str, str, str]:
+    """根据成绩决定是否重做章节检测，返回 (动作, 说明, 情况代码)，动作为 pass / keep / redo.
 
     剩余重做次数只剩 1 次时不再自动重做，把最后一次机会留给人工处理。
+    情况代码在 MANUAL_CODES 中的，表示低于目标分数又无法自动处理，需要手动完成。
     """
     if score is None:
-        return "keep", "无法获取成绩"
+        return "keep", "无法获取成绩", "no_score"
     if score >= min_score:
-        return "pass", f"成绩 {score:g} 分，达到要求的 {min_score:g} 分"
+        return "pass", f"成绩 {score:g} 分，达到要求的 {min_score:g} 分", "pass"
     if not redo_enabled:
-        return "keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分（未开启自动重做）"
+        return "keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分（未开启自动重做）", "redo_disabled"
     if uncertain:
-        return "keep", f"成绩 {score:g} 分，但部分题目的批改结果无法确认（可能尚未批阅完），不自动重做"
+        return "keep", f"成绩 {score:g} 分，但部分题目的批改结果无法确认（可能尚未批阅完），不自动重做", "uncertain"
     if rounds_left <= 0:
-        return "keep", f"成绩 {score:g} 分，已达到最大重做轮数，保留本次成绩"
+        return "keep", f"成绩 {score:g} 分，已达到最大重做轮数，保留本次成绩", "rounds_exhausted"
     if remaining is None or remaining <= 0:
-        return "keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分，但该测验没有重做机会"
+        return "keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分，但该测验没有重做机会了", "no_redo"
     if remaining <= 1:
-        return "keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分，只剩最后 1 次重做机会，按设置跳过，保留本次成绩"
-    return "redo", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分（剩余 {remaining} 次重做机会），开启思考重新作答"
+        return ("keep", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分，只剩最后 1 次重做机会，按设置跳过，保留本次成绩",
+                "last_chance")
+    return ("redo", f"成绩 {score:g} 分，低于要求的 {min_score:g} 分（剩余 {remaining} 次重做机会），开启思考和联网搜索重新作答",
+            "redo")
 
 
 def feedback_from_graded(html: str) -> tuple[list[str], int]:
@@ -502,6 +509,9 @@ class Chaoxing:
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
+        # 章节检测处理结果回调 callback(dict)，图形界面用来显示「需手动完成」清单
+        self.work_result_callback = None
+        self._rechecked_jobs: set[str] = set()  # 回查阶段已处理过的章节检测，刷课阶段不再重复处理
 
     def login(self, login_with_cookies=False):
         if login_with_cookies:
@@ -1109,8 +1119,31 @@ class Chaoxing:
         else:
             return StudyResult.SUCCESS
 
-    def study_work(self, _course, _job, _job_info) -> StudyResult:
+    def _report_work(self, course: dict, job: dict, job_info: dict, status: str, code: str,
+                     score: Optional[float], remaining: Optional[int], reason: str) -> None:
+        callback = self.work_result_callback
+        if not callback:
+            return
+        try:
+            callback({
+                "course_id": course.get("courseId"), "clazz_id": course.get("clazzId"),
+                "course_title": course.get("title", ""), "chapter_id": str(job_info.get("knowledgeid", "")),
+                "job_id": job.get("jobid"), "name": job.get("name") or "章节检测",
+                "status": status, "code": code, "score": score, "remaining": remaining, "reason": reason,
+                "target": self.kwargs.get("work_min_score", 100),
+            })
+        except Exception as e:
+            logger.debug(f"上报章节检测结果失败: {e}")
+
+    def study_work(self, _course, _job, _job_info, recheck_only: bool = False) -> StudyResult:
+        """完成章节检测.
+
+        recheck_only=True 用于回查阶段：只处理已提交（有成绩）的检测，未提交的留到刷课阶段正常作答。
+        """
         if self.tiku.DISABLE or not self.tiku:
+            return StudyResult.SUCCESS
+        if not recheck_only and _job.get("jobid") in self._rechecked_jobs:
+            logger.debug(f"章节检测 {_job.get('jobid')} 已在回查阶段处理，跳过")
             return StudyResult.SUCCESS
 
         _session = SessionManager.get_session()
@@ -1212,27 +1245,36 @@ class Chaoxing:
             if hasattr(self.tiku, 'set_redo_mode'):
                 self.tiku.set_redo_mode(thinking)
 
-        def handle_graded(html: str, rounds_left: int):
-            """根据批改页决定通过、保留成绩或申请重做；返回 None 表示无法解析批改页."""
+        def handle_graded(html: str, rounds_left: int, redone: bool = False):
+            """根据批改页决定通过、保留成绩或申请重做；返回 None 表示无法解析批改页.
+
+            redone=True 表示本次已经自动重做过；保留成绩时会标注「需手动完成」并通过回调上报。
+            """
             info = parse_graded_work(html)
             if not info:
                 return None
+            self._rechecked_jobs.add(_job["jobid"])
             feedback, unknown = feedback_from_graded(html)
-            action, reason = decide_work_redo(info["score"], info["remaining"], min_score, redo_enabled,
-                                              rounds_left, uncertain=unknown > 0)
+            action, reason, code = decide_work_redo(info["score"], info["remaining"], min_score, redo_enabled,
+                                                    rounds_left, uncertain=unknown > 0)
+            score, remaining = info["score"], info["remaining"]
             if action == "pass":
                 logger.info(f"章节检测 {work_title}：{reason}")
-                self.work_cache_set("work:" + _job["jobid"], info["score"])
-                return ("done", info["score"])
-            if action == "keep":
+                self.work_cache_set("work:" + _job["jobid"], score)
+                self._report_work(_course, _job, _job_info, "pass", code, score, remaining, reason)
+                return ("done", score)
+            if action == "redo":
                 logger.warning(f"章节检测 {work_title}：{reason}")
-                return ("done", info["score"])
-            logger.warning(f"章节检测 {work_title}：{reason}")
-            url = self._retest_work(_session, info["params"])
-            if not url:
-                logger.warning(f"章节检测 {work_title}：申请重做失败，保留成绩 {info['score']:g} 分")
-                return ("done", info["score"])
-            return ("redo", feedback, url, info["score"])
+                url = self._retest_work(_session, info["params"])
+                if url:
+                    self._report_work(_course, _job, _job_info, "redoing", code, score, remaining, reason)
+                    return ("redo", feedback, url, score)
+                code, reason = "retest_failed", f"成绩 {score:g} 分，申请重做失败，保留本次成绩"
+            if redone:
+                reason = f"自动重做后仍未达到 {min_score:g} 分：{reason}"
+            logger.warning(f"章节检测 {work_title}：{reason}（需手动完成）")
+            self._report_work(_course, _job, _job_info, "manual", code, score, remaining, reason)
+            return ("done", score)
 
         def fetch_questions():
             redo_url = state.pop("redo_url", None)
@@ -1279,7 +1321,7 @@ class Chaoxing:
                 return StudyResult.SUCCESS
             except WorkAlreadySubmitted as e:
                 # 之前已经提交过：按成绩决定通过 / 保留 / 申请重做
-                outcome = handle_graded(e.html, max_retries - attempt)
+                outcome = handle_graded(e.html, max_retries - attempt, redone=redo_pending)
                 if outcome is None or outcome[0] == "done":
                     return StudyResult.SUCCESS
                 _, feedback_history, ctx["state"]["redo_url"], last_submitted_score = outcome
@@ -1294,6 +1336,11 @@ class Chaoxing:
                 else:
                     logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
                 return StudyResult.ERROR
+
+            if ctx.get("recheck_only") and not redo_pending:
+                # 回查阶段：拿到的是可作答页面，说明还没提交过，留到刷课阶段正常作答
+                logger.debug(f'章节检测 {_job.get("name") or _job["jobid"]} 尚未提交，留到刷课阶段作答')
+                return StudyResult.SUCCESS
 
             _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
 
@@ -1474,7 +1521,7 @@ class Chaoxing:
                                            params=work_params(), timeout=20).text
             except Exception as e:
                 logger.debug(f"获取批改页失败，改用作答记录判断成绩: {e}")
-            outcome = handle_graded(graded_html, max_retries - attempt) if graded_html else None
+            outcome = handle_graded(graded_html, max_retries - attempt, redone=redo_pending) if graded_html else None
             if outcome is not None:
                 if outcome[0] == "done":
                     return StudyResult.SUCCESS
