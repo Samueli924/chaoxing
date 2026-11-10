@@ -156,6 +156,7 @@ class Run:
         self.seq = 0
         self.speed = 1.0
         self.selected: list[dict] = []
+        self.manual: dict[str, dict] = {}  # 需手动完成的章节检测，按任务 ID
 
     def add_log(self, level, msg, ts=None):
         with self.lock:
@@ -164,7 +165,9 @@ class Run:
                               "ts": ts or time.strftime("%H:%M:%S")})
 
     def counts(self):
-        finished = sum(1 for c in self.courses for ch in c["chapters"] if ch["status"] in ("done", "success"))
+        # 「需手动完成」的章节任务点已经完成，只是检测分数不达标，仍计入已完成
+        finished = sum(1 for c in self.courses for ch in c["chapters"]
+                       if ch["status"] in ("done", "success") or ch.get("prev_status") in ("done", "success"))
         total = sum(len(c["chapters"]) for c in self.courses)
         return finished, total
 
@@ -190,12 +193,33 @@ class Run:
                 self.status, self.phase = "running", "正在学习"
             elif t == "ch_start":
                 ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] != "done":
+                if ch and ch["status"] not in ("done", "manual"):
                     ch["status"] = "running"
             elif t == "ch_end":
                 ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] != "done":
+                if ch and ch["status"] not in ("done", "manual"):
                     ch["status"] = STATUS_MAP.get(ev.get("result"), "retry")
+            elif t == "work_result":
+                key = ev.get("job_id") or f'{ev.get("course")}:{ev.get("chapter_id")}'
+                ch = self.chapter_index.get((ev.get("course"), ev.get("chapter_id")))
+                status = ev.get("status")
+                if status == "manual":
+                    item = {k: ev.get(k) for k in ("course", "course_title", "chapter_id", "name", "score",
+                                                     "target", "remaining", "code", "reason")}
+                    item["chapter_title"] = ch["title"] if ch else ""
+                    self.manual[key] = item
+                    if ch:
+                        ch["prev_status"] = ch.get("prev_status") or ch["status"]
+                        ch["status"] = "manual"
+                elif status in ("pass", "redoing"):
+                    self.manual.pop(key, None)
+                    if ch and ch["status"] == "manual":
+                        ch["status"] = ch.pop("prev_status", "done")
+                    if ch and status == "redoing":
+                        ch["prev_status"] = ch.get("prev_status") or ch["status"]
+                        ch["status"] = "redoing"
+                    elif ch and ch["status"] == "redoing":
+                        ch["status"] = ch.pop("prev_status", "done")
             elif t == "job_start":
                 job = {k: ev.get(k) for k in ("jid", "kind", "name", "course", "chapter")}
                 job.update(n=0, total=0, started=time.time())
@@ -213,7 +237,7 @@ class Run:
             elif t == "final":
                 for item in ev.get("chapters", []):
                     ch = self.chapter_index.get((item["course"], item["id"]))
-                    if ch and ch["status"] != "done":
+                    if ch and ch["status"] not in ("done", "manual"):
                         ch["status"] = FINAL_MAP.get(item["result"], "failed")
                 self.jobs.clear()
             elif t == "done":
@@ -327,6 +351,7 @@ class Run:
                 "seq": self.seq,
                 "selected": [c["title"] for c in self.selected],
                 "selected_keys": [_course_key(c) for c in self.selected],
+                "manual": list(self.manual.values()),
             }
 
 

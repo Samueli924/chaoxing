@@ -723,7 +723,33 @@ async function startRun(a) {
 const CH_LABEL = {
   done: '之前已完成', success: '本次完成', running: '进行中', pending: '等待中',
   waiting: '未开放，等待重试', retry: '出错，重试中', skipped: '未开放，已跳过', failed: '失败',
+  manual: '检测需手动完成', redoing: '检测重做中',
 };
+const MANUAL_CODE = {
+  last_chance: '只剩最后 1 次机会', no_redo: '没有重做机会了', rounds_exhausted: '已达最大重做轮数',
+  uncertain: '成绩无法确认', retest_failed: '申请重做失败', redo_disabled: '未开启自动重做', no_score: '无法获取成绩',
+};
+
+function manualHTML(run) {
+  const items = run.manual || [];
+  if (!items.length) return '';
+  return `<div class="card section manual-sec">
+    <h3>需手动完成的章节检测 <span class="badge amber">${items.length}</span>
+      <span class="right hint">低于目标分数且无法自动重做，请到学习通手动处理</span></h3>
+    <div class="manual-list">${items.map((m) => `
+      <div class="manual-item">
+        <div class="mi-main">
+          <div class="mi-title">${esc(m.course_title)} · ${esc(m.chapter_title || m.name || '章节检测')}</div>
+          <div class="hint">${esc(m.reason || '')}</div>
+        </div>
+        <div class="mi-meta">
+          <span class="badge amber">${esc((m.reason || '').startsWith('自动重做后') ? '重做后仍未达标' : (MANUAL_CODE[m.code] || '需手动完成'))}</span>
+          <span class="mi-score">${m.score == null ? '—' : `${m.score} 分`}<span class="hint"> / 目标 ${m.target ?? '—'}</span></span>
+          ${m.remaining != null ? `<span class="hint">剩余 ${m.remaining} 次</span>` : ''}
+        </div>
+      </div>`).join('')}</div>
+  </div>`;
+}
 
 function showRun(a) {
   S.view = 'run';
@@ -733,6 +759,7 @@ function showRun(a) {
     <div class="page">
       ${acctHeaderHTML(a)}
       <div class="card run-head" id="run-head"></div>
+      <div id="manual-sec"></div>
       <div class="run-grid">
         <div>
           <div class="card section" id="jobs-sec"></div>
@@ -797,7 +824,11 @@ async function pollRun(a, token) {
 
 function countChapters(run) {
   const n = { done: 0, success: 0, running: 0, pending: 0, waiting: 0, retry: 0, skipped: 0, failed: 0, total: 0 };
-  for (const c of run.courses) for (const ch of c.chapters) { n[ch.status] = (n[ch.status] || 0) + 1; n.total++; }
+  for (const c of run.courses) for (const ch of c.chapters) {
+    // 「需手动完成」「重做中」按原来的状态计数（任务点已完成的仍算已完成）
+    const st = ['manual', 'redoing'].includes(ch.status) ? (ch.prev_status || 'pending') : ch.status;
+    n[st] = (n[st] || 0) + 1; n.total++;
+  }
   return n;
 }
 
@@ -824,10 +855,13 @@ function renderRun(a) {
     }
   }
 
+  const rechecking = run.status === 'running' && (run.phase || '').startsWith('回查');
   const st = {
     queued: ['queued', I.clock, '排队中', queueText],
     starting: ['running', I.play, run.phase || '正在准备…', '马上就好，正在登录并读取章节'],
-    running: ['running', I.play, '正在学习', `已运行 ${fmtDuration(elapsed)} · ${run.speed}x 倍速 · 期间电脑不会自动休眠`],
+    running: rechecking
+      ? ['running', I.play, '正在回查章节检测', `${run.phase.replace(/^回查章节检测：/, '')} · 低于目标分数的检测会开启思考和联网搜索重做，查完后开始刷课`]
+      : ['running', I.play, '正在学习', `已运行 ${fmtDuration(elapsed)} · ${run.speed}x 倍速 · 期间电脑不会自动休眠`],
     counting: ['running', I.play, '正在增加章节学习次数', `已运行 ${fmtDuration(elapsed)}`],
     done: ['done', I.done, '学习完成', `用时 ${fmtDuration(elapsed)}`],
     stopped: ['stopped', I.pause, '已停止', run.started ? `运行了 ${fmtDuration(elapsed)}，已完成的进度会保存在学习通` : '已取消排队'],
@@ -875,6 +909,9 @@ function renderRun(a) {
     } catch (e) { toast(e.message, 'error'); route(true); }
   });
 
+  const manualBox = $('#manual-sec');
+  if (manualBox) manualBox.innerHTML = manualHTML(run);
+
   const jobs = run.jobs;
   $('#jobs-sec').innerHTML = `
     <h3>正在进行 ${jobs.length ? `<span class="badge blue">${jobs.length}</span>` : ''}</h3>
@@ -895,7 +932,7 @@ function renderRun(a) {
   if (run.courses.length === 1 && !P.open.size) P.open.add(run.courses[0].key);
   sec.innerHTML = `<h3>课程进度</h3>${run.courses.map((c) => {
     const total = c.chapters.length;
-    const fin = c.chapters.filter((ch) => ch.status === 'done' || ch.status === 'success').length;
+    const fin = c.chapters.filter((ch) => ['done', 'success'].includes(ch.status) || ['done', 'success'].includes(ch.prev_status)).length;
     const p = total ? Math.round((fin / total) * 100) : 100;
     return `
       <div class="course-prog ${P.open.has(c.key) ? 'open' : ''}" data-key="${esc(c.key)}">
@@ -903,7 +940,7 @@ function renderRun(a) {
           <span class="num">${fin}/${total}</span><div class="bar ${fin === total ? 'green' : ''}"><i style="width:${p}%"></i></div></div>
         <div class="chapters">${c.chapters.map((ch) => `
           <div class="chapter ${ch.status}" title="${esc(CH_LABEL[ch.status] || '')}"><span class="dot ${ch.status}"></span><span class="t">${esc(ch.title)}</span>
-          ${['running', 'waiting', 'retry', 'skipped', 'failed', 'success'].includes(ch.status) ? `<span class="hint">${esc(CH_LABEL[ch.status])}</span>` : ''}</div>`).join('')}
+          ${['running', 'waiting', 'retry', 'skipped', 'failed', 'success'].includes(ch.status) ? `<span class="hint">${esc(CH_LABEL[ch.status])}</span>` : ''}${['manual', 'redoing'].includes(ch.status) ? `<span class="badge ${ch.status === 'manual' ? 'amber' : 'blue'}">${esc(CH_LABEL[ch.status])}</span>` : ''}</div>`).join('')}
         </div>
       </div>`;
   }).join('')}
@@ -911,6 +948,7 @@ function renderRun(a) {
     <span><i class="dot success"></i>本次完成</span><span><i class="dot done"></i>之前已完成</span>
     <span><i class="dot running"></i>进行中</span><span><i class="dot waiting"></i>未开放/重试中</span>
     <span><i class="dot skipped"></i>已跳过</span><span><i class="dot failed"></i>失败</span>
+    <span><i class="dot manual"></i>检测需手动完成</span>
   </div>`;
   $$('.course-prog > .head', sec).forEach((h) => (h.onclick = () => {
     const el = h.parentElement, k = el.dataset.key;
@@ -1086,7 +1124,7 @@ async function openSettings(focus) {
             ${F.number('common', 'work_min_score', '章节检测目标分数', { min: 0, max: 100, def: 100, hint: '提交后低于这个分数算不达标' })}
             ${F.toggle('common', 'work_redo_enabled', '不达标时自动重做', '开启 AI 思考，并参考上次的错题和正确答案重新作答；页面显示只剩最后 1 次重做机会时不再自动重做')}
             ${F.number('common', 'work_max_retries', '每个检测最多重做几轮', { min: 1, max: 5, def: 3 })}
-            ${F.toggle('common', 'work_recheck_finished', '回查已完成的章节检测', '已完成的章节也检查检测成绩，不达标且还有重做机会就自动重做；已确认达标的会记住，下次不再重复检查')}
+            ${F.toggle('common', 'work_recheck_finished', '开始前回查章节检测', '开始刷课前，先查一遍所选课程所有已提交检测的成绩：不达标且还有重做机会的开启思考和联网搜索重做；只剩最后 1 次机会、没有机会、重做后仍未达标或成绩无法确认的列为「需手动完成」。已确认达标的会记住，下次不再重复检查')}
           </div>
         </div></div>
 

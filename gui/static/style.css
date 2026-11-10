@@ -277,6 +277,9 @@ textarea.input { height: 64px; padding: 8px 10px; resize: vertical; }
 .dot.waiting, .dot.retry { background: var(--amber); border-color: var(--amber); }
 .dot.skipped { border-color: var(--amber); }
 .dot.failed { background: var(--red); border-color: var(--red); }
+.dot.manual { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.dot.redoing { background: var(--accent); border-color: var(--accent); animation: pulse 1.2s infinite; }
+.chapter.manual .t { color: var(--amber); font-weight: 500; }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 var(--accent-soft); } 50% { box-shadow: 0 0 0 5px var(--accent-soft); } }
 
 .log-list {
@@ -383,3 +386,14 @@ textarea.input { height: 64px; padding: 8px 10px; resize: vertical; }
   font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); animation: pop .2s ease;
 }
 #net-banner .spinner { border-color: var(--amber-soft); border-top-color: var(--amber); }
+
+/* ---------- 需手动完成的章节检测 ---------- */
+.manual-sec { margin-bottom: 14px; border-color: var(--amber-soft); }
+.manual-list { display: flex; flex-direction: column; }
+.manual-item { display: flex; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.manual-item:first-child { border-top: 0; padding-top: 2px; }
+.mi-main { flex: 1; min-width: 0; }
+.mi-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mi-main .hint { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mi-meta { display: flex; align-items: center; gap: 10px; flex: none; }
+.mi-score { font-variant-numeric: tabular-nums; font-weight: 600; }

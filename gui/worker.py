@@ -230,6 +230,16 @@ def run(payload: dict):
                      "teacher": course.get("teacher", ""), "chapters": chapters})
     emit("plan", courses=plan)
 
+    # 章节检测的处理结果（达标 / 重做中 / 需手动完成）上报到界面
+    chaoxing.work_result_callback = lambda r: emit(
+        "work_result", course=f'{r.get("course_id")}_{r.get("clazz_id")}', **r)
+    if common.get("work_recheck_finished") and hasattr(cx, "recheck_courses"):
+        # 先回查所选课程全部已提交的章节检测，再开始刷未完成的内容
+        emit("phase", msg="正在回查章节检测…")
+        cx.recheck_courses(chaoxing, courses,
+                           progress=lambda title, i, n: emit("phase", msg=f"回查章节检测：{title} 第 {i}/{n} 章"))
+        emit("phase", msg="正在学习")
+
     processor = cx.JobProcessor(chaoxing, tasks, common)
     processor.run()
 
