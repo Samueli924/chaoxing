@@ -236,6 +236,15 @@ def _process_attachment_cards(cards: List[Dict[str, Any]], include_passed_work: 
             if not (include_passed_work and card.get("type", "").lower() == "workid"):
                 continue
 
+        # 已提交的章节检测卡片没有 job 字段（只有未完成的任务才有），回查成绩时仍按章节检测处理
+        if (include_passed_work and card.get("job") is None and card.get("type", "").lower() == "workid"
+                and card.get("jobid")):
+            work_job = _process_work_task(card)
+            if work_job:
+                work_job["submitted"] = True
+                job_list.append(work_job)
+            continue
+
         # 处理无job字段的特殊任务
         if card.get("job") is None:
             # 尝试识别阅读任务

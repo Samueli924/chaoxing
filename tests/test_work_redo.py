@@ -200,6 +200,24 @@ class ManualMarkingTest(StudyWorkTest):
         self.assertEqual(session.calls, [])  # 没有再次请求
 
 
+class DecodeSubmittedWorkTest(unittest.TestCase):
+    """已提交的章节检测卡片没有 job 字段（实测音乐鉴赏 2.4 章节测验），回查时也要识别出来."""
+
+    def cards_html(self, cards):
+        import json as _json
+        data = {"attachments": cards, "defaults": {"knowledgeid": 1, "ktoken": "k", "cpi": 1, "clazzId": 1}}
+        return "<script>mArg=" + _json.dumps(data) + ";</script>"
+
+    def test_submitted_work_without_job_field(self):
+        from api.decode import decode_course_card
+        card = {"type": "workid", "jobid": "work-123", "enc": "e", "aid": 1, "mid": "m", "otherInfo": "x",
+                "property": {"workid": "123", "title": "章节测验"}}
+        html = self.cards_html([card])
+        self.assertEqual(decode_course_card(html)[0], [])  # 刷课阶段：已提交的检测不再作答
+        jobs, _ = decode_course_card(html, include_passed_work=True)
+        self.assertEqual([(j["type"], j["jobid"], j.get("submitted")) for j in jobs], [("workid", "work-123", True)])
+
+
 class RecheckCoursesTest(unittest.TestCase):
     """main.recheck_courses：先回查全部课程，统计需手动完成的数量，并利用缓存跳过已确认的章节."""
 
@@ -212,12 +230,13 @@ class RecheckCoursesTest(unittest.TestCase):
         cx.work_cache_get.side_effect = cache.get
         cx.work_cache_set.side_effect = cache.__setitem__
         cx.get_course_point.side_effect = lambda cid, clz, cpi: {"points": [
-            {"id": f"{cid}-1", "title": "1.1"}, {"id": f"{cid}-2", "title": "1.2"}, {"id": f"{cid}-3", "title": "1.3"}]}
+            {"id": f"{cid}-1", "title": "1.1"}, {"id": f"{cid}-2", "title": "1.2"},
+            {"id": f"{cid}-3", "title": "1.3", "has_finished": True}, {"id": f"{cid}-4", "title": "1.4"}]}
 
         def get_job_list(course, point, include_passed_work=False, study_empty=True):
             self.assertTrue(include_passed_work)
             self.assertFalse(study_empty)
-            if point["id"].endswith("-3"):
+            if point["id"].endswith("-3") or point["id"].endswith("-4"):
                 return [{"type": "video", "jobid": "v"}], {}
             return [{"type": "workid", "jobid": "work-" + point["id"]}], {"knowledgeid": point["id"]}
         cx.get_job_list.side_effect = get_job_list
@@ -236,10 +255,11 @@ class RecheckCoursesTest(unittest.TestCase):
                    {"courseId": "B", "clazzId": "1", "cpi": "1", "title": "课程B"}]
         stats = main.recheck_courses(cx, courses, progress=lambda t, i, n: progress.append((t, i, n)))
         self.assertEqual(calls, [("work-A-1", True), ("work-A-2", True), ("work-B-1", True), ("work-B-2", True)])
-        self.assertEqual(stats, {"chapters": 6, "works": 4, "manual": 2})
-        self.assertEqual(progress[0], ("课程A", 1, 3))
+        self.assertEqual(stats, {"chapters": 8, "works": 4, "manual": 2})
+        self.assertEqual(progress[0], ("课程A", 1, 4))
         self.assertEqual(cache["chapter:A:A-1"], "ok")
         self.assertEqual(cache["chapter:A:A-3"], "no-work")
+        self.assertNotIn("chapter:A:A-4", cache)  # 未完成章节不记「没有检测」
         self.assertNotIn("chapter:A:A-2", cache)  # 需手动完成的章节下次还会回查
 
         calls.clear()

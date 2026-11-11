@@ -526,7 +526,9 @@ def recheck_courses(chaoxing: Chaoxing, courses: list[dict[str, Any]], progress=
                 stats["chapters"] += 1
                 works = [job for job in jobs if job.get("type") == "workid"]
                 if not works:
-                    chaoxing.work_cache_set(chapter_key, "no-work")
+                    # 只对已完成的章节记住「没有检测」：未完成章节的检测可能要解锁后才出现
+                    if point.get("has_finished"):
+                        chaoxing.work_cache_set(chapter_key, "no-work")
                     continue
                 for job in works:
                     stats["works"] += 1
