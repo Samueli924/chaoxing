@@ -1,3 +1,6 @@
+/* 各组件的选择器作用于不同的元素，按组件分块书写比按选择器优先级排序更易维护 */
+/* stylelint-disable no-descending-specificity */
+
 :root {
   --bg: #f5f5f7;
   --panel: #fff;
@@ -887,6 +890,7 @@ textarea.input {
   gap: 14px;
   align-items: start;
 }
+
 /* 不用容器查询：WebKit 中滚动区域内有 container-type 元素时，内容一更新滚动位置就会被重置到顶部。
    1010px ≈ 侧栏 248px + 主区域 760px */
 @media (max-width: 1010px) {

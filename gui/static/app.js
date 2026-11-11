@@ -143,8 +143,9 @@ const store = {
   set(k, v) {
     try {
       localStorage.setItem("cx." + k, JSON.stringify(v));
+      return true;
     } catch {
-      /* 忽略 */
+      return false; // 隐私模式等情况下无法写入，忽略即可
     }
   },
 };
