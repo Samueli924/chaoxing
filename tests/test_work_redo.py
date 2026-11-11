@@ -63,6 +63,7 @@ class FakeSession:
     """按地址返回预设页面：api/work 依次返回 pages 中的内容，retest 返回 retest_json."""
 
     def __init__(self, pages, retest_json=None):
+        """记录预设页面和请求过的地址."""
         self.pages = list(pages)
         self.retest_json = retest_json
         self.calls = []
@@ -97,7 +98,7 @@ class StudyWorkTest(unittest.TestCase):
 
     def test_submitted_score_above_target_passes_and_is_cached(self):
         session = FakeSession([graded_page(95.0, 2)])
-        cx, result = self.run_work(session, work_min_score=90)
+        _, result = self.run_work(session, work_min_score=90)
         self.assertEqual(result, StudyResult.SUCCESS)
         self.assertFalse(any(u.endswith("/work/retest") for u in session.calls))
         with open(Chaoxing.WORK_CACHE_FILE, encoding="utf8") as f:
@@ -150,7 +151,8 @@ class ManualMarkingTest(StudyWorkTest):
         with mock.patch.object(base.SessionManager, "get_session", return_value=session), \
                 mock.patch.object(Chaoxing, "get_uid", return_value="u1"), \
                 mock.patch.object(base.time, "sleep"):
-            r = cx.study_work(self.course, self.job, self.job_info, recheck_only=recheck_only)
+            work = cx.recheck_work if recheck_only else cx.study_work
+            r = work(self.course, self.job, self.job_info)
         return cx, r, results
 
     def test_codes(self):
@@ -204,9 +206,8 @@ class DecodeSubmittedWorkTest(unittest.TestCase):
     """已提交的章节检测卡片没有 job 字段（实测音乐鉴赏 2.4 章节测验），回查时也要识别出来."""
 
     def cards_html(self, cards):
-        import json as _json
         data = {"attachments": cards, "defaults": {"knowledgeid": 1, "ktoken": "k", "cpi": 1, "clazzId": 1}}
-        return "<script>mArg=" + _json.dumps(data) + ";</script>"
+        return "<script>mArg=" + json.dumps(data) + ";</script>"
 
     def test_submitted_work_without_job_field(self):
         from api.decode import decode_course_card
@@ -226,7 +227,7 @@ class RecheckCoursesTest(unittest.TestCase):
         cache = {}
         calls = []
         cx = mock.Mock()
-        cx.work_result_callback = None
+        cx.configure_mock(work_result_callback=None)
         cx.work_cache_get.side_effect = cache.get
         cx.work_cache_set.side_effect = cache.__setitem__
         cx.get_course_point.side_effect = lambda cid, clz, cpi: {"points": [
@@ -241,14 +242,14 @@ class RecheckCoursesTest(unittest.TestCase):
             return [{"type": "workid", "jobid": "work-" + point["id"]}], {"knowledgeid": point["id"]}
         cx.get_job_list.side_effect = get_job_list
 
-        def study_work(course, job, job_info, recheck_only=False):
-            calls.append((job["jobid"], recheck_only))
+        def recheck_work(course, job, job_info):
+            calls.append((job["jobid"], True))
             if job["jobid"].endswith("-1"):
                 cache["work:" + job["jobid"]] = 95.0  # 达标
             else:
                 cx.work_result_callback({"status": "manual"})
             return StudyResult.SUCCESS
-        cx.study_work.side_effect = study_work
+        cx.recheck_work.side_effect = recheck_work
 
         progress = []
         courses = [{"courseId": "A", "clazzId": "1", "cpi": "1", "title": "课程A"},

@@ -8,7 +8,7 @@ import time
 from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
-from typing import Optional, Literal
+from typing import Callable, Literal, Optional
 from typing_extensions import Self
 
 import requests
@@ -120,6 +120,7 @@ class WorkAlreadySubmitted(Exception):
     """获取章节检测题目时拿到的是已批改的结果页（之前已经提交过）."""
 
     def __init__(self, html: str):
+        """保存批改页 HTML，供后续解析成绩."""
         super().__init__("章节检测已提交过")
         self.html = html
 
@@ -128,10 +129,8 @@ _GRADED_VARS = ("courseId", "classId", "workId", "workAnswerId", "knowledgeid", 
 
 
 def parse_graded_work(html: str) -> Optional[dict]:
-    """解析章节检测的已批改页面，返回成绩、剩余重做次数和重做接口需要的参数；不是批改页时返回 None.
-
-    重做按钮形如：<a onclick="redoTest()">重做 <i>(剩余 2 次)</i></a>，没有该按钮表示不能重做。
-    """
+    """解析章节检测的已批改页面，返回成绩、剩余重做次数和重做参数；不是批改页时返回 None."""
+    # 重做按钮形如：<a onclick="redoTest()">重做 <i>(剩余 2 次)</i></a>，没有该按钮表示不能重做
     if not html or "answerwqbid" in html:
         return None
     m = re.search(r'stuScore\s*=\s*"([\d.]+)"', html) or re.search(r'本次成绩\s*<i>\s*([\d.]+)\s*</i>', html)
@@ -163,11 +162,9 @@ MANUAL_CODES = {"no_score", "redo_disabled", "uncertain", "rounds_exhausted", "n
 
 def decide_work_redo(score: Optional[float], remaining: Optional[int], min_score: float,
                      redo_enabled: bool, rounds_left: int, uncertain: bool = False) -> tuple[str, str, str]:
-    """根据成绩决定是否重做章节检测，返回 (动作, 说明, 情况代码)，动作为 pass / keep / redo.
-
-    剩余重做次数只剩 1 次时不再自动重做，把最后一次机会留给人工处理。
-    情况代码在 MANUAL_CODES 中的，表示低于目标分数又无法自动处理，需要手动完成。
-    """
+    """根据成绩决定是否重做章节检测，返回 (动作 pass/keep/redo, 说明, 情况代码)."""
+    # 剩余重做次数只剩 1 次时不再自动重做，把最后一次机会留给人工处理。
+    # 情况代码在 MANUAL_CODES 中的，表示低于目标分数又无法自动处理，需要手动完成。
     if score is None:
         return "keep", "无法获取成绩", "no_score"
     if score >= min_score:
@@ -307,12 +304,10 @@ def best_option_by_similarity(target: str, options: list, threshold: float = 0.8
 
 
 def exact_option_letter(answer, options: list) -> str:
-    """答案与某个选项完全相同、等于某个选项的内容，或就是某个选项的字母时，返回该选项字母.
-
-    依次判断：完整选项 -> 选项内容（去掉字母编号）-> 选项字母。先比内容再比字母，
-    这样选项为「A B」「B C」时答案 "B" 会选中内容为 B 的 A，而不是字母 B；
-    选项为「A10」「B0」时答案 "0" 选中 B。选项是图片时内容是图片地址，才会落到按字母匹配。
-    """
+    """答案与某个选项完全相同、等于选项内容或就是选项字母时，返回该选项字母."""
+    # 依次判断：完整选项 -> 选项内容（去掉字母编号）-> 选项字母。先比内容再比字母，
+    # 这样选项为「A B」「B C」时答案 "B" 会选中内容为 B 的 A，而不是字母 B；
+    # 选项为「A10」「B0」时答案 "0" 选中 B。选项是图片时内容是图片地址，才会落到按字母匹配。
     text = str(answer).strip()
     if not text:
         return ""
@@ -500,6 +495,404 @@ def normalize_answer_text(ans) -> str:
     return s
 
 
+# ---------------------------------------------------------------------------
+# 章节检测：作答匹配、提交表单
+# ---------------------------------------------------------------------------
+SUBMIT_HEADERS = {
+    "Host": "mooc1.chaoxing.com",
+    "sec-ch-ua-platform": '"Windows"',
+    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "sec-ch-ua-mobile": "?0",
+    "Origin": "https://mooc1.chaoxing.com",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
+}
+WORK_URL = "https://mooc1.chaoxing.com/mooc-ans/api/work"
+
+
+def _fuzzy_option(answer: str, options: list) -> str:
+    """模糊匹配：答案是某个选项的子序列，否则按相似度兜底，返回选项字母."""
+    for o in options:
+        if is_subsequence(answer, o):  # 去掉各种符号和前面 ABCD 的答案应当是选项的子序列
+            return o[:1]
+    return best_option_by_similarity(answer, options, threshold=0.8)
+
+
+def match_multiple(res: str, options_text: str, html: str) -> str:
+    """多选题：把题库答案逐项对应到选项字母，返回排好序的字母串（如 "ABD"）."""
+    options_list = multi_cut(options_text, html)
+    res_list = multi_cut(res, html)
+    if res_list is None or options_list is None:
+        return ""  # 分割失败时交给随机作答
+    letters = ""
+    for raw, cleaned in zip(res_list, clean_res(res_list)):
+        # 先按原始答案精确匹配（"B." 清理后会变成空字符串）
+        exact = exact_option_letter(raw, options_list) or exact_option_letter(cleaned, options_list)
+        if exact:
+            letters += exact
+        elif cleaned and not _is_numeric_answer(cleaned):  # 空答案或纯数字答案不做模糊匹配
+            letters += _fuzzy_option(cleaned, options_list)
+    return "".join(sorted(set(letters)))  # 对答案进行排序, 否则会提交失败
+
+
+def match_single(res: str, options_text: str, html: str) -> str:
+    """单选题：精确匹配优先，其次子序列和相似度匹配，返回选项字母."""
+    options_list = multi_cut(options_text, html)
+    if options_list is None:
+        return ""
+    cleaned = clean_res(res)
+    answer = exact_option_letter(res, options_list) or exact_option_letter(cleaned[0], options_list)
+    if answer or not cleaned[0] or _is_numeric_answer(cleaned[0]):
+        return answer
+    return _fuzzy_option(cleaned[0], options_list)
+
+
+def match_answer(tiku, q: dict, res, html: str) -> str:
+    """把题库答案转换为提交用的答案；无法对应时返回空字符串."""
+    qtype = q["type"]
+    if qtype == "multiple":
+        return match_multiple(res, q["options"], html)
+    if qtype == "single":
+        return match_single(res, q["options"], html)
+    if qtype == "judgement":
+        return "true" if tiku.judgement_select(res) else "false"
+    if qtype == "completion":
+        if isinstance(res, list):
+            return "".join(res)
+        return res if isinstance(res, str) else ""
+    return res  # 其他类型直接使用答案（目前仅知有简答题）
+
+
+def fill_answers(tiku, questions: list, answers: list, html: str) -> int:
+    """把答案填进每道题的表单字段，没有答案或无法对应的随机作答，返回题库答案被采用的题数."""
+    found = 0
+    for q, res in zip(questions, answers):
+        logger.debug(f"当前题目信息 -> {q}")
+        answer = match_answer(tiku, q, res, html) if res else ""
+        if answer:
+            logger.info(f"成功获取到答案：{answer}")
+            q[f'answerSource{q["id"]}'] = "cover"
+            found += 1
+        else:
+            if res:
+                logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
+            answer = random_answer(q["options"], q["type"])
+            q[f'answerSource{q["id"]}'] = "random"
+        q["answerField"][f'answer{q["id"]}'] = answer
+        logger.info(f'{q["title"]} 填写答案为 {answer}')
+    return found
+
+
+def normalize_answers(answers, total: int) -> list:
+    """题库返回的答案补齐或截断到题目数量，格式异常时全部按未找到处理."""
+    if not isinstance(answers, list):
+        logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
+        return [None] * total
+    if len(answers) != total:
+        logger.error(f"题库返回的答案数量（{len(answers)}）与题目数量（{total}）不匹配，正在补齐或截断以防错位！")
+        return (list(answers) + [None] * total)[:total]
+    return answers
+
+
+def is_manual_tiku(tiku) -> bool:
+    """是否为手动作答题库（或包含手动题库的回退组合）."""
+    def manual(t):
+        return getattr(t, 'is_manual', False) or t.__class__.__name__ == 'TikuManual'
+    if manual(tiku):
+        return True
+    return tiku.__class__.__name__ == 'TikuFallback' and any(manual(p) for p in getattr(tiku, 'providers', []))
+
+
+def decide_py_flag(tiku, cover_rate: float, rollback_times: int) -> str:
+    """提交模式：返回 "" 表示提交，"1" 表示只保存不提交."""
+    if tiku.get_submit_params() == "1":
+        return "1"
+    if is_manual_tiku(tiku) or cover_rate >= tiku.COVER_RATE * 100 or rollback_times >= 1:
+        return ""
+    logger.info(f"章节检测题库覆盖率低于{tiku.COVER_RATE * 100:.0f}%，不予提交")
+    return "1"
+
+
+def build_submit_form(questions: dict) -> dict:
+    """组建提交表单：只保存时，随机作答的题目留空."""
+    save_only = questions["pyFlag"] == "1"
+    for q in questions["questions"]:
+        field = q["answerField"]
+        answer = field[f'answer{q["id"]}']
+        if save_only and q[f'answerSource{q["id"]}'] != "cover":
+            answer = ''
+        questions.update({f'answer{q["id"]}': answer, f'answertype{q["id"]}': field[f'answertype{q["id"]}']})
+    del questions["questions"]
+    return questions
+
+
+def post_work(session, form: dict) -> bool:
+    """提交或保存章节检测，返回是否成功."""
+    action = "提交" if form["pyFlag"] == "" else "保存"
+    res = session.post("https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew", data=form, headers=SUBMIT_HEADERS)
+    if res.status_code != 200:
+        logger.error(f'{action}答题失败 -> {res.text}')
+        return False
+    res_json = res.json()
+    if not res_json["status"]:
+        logger.error(f'{action}答题失败 -> {res_json["msg"]}')
+        return False
+    logger.info(f'{action}答题成功 -> {res_json["msg"]}')
+    return True
+
+
+def _redo_settings(kwargs: dict) -> tuple[int, float]:
+    """读取最大重做轮数（未开启自动重做时为 0）和目标分数."""
+    max_retries = 0
+    if bool(kwargs.get("work_redo_enabled", False)):
+        try:
+            max_retries = max(1, int(kwargs.get("work_max_retries", 3)))
+        except (TypeError, ValueError):
+            max_retries = 3
+    try:
+        min_score = float(kwargs.get("work_min_score", 100) or 100)
+    except (TypeError, ValueError):
+        min_score = 100.0
+    return max_retries, min_score
+
+
+class WorkRun:
+    """一个章节检测的一次处理：取题、作答、提交、按成绩重做（低于目标分数时开启思考）."""
+
+    def __init__(self, chaoxing, course: dict, job: dict, job_info: dict, recheck_only: bool = False):
+        """记录本次处理的课程、任务点和设置."""
+        self.cx, self.course, self.job, self.job_info = chaoxing, course, job, job_info
+        self.tiku = chaoxing.tiku
+        self.session = SessionManager.get_session()
+        self.recheck_only = recheck_only
+        self.max_retries, self.min_score = _redo_settings(chaoxing.kwargs)
+        self.query_delay = chaoxing.kwargs.get("query_delay", 0)
+        self.title = f'{course.get("title", "")} - {job.get("name") or "章节检测"}'
+        self.redo_url = None  # 申请重做后学习通返回的作答页地址
+        self.feedback = None  # 上一轮的错题反馈
+        self.last_score = None
+        self.redo_pending = False
+
+    # ---- 取题 ----
+    def params(self) -> dict:
+        """章节检测页面的请求参数."""
+        job, info, course = self.job, self.job_info, self.course
+        return {
+            "api": "1", "workId": job["jobid"].replace("work-", ""), "jobid": job["jobid"],
+            "originJobId": job["jobid"], "needRedirect": "true", "skipHeader": "true",
+            "knowledgeid": str(info["knowledgeid"]), "ktoken": info["ktoken"], "cpi": info["cpi"],
+            "ut": "s", "clazzId": course["clazzId"], "type": "", "enc": job["enc"], "mooc2": "1",
+            "courseid": course["courseId"],
+        }
+
+    def _fetch_once(self):
+        """获取一次题目；已提交过时抛出 WorkAlreadySubmitted，未创建完成时抛出 PermissionError."""
+        resp = self.session.get(WORK_URL, params=self.params())
+        # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
+        if '教师未创建完成该测验' in resp.text:
+            raise PermissionError("教师未创建完成该测验")
+        if resp.status_code == 200 and parse_graded_work(resp.text):
+            raise WorkAlreadySubmitted(resp.text)
+        questions = decode_questions_info(resp.text)
+        if resp.status_code == 200 and questions.get("questions"):
+            return resp, questions
+        logger.warning(f"无效响应 (Code: {getattr(resp, 'status_code', 'Unknown')}), 重试中...")
+        raise RuntimeError(f"请求返回无效数据 (Code: {resp.status_code})")
+
+    def fetch_questions(self):
+        """优先打开申请重做后返回的作答页，否则按常规方式获取题目（临时错误重试 3 次）."""
+        redo_url, self.redo_url = self.redo_url, None
+        if redo_url:
+            try:
+                resp = self.session.get(redo_url, timeout=20)
+                questions = decode_questions_info(resp.text)
+                if questions.get("questions"):
+                    return resp, questions
+            except Exception as e:
+                logger.debug(f"打开重做页面失败，改用常规方式获取题目: {e}")
+        fetch = retry(stop=stop_after_attempt(3), wait=wait_fixed(1), reraise=True,
+                      retry=retry_if_exception(lambda e: not isinstance(e, (PermissionError, WorkAlreadySubmitted))))
+        return fetch(self._fetch_once)()
+
+    # ---- 题库设置 ----
+    def set_tiku_redo(self, feedback, thinking: bool) -> None:
+        """重做时把错题反馈交给题库并开启思考；每次检测开始和结束时清空，避免串到别的检测."""
+        if hasattr(self.tiku, 'set_work_feedback'):
+            try:
+                self.tiku.set_work_feedback(feedback)
+            except Exception as e:
+                logger.warning(f"设置题库错误反馈失败: {e}")
+        if hasattr(self.tiku, 'set_redo_mode'):
+            self.tiku.set_redo_mode(thinking)
+
+    # ---- 按批改页决定 ----
+    def report(self, status: str, code: str, info: dict, reason: str) -> None:
+        """上报本检测的处理结果（达标 / 重做中 / 需手动完成）."""
+        self.cx._report_work(self.course, self.job, self.job_info, status, code,
+                             info["score"], info["remaining"], reason)
+
+    def handle_graded(self, html: str, rounds_left: int):
+        """根据批改页决定通过、保留成绩或申请重做；无法解析批改页时返回 None."""
+        info = parse_graded_work(html)
+        if not info:
+            return None
+        self.cx._rechecked_jobs.add(self.job["jobid"])
+        feedback, unknown = feedback_from_graded(html)
+        action, reason, code = decide_work_redo(info["score"], info["remaining"], self.min_score,
+                                                self.max_retries > 0, rounds_left, uncertain=unknown > 0)
+        if action == "pass":
+            logger.info(f"章节检测 {self.title}：{reason}")
+            self.cx.work_cache_set("work:" + self.job["jobid"], info["score"])
+            self.report("pass", code, info, reason)
+            return "done"
+        if action == "redo":
+            logger.warning(f"章节检测 {self.title}：{reason}")
+            url = self.cx._retest_work(self.session, info["params"])
+            if url:
+                self.report("redoing", code, info, reason)
+                self.redo_url, self.feedback, self.last_score = url, feedback, info["score"]
+                return "redo"
+            code, reason = "retest_failed", f"成绩 {info['score']:g} 分，申请重做失败，保留本次成绩"
+        self.mark_manual(code, info, reason)
+        return "done"
+
+    def mark_manual(self, code: str, info: dict, reason: str) -> None:
+        """低于目标分数又无法自动处理：记录日志并标注需手动完成."""
+        if self.redo_pending:
+            reason = f"自动重做后仍未达到 {self.min_score:g} 分：{reason}"
+        logger.warning(f"章节检测 {self.title}：{reason}（需手动完成）")
+        self.report("manual", code, info, reason)
+
+    # ---- 主流程 ----
+    def run(self) -> StudyResult:
+        """执行作答 / 提交 / 判分 / 重做循环."""
+        self.set_tiku_redo(None, False)
+        try:
+            for attempt in range(self.max_retries + 1):
+                result = self.round(attempt)
+                if result is not None:
+                    return result
+            logger.error(f"章节检测重试 {self.max_retries + 1} 次仍未全部正确，请人工检查处理")
+            return StudyResult.ERROR
+        finally:
+            self.set_tiku_redo(None, False)
+
+    def round(self, attempt: int) -> Optional[StudyResult]:
+        """进行一轮；返回 None 表示需要进入下一轮（重做）."""
+        if self.redo_pending:
+            logger.warning(f"章节检测重做第 {attempt}/{self.max_retries} 轮：开启思考，携带上一轮错题反馈重新作答")
+            self.set_tiku_redo(self.feedback or None, True)
+            time.sleep(2)
+        try:
+            resp, questions = self.fetch_questions()
+        except PermissionError as e:
+            logger.warning(f"跳过章节检测: {e}")
+            return StudyResult.SUCCESS
+        except WorkAlreadySubmitted as e:
+            return self.continue_or_stop(self.handle_graded(e.html, self.max_retries - attempt))
+        except Exception as e:
+            return self.fetch_failed(attempt, e)
+        if self.recheck_only and not self.redo_pending:
+            # 回查阶段：拿到的是可作答页面，说明还没提交过，留到刷课阶段正常作答
+            logger.debug(f'章节检测 {self.job.get("name") or self.job["jobid"]} 尚未提交，留到刷课阶段作答')
+            return StudyResult.SUCCESS
+        return self.answer_and_submit(resp, questions, attempt)
+
+    def continue_or_stop(self, outcome) -> Optional[StudyResult]:
+        """handle_graded 的结果：申请了重做就进入下一轮，否则结束."""
+        if outcome == "redo":
+            self.redo_pending = True
+            return None
+        return StudyResult.SUCCESS
+
+    def fetch_failed(self, attempt: int, error: Exception) -> StudyResult:
+        """取题失败：多为网络或服务器的临时错误，返回失败让章节稍后整体重试."""
+        if attempt > 0:
+            logger.warning(f"重做章节检测时获取题目失败（上一轮成绩 {self.last_score} 分），稍后重试: {error}")
+        else:
+            logger.error(f"获取章节检测题目失败, 达到最大重试次数: {error}")
+        return StudyResult.ERROR
+
+    def answer_and_submit(self, resp, questions: dict, attempt: int) -> Optional[StudyResult]:
+        """搜题作答、提交，并按提交后的成绩决定下一步."""
+        if self.feedback:
+            self.set_tiku_redo(self.feedback, True)  # 上一轮错误反馈，供 AI 重新作答时参考
+        items = questions["questions"]
+        answers = normalize_answers(self.tiku.query_all(items, query_delay=self.query_delay), len(items))
+        found = fill_answers(self.tiku, items, answers, resp.text)
+        cover_rate = (found / len(items)) * 100
+        logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
+        questions["pyFlag"] = decide_py_flag(self.tiku, cover_rate, self.cx.rollback_times)
+        total = len(items)
+        if not post_work(self.session, build_submit_form(questions)):
+            return StudyResult.ERROR
+        if questions["pyFlag"] == "1":
+            return StudyResult.SUCCESS  # 只是保存未提交，无法判断成绩
+        return self.after_submit(questions, total, attempt)
+
+    def after_submit(self, questions: dict, total: int, attempt: int) -> Optional[StudyResult]:
+        """提交后打开批改页按成绩决定；批改页无法解析时沿用原来的作答记录判断."""
+        graded_html = ""
+        try:
+            time.sleep(1)
+            graded_html = self.session.get(WORK_URL, params=self.params(), timeout=20).text
+        except Exception as e:
+            logger.debug(f"获取批改页失败，改用作答记录判断成绩: {e}")
+        outcome = self.handle_graded(graded_html, self.max_retries - attempt) if graded_html else None
+        if outcome is not None:
+            if outcome == "redo":
+                self.cx.rollback_times += 1
+            return self.continue_or_stop(outcome)
+        return self.legacy_result(questions, total, attempt)
+
+    def legacy_result(self, questions: dict, total: int, attempt: int) -> Optional[StudyResult]:
+        """原有判断：按作答记录逐题比对，未全对且还有轮数时携带错题反馈重做."""
+        info = self.cx._check_work_result(self.session, self.course, self.job, self.job_info, questions)
+        if info is None:
+            return StudyResult.SUCCESS  # 无法获取成绩详情（如接口异常），按原行为返回成功，避免误判失败
+        score = float(info.get("score", 0.0) or 0.0)
+        if legacy_result_final(info, score):
+            return StudyResult.SUCCESS
+        self.feedback = info.get("feedback", [])
+        wrong = len(self.feedback)
+        if attempt >= self.max_retries:
+            # 已是最后一轮(含单轮模式), 保留已提交成绩, 不再触发无意义的重做
+            logger.warning(f"章节检测有 {wrong}/{total} 题回答错误（成绩 {score} 分），已保留本次成绩, 请人工检查处理")
+            return StudyResult.SUCCESS
+        logger.warning(f"章节检测有 {wrong}/{total} 题回答错误（成绩 {score} 分），"
+                       f"已将错误反馈给AI，准备重新作答提交 (第 {attempt + 1}/{self.max_retries + 1} 轮)")
+        self.cx.rollback_times += 1
+        self.last_score, self.redo_pending = score, True
+        return None
+
+
+def legacy_result_final(info: dict, score: float) -> bool:
+    """按作答记录判断是否可以结束：全对、满分，或批改结果无法确认时不再重做."""
+    unknown = int(info.get("unknown", 0) or 0)
+    if info.get("all_correct", False):
+        logger.info(f"章节检测全部正确（成绩 {score} 分），通过！")
+        return True
+    if score >= 99.95:
+        # 逐题比对存在格式差异或解析失配, 但满分成绩说明实际全对, 以分数为准
+        if unknown > 0:
+            logger.warning(f"成绩 {score} 分达到满分, 以分数为准通过（{unknown} 题答案字段未能解析, 建议人工复核）")
+        else:
+            logger.info(f"逐题比对存在格式差异, 但成绩 {score} 分达到满分, 以分数为准, 通过！")
+        return True
+    if unknown > 0:
+        # 解析失配且未达满分: 判定不可信, 不触发重做, 保留已提交成绩
+        logger.warning(f"{unknown} 题答案字段解析失败且成绩 {score} 分未达满分, 跳过重做判定")
+        return True
+    return False
+
+
 class Chaoxing:
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
         self.account = account
@@ -510,7 +903,7 @@ class Chaoxing:
         self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
         # 章节检测处理结果回调 callback(dict)，图形界面用来显示「需手动完成」清单
-        self.work_result_callback = None
+        self.work_result_callback: Optional[Callable[[dict], None]] = kwargs.get("work_result_callback")
         self._rechecked_jobs: set[str] = set()  # 回查阶段已处理过的章节检测，刷课阶段不再重复处理
 
     def login(self, login_with_cookies=False):
@@ -1122,7 +1515,7 @@ class Chaoxing:
     def _report_work(self, course: dict, job: dict, job_info: dict, status: str, code: str,
                      score: Optional[float], remaining: Optional[int], reason: str) -> None:
         callback = self.work_result_callback
-        if not callback:
+        if not callable(callback):
             return
         try:
             callback({
@@ -1135,444 +1528,20 @@ class Chaoxing:
         except Exception as e:
             logger.debug(f"上报章节检测结果失败: {e}")
 
-    def study_work(self, _course, _job, _job_info, recheck_only: bool = False) -> StudyResult:
-        """完成章节检测.
-
-        recheck_only=True 用于回查阶段：只处理已提交（有成绩）的检测，未提交的留到刷课阶段正常作答。
-        """
+    def study_work(self, _course, _job, _job_info) -> StudyResult:
+        """完成章节检测（作答、提交、按成绩重做），回查阶段处理过的检测直接跳过."""
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
-        if not recheck_only and _job.get("jobid") in self._rechecked_jobs:
+        if _job.get("jobid") in self._rechecked_jobs:
             logger.debug(f"章节检测 {_job.get('jobid')} 已在回查阶段处理，跳过")
             return StudyResult.SUCCESS
+        return WorkRun(self, _course, _job, _job_info).run()
 
-        _session = SessionManager.get_session()
-        _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"
-
-        def is_not_permission_error(exception):
-            return not isinstance(exception, (PermissionError, WorkAlreadySubmitted))
-
-        def work_params():
-            return {
-                "api": "1",
-                "workId": _job["jobid"].replace("work-", ""),
-                "jobid": _job["jobid"],
-                "originJobId": _job["jobid"],
-                "needRedirect": "true",
-                "skipHeader": "true",
-                "knowledgeid": str(_job_info["knowledgeid"]),
-                "ktoken": _job_info["ktoken"],
-                "cpi": _job_info["cpi"],
-                "ut": "s",
-                "clazzId": _course["clazzId"],
-                "type": "",
-                "enc": _job["enc"],
-                "mooc2": "1",
-                "courseid": _course["courseId"],
-            }
-
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_fixed(1),
-            retry=retry_if_exception(is_not_permission_error),
-            reraise=True
-        )
-        def fetch_response_with_retry():
-            _resp = _session.get(
-                _url,
-                params={
-                    "api": "1",
-                    "workId": _job["jobid"].replace("work-", ""),
-                    "jobid": _job["jobid"],
-                    "originJobId": _job["jobid"],
-                    "needRedirect": "true",
-                    "skipHeader": "true",
-                    "knowledgeid": str(_job_info["knowledgeid"]),
-                    "ktoken": _job_info["ktoken"],
-                    "cpi": _job_info["cpi"],
-                    "ut": "s",
-                    "clazzId": _course["clazzId"],
-                    "type": "",
-                    "enc": _job["enc"],
-                    "mooc2": "1",
-                    "courseid": _course["courseId"],
-                }
-            )
-
-            # 未创建完成该测验则不进行答题，目前遇到的情况是未创建完成等同于没题目
-            if '教师未创建完成该测验' in _resp.text:
-                raise PermissionError("教师未创建完成该测验")
-
-            if _resp.status_code == 200 and parse_graded_work(_resp.text):
-                raise WorkAlreadySubmitted(_resp.text)
-
-            questions = decode_questions_info(_resp.text)
-
-            if _resp.status_code == 200 and questions.get("questions"):
-                return _resp, questions
-
-            logger.warning(
-                f"无效响应 (Code: {getattr(_resp, 'status_code', 'Unknown')}), 重试中...")
-            raise RuntimeError(f"请求返回无效数据 (Code: {_resp.status_code})")
-
-        # 章节检测最大重做次数（答错后收集错误反馈并重新提交，直到全对）
-        # work_redo_enabled=false 时为单轮模式: 提交+检查+报告成绩, 不自动重做(适用于只允许作答一次的课程)
-        if bool(self.kwargs.get("work_redo_enabled", False)):
-            try:
-                max_retries = max(1, int(self.kwargs.get("work_max_retries", 3)))
-            except (TypeError, ValueError):
-                max_retries = 3
-        else:
-            max_retries = 0
-        query_delay = self.kwargs.get("query_delay", 0)
-        feedback_history = None
-        last_submitted_score = None
-        redo_enabled = max_retries > 0
-        try:
-            min_score = float(self.kwargs.get("work_min_score", 100) or 100)
-        except (TypeError, ValueError):
-            min_score = 100.0
-        state = {"redo_url": None}  # 申请重做后学习通返回的作答页地址
-        work_title = f'{_course.get("title", "")} - {_job.get("name") or "章节检测"}'
-
-        def set_tiku_redo(feedback, thinking: bool):
-            """重做时把错题反馈交给题库，并让 AI 题库开启思考（每次检测开始时清空，避免串到别的检测）."""
-            if hasattr(self.tiku, 'set_work_feedback'):
-                try:
-                    self.tiku.set_work_feedback(feedback)
-                except Exception as e:
-                    logger.warning(f"设置题库错误反馈失败: {e}")
-            if hasattr(self.tiku, 'set_redo_mode'):
-                self.tiku.set_redo_mode(thinking)
-
-        def handle_graded(html: str, rounds_left: int, redone: bool = False):
-            """根据批改页决定通过、保留成绩或申请重做；返回 None 表示无法解析批改页.
-
-            redone=True 表示本次已经自动重做过；保留成绩时会标注「需手动完成」并通过回调上报。
-            """
-            info = parse_graded_work(html)
-            if not info:
-                return None
-            self._rechecked_jobs.add(_job["jobid"])
-            feedback, unknown = feedback_from_graded(html)
-            action, reason, code = decide_work_redo(info["score"], info["remaining"], min_score, redo_enabled,
-                                                    rounds_left, uncertain=unknown > 0)
-            score, remaining = info["score"], info["remaining"]
-            if action == "pass":
-                logger.info(f"章节检测 {work_title}：{reason}")
-                self.work_cache_set("work:" + _job["jobid"], score)
-                self._report_work(_course, _job, _job_info, "pass", code, score, remaining, reason)
-                return ("done", score)
-            if action == "redo":
-                logger.warning(f"章节检测 {work_title}：{reason}")
-                url = self._retest_work(_session, info["params"])
-                if url:
-                    self._report_work(_course, _job, _job_info, "redoing", code, score, remaining, reason)
-                    return ("redo", feedback, url, score)
-                code, reason = "retest_failed", f"成绩 {score:g} 分，申请重做失败，保留本次成绩"
-            if redone:
-                reason = f"自动重做后仍未达到 {min_score:g} 分：{reason}"
-            logger.warning(f"章节检测 {work_title}：{reason}（需手动完成）")
-            self._report_work(_course, _job, _job_info, "manual", code, score, remaining, reason)
-            return ("done", score)
-
-        def fetch_questions():
-            redo_url = state.pop("redo_url", None)
-            if redo_url:
-                try:
-                    resp = _session.get(redo_url, timeout=20)
-                    qs = decode_questions_info(resp.text)
-                    if qs.get("questions"):
-                        return resp, qs
-                except Exception as e:
-                    logger.debug(f"打开重做页面失败，改用常规方式获取题目: {e}")
-            return fetch_response_with_retry()
-
-        set_tiku_redo(None, False)
-        try:
-            return self._study_work_rounds(locals())
-        finally:
-            set_tiku_redo(None, False)
-
-    def _study_work_rounds(self, ctx: dict) -> StudyResult:
-        """章节检测的作答 / 提交 / 判分 / 重做循环（由 study_work 调用，ctx 为其局部变量）."""
-        _session, _course, _job, _job_info = ctx["_session"], ctx["_course"], ctx["_job"], ctx["_job_info"]
-        max_retries, query_delay = ctx["max_retries"], ctx["query_delay"]
-        handle_graded, fetch_questions, set_tiku_redo = ctx["handle_graded"], ctx["fetch_questions"], ctx["set_tiku_redo"]
-        work_params = ctx["work_params"]
-        feedback_history = None
-        last_submitted_score = None
-        redo_pending = False
-
-        for attempt in range(max_retries + 1):
-            if redo_pending:
-                logger.warning(
-                    f"章节检测重做第 {attempt}/{max_retries} 轮：开启思考，携带上一轮错题反馈重新作答")
-                set_tiku_redo(feedback_history or None, True)
-                time.sleep(2)
-
-            # 1. 获取题目
-            final_resp = {}
-            questions = {}
-            try:
-                final_resp, questions = fetch_questions()
-            except PermissionError as e:
-                logger.warning(f"跳过章节检测: {e}")
-                return StudyResult.SUCCESS
-            except WorkAlreadySubmitted as e:
-                # 之前已经提交过：按成绩决定通过 / 保留 / 申请重做
-                outcome = handle_graded(e.html, max_retries - attempt, redone=redo_pending)
-                if outcome is None or outcome[0] == "done":
-                    return StudyResult.SUCCESS
-                _, feedback_history, ctx["state"]["redo_url"], last_submitted_score = outcome
-                redo_pending = True
-                continue
-            except Exception as e:
-                if attempt > 0:
-                    # 已确认不能重做的情况（拿到批改页）在上面按成绩处理；这里多为网络或服务器的临时错误，
-                    # 返回失败让章节稍后整体重试，重试时会重新读取批改页再决定
-                    logger.warning(f"重做章节检测时获取题目失败（上一轮成绩 {last_submitted_score} 分），稍后重试: {e}")
-                    return StudyResult.ERROR
-                else:
-                    logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
-                return StudyResult.ERROR
-
-            if ctx.get("recheck_only") and not redo_pending:
-                # 回查阶段：拿到的是可作答页面，说明还没提交过，留到刷课阶段正常作答
-                logger.debug(f'章节检测 {_job.get("name") or _job["jobid"]} 尚未提交，留到刷课阶段作答')
-                return StudyResult.SUCCESS
-
-            _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
-
-            # 2. 设置上一轮错误反馈（供AI重新作答时参考）
-            if feedback_history and hasattr(self.tiku, 'set_work_feedback'):
-                try:
-                    self.tiku.set_work_feedback(feedback_history)
-                    logger.debug("已将上一轮错误反馈设置到题库")
-                except Exception as e:
-                    logger.warning(f"设置题库错误反馈失败: {e}")
-
-            # 3. 搜题
-            total_questions = len(questions["questions"])
-            found_answers = 0
-            answers = self.tiku.query_all(questions["questions"], query_delay=query_delay)
-
-            if not isinstance(answers, list):
-                logger.error("题库 query_all 返回的数据格式异常，期望列表。将采用随机答案答题")
-                answers = [None] * total_questions
-            elif len(answers) != total_questions:
-                logger.error(
-                    f"题库返回的答案数量（{len(answers)}）与题目数量（{total_questions}）不匹配，正在补齐或截断以防错位！")
-                answers = list(answers) + [None] * (total_questions - len(answers))
-                answers = answers[:total_questions]
-
-            for q, res in zip(questions["questions"], answers):
-                logger.debug(f"当前题目信息 -> {q}")
-                answer = ""
-                if not res:
-                    # 随机答题
-                    answer = random_answer(q["options"], q["type"])
-                    q[f'answerSource{q["id"]}'] = "random"
-                else:
-                    # 根据响应结果选择答案
-                    if q["type"] == "multiple":
-                        # 多选处理
-                        options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
-                        res_list = multi_cut(res, _ORIGIN_HTML_CONTENT)
-                        if res_list is not None and options_list is not None:
-                            for _raw, _a in zip(res_list, clean_res(res_list)):
-                                matched = False
-                                # 先按原始答案精确匹配（"B." 清理后会变成空字符串）
-                                exact = exact_option_letter(_raw, options_list) or exact_option_letter(_a, options_list)
-                                if exact:
-                                    answer += exact
-                                    continue
-                                if not _a or _is_numeric_answer(_a):
-                                    continue  # 空答案或纯数字答案不做模糊匹配
-                                for o in options_list:
-                                    if (
-                                            is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
-                                    ):
-                                        answer += o[:1]
-                                        matched = True
-                                        break  # 找到匹配项后立即停止，防止重复添加
-                                if not matched:
-                                    best_letter = best_option_by_similarity(_a, options_list, threshold=0.8)
-                                    if best_letter:
-                                        answer += best_letter
-                            # 对答案进行排序, 否则会提交失败
-                            answer = "".join(sorted(set(answer)))
-                        # else 如果分割失败那么就直接到下面去随机选
-                    elif q["type"] == "single":
-                        # 单选也进行切割，主要是防止返回的答案有异常字符
-                        options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
-                        if options_list is not None:
-                            t_res = clean_res(res)
-                            answer = exact_option_letter(res, options_list) or exact_option_letter(t_res[0], options_list)
-                            fuzzy_ok = bool(t_res[0]) and not _is_numeric_answer(t_res[0])
-                            for o in options_list:
-                                if answer or not fuzzy_ok:
-                                    break
-                                if is_subsequence(t_res[0], o):
-                                    answer = o[:1]
-                                    break
-                            if not answer and t_res and fuzzy_ok:
-                                answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
-                    elif q["type"] == "judgement":
-                        answer = "true" if self.tiku.judgement_select(res) else "false"
-                    elif q["type"] == "completion":
-                        if isinstance(res, list):
-                            answer = "".join(res)
-                        elif isinstance(res, str):
-                            answer = res
-                    else:
-                        # 其他类型直接使用答案 （目前仅知有简答题，待补充处理）
-                        answer = res
-
-                    if not answer:  # 检查 answer 是否为空
-                        logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
-                        answer = random_answer(q["options"], q["type"])  # 如果为空，则随机选择答案
-                        q[f'answerSource{q["id"]}'] = "random"
-                    else:
-                        logger.info(f"成功获取到答案：{answer}")
-                        q[f'answerSource{q["id"]}'] = "cover"
-                        found_answers += 1
-                # 填充答案
-                q["answerField"][f'answer{q["id"]}'] = answer
-                logger.info(f'{q["title"]} 填写答案为 {answer}')
-            cover_rate = (found_answers / total_questions) * 100
-            logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
-            # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
-            is_manual_mode = (
-                    getattr(self.tiku, 'is_manual', False) or
-                    self.tiku.__class__.__name__ == 'TikuManual' or
-                    (self.tiku.__class__.__name__ == 'TikuFallback' and any(
-                        getattr(p, 'is_manual', False) or p.__class__.__name__ == 'TikuManual' for p in
-                        getattr(self.tiku, 'providers', [])))
-            )
-            if self.tiku.get_submit_params() == "1":
-                questions["pyFlag"] = "1"
-            elif is_manual_mode or cover_rate >= self.tiku.COVER_RATE * 100 or self.rollback_times >= 1:
-                questions["pyFlag"] = ""
-            else:
-                questions["pyFlag"] = "1"
-                logger.info(f"章节检测题库覆盖率低于{self.tiku.COVER_RATE * 100:.0f}%，不予提交")
-            # 组建提交表单
-            if questions["pyFlag"] == "1":
-                for q in questions["questions"]:
-                    questions.update(
-                        {
-                            f'answer{q["id"]}':
-                                q["answerField"][f'answer{q["id"]}'] if q[f'answerSource{q["id"]}'] == "cover" else '',
-                            f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                        }
-                    )
-            else:
-                for q in questions["questions"]:
-                    questions.update(
-                        {
-                            f'answer{q["id"]}': q["answerField"][f'answer{q["id"]}'],
-                            f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
-                        }
-                    )
-
-            del questions["questions"]
-
-            # 4. 提交
-            res = _session.post(
-                "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew",
-                data=questions,
-                headers={
-                    "Host": "mooc1.chaoxing.com",
-                    "sec-ch-ua-platform": '"Windows"',
-                    "X-Requested-With": "XMLHttpRequest",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "sec-ch-ua-mobile": "?0",
-                    "Origin": "https://mooc1.chaoxing.com",
-                    "Sec-Fetch-Site": "same-origin",
-                    "Sec-Fetch-Mode": "cors",
-                    "Sec-Fetch-Dest": "empty",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
-                },
-            )
-            if res.status_code == 200:
-                res_json = res.json()
-                if res_json["status"]:
-                    logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
-                else:
-                    logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json["msg"]}')
-                    return StudyResult.ERROR
-            else:
-                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')
-                return StudyResult.ERROR
-
-            # 5. 若只是保存未提交，无法判断成绩，保持原有行为
-            if questions["pyFlag"] == "1":
-                return StudyResult.SUCCESS
-
-            # 6. 提交后打开批改页：按成绩决定通过 / 保留 / 申请重做（重做时开启思考并带上正确答案反馈）
-            graded_html = ""
-            try:
-                time.sleep(1)
-                graded_html = _session.get("https://mooc1.chaoxing.com/mooc-ans/api/work",
-                                           params=work_params(), timeout=20).text
-            except Exception as e:
-                logger.debug(f"获取批改页失败，改用作答记录判断成绩: {e}")
-            outcome = handle_graded(graded_html, max_retries - attempt, redone=redo_pending) if graded_html else None
-            if outcome is not None:
-                if outcome[0] == "done":
-                    return StudyResult.SUCCESS
-                _, feedback_history, ctx["state"]["redo_url"], last_submitted_score = outcome
-                self.rollback_times += 1
-                redo_pending = True
-                continue
-
-            # 批改页无法解析时，沿用原来的作答记录判断逻辑
-            result_info = self._check_work_result(_session, _course, _job, _job_info, questions)
-            if result_info is None:
-                # 无法获取成绩详情（如接口异常），按原行为返回成功，避免误判失败
-                return StudyResult.SUCCESS
-
-            score = float(result_info.get("score", 0.0) or 0.0)
-            unknown = int(result_info.get("unknown", 0) or 0)
-            if result_info.get("all_correct", False):
-                logger.info(f"章节检测全部正确（成绩 {score} 分），通过！")
-                return StudyResult.SUCCESS
-            if score >= 99.95:
-                # 逐题比对存在格式差异或解析失配, 但满分成绩说明实际全对, 以分数为准
-                if unknown > 0:
-                    logger.warning(f"成绩 {score} 分达到满分, 以分数为准通过"
-                                   f"（{unknown} 题答案字段未能解析, 建议人工复核）")
-                else:
-                    logger.info(f"逐题比对存在格式差异, 但成绩 {score} 分达到满分, 以分数为准, 通过！")
-                return StudyResult.SUCCESS
-            if unknown > 0:
-                # 解析失配且未达满分: 判定不可信, 不触发重做, 保留已提交成绩
-                logger.warning(f"{unknown} 题答案字段解析失败且成绩 {score} 分未达满分, 跳过重做判定")
-                return StudyResult.SUCCESS
-
-            # 7. 未全对：收集错误反馈，进入下一轮重做
-            feedback_history = result_info.get("feedback", [])
-            wrong_count = len(feedback_history)
-            if attempt >= max_retries:
-                # 已是最后一轮(含单轮模式), 保留已提交成绩, 不再触发无意义的重做
-                logger.warning(f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
-                               f"已保留本次成绩, 请人工检查处理")
-                return StudyResult.SUCCESS
-            logger.warning(
-                f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
-                f"已将错误反馈给AI，准备重新作答提交 (第 {attempt + 1}/{max_retries + 1} 轮)"
-            )
-            self.rollback_times += 1
-            last_submitted_score = score
-            redo_pending = True
-
-        # 达到最大重试次数仍未全对
-        logger.error(f"章节检测重试 {max_retries + 1} 次仍未全部正确，请人工检查处理")
-        return StudyResult.ERROR
+    def recheck_work(self, _course, _job, _job_info) -> StudyResult:
+        """回查章节检测：只处理已提交（有成绩）的检测，未提交的留到刷课阶段正常作答."""
+        if self.tiku.DISABLE or not self.tiku:
+            return StudyResult.SUCCESS
+        return WorkRun(self, _course, _job, _job_info, recheck_only=True).run()
 
     # ---- 章节检测回查缓存：记录已确认达标的检测和章节，下次运行不再重复检查 ----
     WORK_CACHE_FILE = "work_check_cache.json"

@@ -33,9 +33,10 @@ def completion(content, finish="stop"):
 
 
 class FakeClient:
-    """记录请求参数，按顺序返回预设结果（异常则抛出）。"""
+    """记录请求参数，按顺序返回预设结果（异常则抛出）."""
 
     def __init__(self, results):
+        """准备依次返回的结果."""
         self.results = list(results)
         self.calls = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
@@ -182,10 +183,10 @@ class ImageUrlTest(unittest.TestCase):
 
 
 class QueryTest(unittest.TestCase):
-    def run_query(self, ai, results, q=IMG_Q):
+    def run_query(self, ai, results, q=None):
         client = FakeClient(results)
         with mock.patch.object(AI, "_client", return_value=client):
-            return ai._query(dict(q)), client
+            return ai._query(dict(q or IMG_Q)), client
 
     def test_images_sent_to_model(self):
         ai = make_ai()
@@ -203,7 +204,7 @@ class QueryTest(unittest.TestCase):
     def test_image_download_failure_falls_back_to_text(self):
         ai = make_ai()
         with mock.patch.object(AI, "_fetch_image", return_value=None):
-            ans, client = self.run_query(ai, [completion('{"Answer": ["2m/s"]}')])
+            _, client = self.run_query(ai, [completion('{"Answer": ["2m/s"]}')])
         content = client.calls[0]["messages"][-1]["content"]
         self.assertIsInstance(content, str)
         self.assertIn("图片无法提供", content)
@@ -228,7 +229,7 @@ class QueryTest(unittest.TestCase):
     def test_vision_kept_when_text_retry_also_fails(self):
         ai = make_ai()
         with mock.patch.object(AI, "_fetch_image", return_value="data:image/png;base64,xx"):
-            ans, client = self.run_query(ai, [bad_request(), bad_request()])
+            ans, _ = self.run_query(ai, [bad_request(), bad_request()])
         self.assertIsNone(ans)
         self.assertTrue(ai._vision_ok)  # 不是图片导致的 400，不关闭识图
 

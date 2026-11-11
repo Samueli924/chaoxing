@@ -187,7 +187,13 @@ def decode_course_card(html_text: str, include_passed_work: bool = False) -> Tup
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
     job_info["attachmentCount"] = len(cards)
-    job_list = _process_attachment_cards(cards, include_passed_work=include_passed_work)
+    submitted = set()
+    if include_passed_work:
+        cards, submitted = _reopen_submitted_works(cards)
+    job_list = _process_attachment_cards(cards)
+    for job in job_list:
+        if job.get("jobid") in submitted:
+            job["submitted"] = True
 
     return job_list, job_info
 
@@ -218,7 +224,20 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]], include_passed_work: bool = False) -> List[Dict[str, Any]]:
+def _reopen_submitted_works(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], set]:
+    """回查成绩时，把已通过或已提交的章节检测卡片当作待处理任务，返回 (卡片列表, 这些检测的 jobid)."""
+    # 已提交的章节检测卡片没有 job 字段（只有未完成的任务才有），原有逻辑会把它当作阅读任务丢弃
+    result, submitted = [], set()
+    for card in cards:
+        is_work = card.get("type", "").lower() == "workid" and card.get("jobid")
+        if is_work and (card.get("isPassed") or card.get("job") is None):
+            card = {**card, "isPassed": False, "job": True}
+            submitted.add(card["jobid"])
+        result.append(card)
+    return result, submitted
+
+
+def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     处理所有附件任务卡片，强化直播任务识别逻辑
     
@@ -231,18 +250,8 @@ def _process_attachment_cards(cards: List[Dict[str, Any]], include_passed_work: 
     job_list = []
 
     for index, card in enumerate(cards):
-        # 跳过已通过的任务（回查章节检测成绩时保留已通过的章节检测）
+        # 跳过已通过的任务
         if card.get("isPassed", False):
-            if not (include_passed_work and card.get("type", "").lower() == "workid"):
-                continue
-
-        # 已提交的章节检测卡片没有 job 字段（只有未完成的任务才有），回查成绩时仍按章节检测处理
-        if (include_passed_work and card.get("job") is None and card.get("type", "").lower() == "workid"
-                and card.get("jobid")):
-            work_job = _process_work_task(card)
-            if work_job:
-                work_job["submitted"] = True
-                job_list.append(work_job)
             continue
 
         # 处理无job字段的特殊任务

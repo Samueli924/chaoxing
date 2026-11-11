@@ -1386,12 +1386,10 @@ class AI(Tiku):
 
     @staticmethod
     def _to_data_url(content: bytes, ctype: str, max_side: int = 1280, min_height: int = 64) -> str:
-        """整理成适合模型识别的图片并转成 base64 data URL.
-
-        - 透明背景铺成白底：学习通的公式图片（/ananas/latex）是透明背景的黑字 PNG，
-          直接发给模型会被当成黑底，实测模型完全读错公式
-        - 很小的图片（公式常见 74×19）放大并留白，过大的图片缩小以减少图像 token
-        """
+        """整理成适合模型识别的图片并转成 base64 data URL."""
+        # - 透明背景铺成白底：学习通的公式图片（/ananas/latex）是透明背景的黑字 PNG，
+        #   直接发给模型会被当成黑底，实测模型完全读错公式
+        # - 很小的图片（公式常见 74×19）放大并留白，过大的图片缩小以减少图像 token
         import base64
         try:
             import io
@@ -1424,8 +1422,8 @@ class AI(Tiku):
                     img.save(buf, format="PNG")
                     ctype = "image/png"
                 content = buf.getvalue()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"题目图片预处理失败，按原图发送: {e}")
         return f"data:{ctype};base64,{base64.b64encode(content).decode()}"
 
     def _build_user_content(self, q_info: dict):
@@ -1526,7 +1524,7 @@ class AI(Tiku):
         for cand in candidates:
             try:
                 answer = json.loads(cand)['Answer']
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 continue
             if answer is None:
                 continue
