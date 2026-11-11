@@ -44,6 +44,17 @@ class LogMaintTest(unittest.TestCase):
         self.assertTrue(b.exists() and c.exists())
         self.assertLessEqual(res["total"], 10 * MB)
 
+    def test_legacy_logs_deleted_before_recent_run_logs(self):
+        # 实际清理中出现过：最近一次的账号运行日志比不再使用的旧日志早，被先删掉了
+        run_log = self.make("worker-acct.log", 2 * MB, age_days=1)
+        legacy_new = self.make("chaoxing.log", 6 * MB, age_days=0)
+        legacy_old = self.make("chaoxing.2026.log", 6 * MB, age_days=0.5)
+        enforce([run_log, legacy_new, legacy_old], max_bytes=10 * MB, keep_days=7, now=self.now,
+                prefer_delete=[legacy_new, legacy_old])
+        self.assertTrue(run_log.exists())
+        self.assertFalse(legacy_old.exists())
+        self.assertTrue(legacy_new.exists())  # 删掉一个旧日志后已满足上限
+
     def test_active_files_trimmed_keep_latest_lines(self):
         server = self.dir / "server.log"
         server.write_bytes(b"".join(f"line {i:07d}\n".encode() for i in range(400000)))  # 约 5.3 MB

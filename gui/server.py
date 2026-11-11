@@ -536,13 +536,15 @@ def maintain_logs(force: bool = False):
     max_mb = max(1.0, min(1000.0, _num(g.get("log_max_mb"), float, 10)))
     keep_days = max(1.0, min(365.0, _num(g.get("log_keep_days"), float, 7)))
     # 包括原项目在根目录留下的 chaoxing*.log（图形界面不再写入它们）
-    files = list(LOG_DIR.glob("*.log")) + list(ROOT.glob("chaoxing*.log"))
+    legacy = list(ROOT.glob("chaoxing*.log"))  # 图形界面已不再写入，超量时优先删除
+    files = list(LOG_DIR.glob("*.log")) + legacy
     active = [LOG_DIR / "server.log"]
     if SEARCH_PROC is not None and SEARCH_PROC.poll() is None:
         active.append(LOG_DIR / "searxng.log")
     active += [a.log_path for a in list(ACCOUNTS.values()) if a.run.status in ACTIVE]
     try:
-        res = logmaint.enforce(files, max_bytes=int(max_mb * logmaint.MB), keep_days=keep_days, active=active)
+        res = logmaint.enforce(files, max_bytes=int(max_mb * logmaint.MB), keep_days=keep_days, active=active,
+                               prefer_delete=legacy)
     except Exception as e:
         sys.stderr.write(f"日志清理失败: {e}\n")
         return

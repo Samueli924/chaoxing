@@ -34,10 +34,14 @@ def trim_keep_tail(path: Path, keep_bytes: int) -> None:
 
 
 def enforce(files: Iterable[Path], max_bytes: int = 10 * MB, keep_days: float = 7,
-            active: Iterable[Path] = (), now: float | None = None) -> dict:
-    """对给定的日志文件执行保留策略，返回 {"deleted": [...], "trimmed": [...], "total": 字节数}."""
+            active: Iterable[Path] = (), now: float | None = None, prefer_delete: Iterable[Path] = ()) -> dict:
+    """对给定的日志文件执行保留策略，返回 {"deleted": [...], "trimmed": [...], "total": 字节数}.
+
+    prefer_delete：超出上限时优先删除的文件（如已不再写入的旧日志），删完它们再按时间从旧到新删除其他日志。
+    """
     now = time.time() if now is None else now
     active = {Path(p).resolve() for p in active}
+    prefer = {Path(p).resolve() for p in prefer_delete}
     files = [Path(p) for p in files if Path(p).is_file()]
     deleted, trimmed = [], []
 
@@ -59,7 +63,8 @@ def enforce(files: Iterable[Path], max_bytes: int = 10 * MB, keep_days: float = 
 
     # 2. 超出上限：先删最旧的非活跃日志
     if total() > max_bytes:
-        for p in sorted((p for p in files if not is_active(p)), key=lambda p: p.stat().st_mtime):
+        candidates = (p for p in files if not is_active(p))
+        for p in sorted(candidates, key=lambda p: (p.resolve() not in prefer, p.stat().st_mtime)):
             if total() <= max_bytes:
                 break
             try:
