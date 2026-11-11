@@ -37,6 +37,7 @@ ANSWERS = ["6dx", "0", "B", "二项分布\n泊松分布\n几何分布", "B.\nC."
 
 class FakeSession:
     def __init__(self, page_text):
+        """记录作答页内容和提交过的表单."""
         self.page_text = page_text
         self.posts = []
 
