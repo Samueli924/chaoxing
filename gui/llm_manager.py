@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-本地大模型的自动加载 / 卸载。
-
-题库使用 AI 大模型、并且接口地址指向本机的 LM Studio 时：
-- 开始学习前自动加载配置的模型；
-- 所有账号学完或停止后（空闲一小段时间），自动卸载这次刷课用过的模型，释放内存。
-使用 LM Studio 的 REST 接口（/api/v1/models、/api/v1/models/load、/api/v1/models/unload）。
-"""
+"""本地大模型的自动加载 / 卸载."""
+# 题库使用 AI 大模型、并且接口地址指向本机的 LM Studio 时：
+# - 开始学习前自动加载配置的模型；
+# - 所有账号学完或停止后（空闲一小段时间），自动卸载这次刷课用过的模型，释放内存。
+# 使用 LM Studio 的 REST 接口（/api/v1/models、/api/v1/models/load、/api/v1/models/unload）。
 import json
 import time
 import urllib.error
@@ -14,7 +11,7 @@ import urllib.request
 from typing import Callable, Optional
 from urllib.parse import urlparse  # noqa: F401  (server.py 也通过本模块使用)
 
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}  # nosec B104  # 只是判断地址是否指向本机，并不监听
 
 
 class LocalLLMError(Exception):
@@ -22,10 +19,12 @@ class LocalLLMError(Exception):
 
 
 def _request(method: str, url: str, body: Optional[dict] = None, timeout: float = 10) -> dict:
+    if not url.lower().startswith(("http://", "https://")):
+        raise LocalLLMError(f"不支持的接口地址: {url}")
     data = json.dumps(body).encode("utf8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310  # 地址已限定为 http/https
             text = resp.read().decode("utf8")
     except urllib.error.HTTPError as e:
         try:
@@ -42,6 +41,7 @@ class LMStudio:
     name = "LM Studio"
 
     def __init__(self, root: str):
+        """记录 LM Studio 的接口根地址."""
         self.root = root.rstrip("/")
 
     def _models(self) -> list[dict]:
@@ -62,14 +62,14 @@ class LMStudio:
         return ids
 
     def ensure_loaded(self, model: str) -> bool:
-        """模型未加载时加载它。返回 True 表示这次新加载了。"""
+        """模型未加载时加载它。返回 True 表示这次新加载了."""
         if self.instances(model):
             return False
         _request("POST", f"{self.root}/api/v1/models/load", {"model": model}, timeout=600)
         return True
 
     def unload(self, model: str) -> int:
-        """卸载该模型的所有实例，返回卸载的数量。"""
+        """卸载该模型的所有实例，返回卸载的数量."""
         ids = self.instances(model)
         for inst in ids:
             _request("POST", f"{self.root}/api/v1/models/unload", {"instance_id": inst}, timeout=120)
@@ -77,7 +77,7 @@ class LMStudio:
 
 
 def local_target(tiku_conf: dict) -> Optional[tuple[str, str]]:
-    """题库配置指向本机大模型时返回 (服务根地址, 模型名)，否则返回 None。"""
+    """题库配置指向本机大模型时返回 (服务根地址, 模型名)，否则返回 None."""
     providers = [p.strip() for p in str(tiku_conf.get("provider", "")).split(",") if p.strip()]
     if "AI" not in providers:
         return None
@@ -89,9 +89,10 @@ def local_target(tiku_conf: dict) -> Optional[tuple[str, str]]:
 
 
 class AutoUnloader:
-    """记录刷课用过的本地模型；所有账号空闲 grace 秒后返回需要卸载的模型。"""
+    """记录刷课用过的本地模型；所有账号空闲 grace 秒后返回需要卸载的模型."""
 
     def __init__(self, grace: float = 15, clock: Callable[[], float] = time.time):
+        """设置空闲多久后卸载和计时用的时钟."""
         self.grace = grace
         self._clock = clock
         self.pending: dict[tuple[str, str], LMStudio] = {}

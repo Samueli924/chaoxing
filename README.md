@@ -73,6 +73,7 @@ uv run --python 3.13 main.py -c config.ini
 
 ### 图形界面运行（可选）
 
+<!-- markdownlint-disable-next-line MD013 -->
 安装依赖后在项目根目录执行 `python gui/server.py`，会在浏览器中打开图形界面：登录、选课、查看实时进度、修改设置，并支持多账号排队学习。macOS 上还可以用 `gui/build_app.sh` 打包成独立应用。详见 [gui/README.md](gui/README.md)。
 
 ### 打包文件运行

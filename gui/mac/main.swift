@@ -18,8 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
 
     private var projectPath: String {
-        if let p = ProcessInfo.processInfo.environment["CXGUI_PROJECT"], !p.isEmpty { return p }
-        if let p = Bundle.main.object(forInfoDictionaryKey: "CXProjectPath") as? String, !p.isEmpty { return p }
+        if let path = ProcessInfo.processInfo.environment["CXGUI_PROJECT"], !path.isEmpty { return path }
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "CXProjectPath") as? String
+        if let path = bundled, !path.isEmpty { return path }
         return FileManager.default.currentDirectoryPath
     }
 
@@ -49,11 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if !quitConfirmed && !confirmQuitIfRunning() { return .terminateCancel }
         quitting = true
-        if let s = server, s.isRunning {
-            s.terminate()
+        if let proc = server, proc.isRunning {
+            proc.terminate()
             let deadline = Date().addingTimeInterval(6)
-            while s.isRunning && Date() < deadline { usleep(100_000) }
-            if s.isRunning { kill(s.processIdentifier, SIGKILL) }
+            while proc.isRunning && Date() < deadline { usleep(100_000) }
+            if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
         }
         return .terminateNow
     }
@@ -112,7 +113,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         root.wantsLayer = true
         webView.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(webView)
+        buildOverlay(in: root)
+        window.contentView = root
+        window.makeKeyAndOrderFront(nil)
+    }
 
+    /// 启动中 / 出错时显示的加载提示层
+    private func buildOverlay(in root: NSView) {
         overlay = NSView()
         overlay.translatesAutoresizingMaskIntoConstraints = false
         spinner = NSProgressIndicator()
@@ -142,18 +149,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor, constant: -16),
             statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 14),
             statusLabel.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
-            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 560)
         ])
-        window.contentView = root
-        window.makeKeyAndOrderFront(nil)
     }
 
+    @objc private func openSettings() {
+        webView.evaluateJavaScript("window.cxOpenSettings && window.cxOpenSettings();", completionHandler: nil)
+    }
+
+    @objc private func openProjectFolder() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: projectPath))
+    }
+
+    private func showError(_ text: String) {
+        spinner.stopAnimation(nil)
+        spinner.isHidden = true
+        overlay.isHidden = false
+        webView.isHidden = true
+        statusLabel.stringValue = text
+        statusLabel.textColor = .labelColor
+    }
+
+    // MARK: - 后台服务
+    private func startServer() {
+        let python = projectPath + "/.venv/bin/python"
+        let script = projectPath + "/gui/server.py"
+        guard FileManager.default.isExecutableFile(atPath: python),
+              FileManager.default.fileExists(atPath: script) else {
+            showError("找不到项目或 Python 环境：\n\(projectPath)\n\n请确认 chaoxing 项目文件夹没有被移动，并已安装依赖。")
+            return
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [script]
+        proc.currentDirectoryURL = URL(fileURLWithPath: projectPath)
+        var env = ProcessInfo.processInfo.environment
+        env["CXGUI_TOKEN"] = token
+        env["CXGUI_WATCH_PARENT"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        proc.environment = env
+
+        pipeOutput(of: proc)
+        proc.terminationHandler = { [weak self] finished in
+            DispatchQueue.main.async {
+                guard let self = self, !self.quitting else { return }
+                self.showError("后台服务意外退出（代码 \(finished.terminationStatus)）。\n\n\(self.stderrTail)\n\n"
+                               + "请重新打开应用；如果反复出现，可以查看 gui/data/logs/server.log。")
+            }
+        }
+        do {
+            try proc.run()
+            server = proc
+        } catch {
+            showError("启动后台服务失败：\(error.localizedDescription)")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 40) { [weak self] in
+            guard let self = self, self.port == nil, !self.quitting else { return }
+            self.showError("后台服务启动超时。\n\n\(self.stderrTail)")
+        }
+    }
+
+    /// 把后台服务的标准输出交给 handleStdout，标准错误保留最后一段用于报错
+    private func pipeOutput(of proc: Process) {
+        let out = Pipe(), err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+        out.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil; return }
+            DispatchQueue.main.async { self?.handleStdout(String(decoding: data, as: UTF8.self)) }
+        }
+        err.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil; return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.stderrTail = String((self.stderrTail + String(decoding: data, as: UTF8.self)).suffix(1500))
+            }
+        }
+    }
+
+    private func handleStdout(_ chunk: String) {
+        stdoutBuffer += chunk
+        while let range = stdoutBuffer.range(of: "\n") {
+            let line = String(stdoutBuffer[..<range.lowerBound])
+            stdoutBuffer.removeSubrange(..<range.upperBound)
+            guard port == nil, line.hasPrefix("CXGUI_READY ") else { continue }
+            if let readyPort = Int(line.dropFirst(12).trimmingCharacters(in: .whitespaces)) {
+                port = readyPort
+                statusLabel.stringValue = "正在加载界面…"
+                if let url = URL(string: "http://127.0.0.1:\(readyPort)/?t=\(token)") {
+                    webView.load(URLRequest(url: url))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 菜单
+extension AppDelegate {
     private func buildMenu() {
         let main = NSMenu()
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于刷课助手", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "关于刷课助手",
+                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         let settings = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
@@ -189,95 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         NSApp.mainMenu = main
     }
+}
 
-    @objc private func openSettings() {
-        webView.evaluateJavaScript("window.cxOpenSettings && window.cxOpenSettings();", completionHandler: nil)
-    }
-
-    @objc private func openProjectFolder() {
-        NSWorkspace.shared.open(URL(fileURLWithPath: projectPath))
-    }
-
-    private func showError(_ text: String) {
-        spinner.stopAnimation(nil)
-        spinner.isHidden = true
-        overlay.isHidden = false
-        webView.isHidden = true
-        statusLabel.stringValue = text
-        statusLabel.textColor = .labelColor
-    }
-
-    // MARK: - 后台服务
-    private func startServer() {
-        let python = projectPath + "/.venv/bin/python"
-        let script = projectPath + "/gui/server.py"
-        guard FileManager.default.isExecutableFile(atPath: python),
-              FileManager.default.fileExists(atPath: script) else {
-            showError("找不到项目或 Python 环境：\n\(projectPath)\n\n请确认 chaoxing 项目文件夹没有被移动，并已安装依赖。")
-            return
-        }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: python)
-        p.arguments = [script]
-        p.currentDirectoryURL = URL(fileURLWithPath: projectPath)
-        var env = ProcessInfo.processInfo.environment
-        env["CXGUI_TOKEN"] = token
-        env["CXGUI_WATCH_PARENT"] = "1"
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        p.environment = env
-
-        let out = Pipe(), err = Pipe()
-        p.standardOutput = out
-        p.standardError = err
-        out.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            if data.isEmpty { h.readabilityHandler = nil; return }
-            DispatchQueue.main.async { self?.handleStdout(String(decoding: data, as: UTF8.self)) }
-        }
-        err.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            if data.isEmpty { h.readabilityHandler = nil; return }
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.stderrTail = String((self.stderrTail + String(decoding: data, as: UTF8.self)).suffix(1500))
-            }
-        }
-        p.terminationHandler = { [weak self] proc in
-            DispatchQueue.main.async {
-                guard let self = self, !self.quitting else { return }
-                self.showError("后台服务意外退出（代码 \(proc.terminationStatus)）。\n\n\(self.stderrTail)\n\n请重新打开应用；如果反复出现，可以查看 gui/data/logs/server.log。")
-            }
-        }
-        do {
-            try p.run()
-            server = p
-        } catch {
-            showError("启动后台服务失败：\(error.localizedDescription)")
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 40) { [weak self] in
-            guard let self = self, self.port == nil, !self.quitting else { return }
-            self.showError("后台服务启动超时。\n\n\(self.stderrTail)")
-        }
-    }
-
-    private func handleStdout(_ chunk: String) {
-        stdoutBuffer += chunk
-        while let range = stdoutBuffer.range(of: "\n") {
-            let line = String(stdoutBuffer[..<range.lowerBound])
-            stdoutBuffer.removeSubrange(..<range.upperBound)
-            if port == nil, line.hasPrefix("CXGUI_READY "), let p = Int(line.dropFirst(12).trimmingCharacters(in: .whitespaces)) {
-                port = p
-                statusLabel.stringValue = "正在加载界面…"
-                if let url = URL(string: "http://127.0.0.1:\(p)/?t=\(token)") {
-                    webView.load(URLRequest(url: url))
-                }
-            }
-        }
-    }
-
-    // MARK: - WebView
+// MARK: - WebView
+extension AppDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.isHidden = false
         overlay.isHidden = true

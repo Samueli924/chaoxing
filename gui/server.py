@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-刷课助手的本地后台：多账号管理、课程列表、设置读写、排队调度和任务控制，界面在 gui/static 下。
-只监听 127.0.0.1，所有 /api 请求都要带启动时生成的令牌。
-
-用法:
-    python gui/server.py            # 启动并用浏览器打开界面（Windows / Linux / macOS 通用）
-    python gui/server.py --no-open  # 只启动后台，打印访问地址
-macOS 上也可以用 gui/build_app.sh 打包成独立应用。
-"""
+"""刷课助手的本地后台：多账号管理、课程列表、设置读写、排队调度和任务控制，界面在 gui/static 下."""
+# 只监听 127.0.0.1，所有 /api 请求都要带启动时生成的令牌。
+#
+# 用法:
+# python gui/server.py            # 启动并用浏览器打开界面（Windows / Linux / macOS 通用）
+# python gui/server.py --no-open  # 只启动后台，打印访问地址
+# macOS 上也可以用 gui/build_app.sh 打包成独立应用。
 import argparse
 import collections
 import contextlib
@@ -18,7 +16,7 @@ import re
 import secrets
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404  # 只用来调用固定的系统命令
 import sys
 import threading
 import time
@@ -139,6 +137,7 @@ BUSY = ACTIVE | {"queued"}
 
 class Run:
     def __init__(self, acct: "Acct"):
+        """记录所属账号并初始化运行状态."""
         self.acct = acct
         self.lock = threading.RLock()
         self.proc: subprocess.Popen | None = None
@@ -177,79 +176,108 @@ class Run:
         return finished, total
 
     def handle(self, ev: dict):
-        t = ev.get("t")
-        with self.lock:
-            if t == "log":
-                self.add_log(ev.get("level", "INFO"), ev.get("msg", ""), ev.get("ts"))
-            elif t == "phase":
-                self.phase = ev.get("msg", "")
-                if "学习次数" in self.phase:
-                    self.status = "counting"
-            elif t == "plan":
-                self.courses, self.chapter_index = [], {}
-                for c in ev.get("courses", []):
-                    chapters = [{"id": ch["id"], "title": ch["title"],
-                                 "status": "done" if ch.get("finished") else "pending"}
-                                for ch in c.get("chapters", [])]
-                    self.courses.append({"key": c["key"], "title": c["title"],
-                                         "teacher": c.get("teacher", ""), "chapters": chapters})
-                    for ch in chapters:
-                        self.chapter_index[(c["key"], ch["id"])] = ch
-                self.status, self.phase = "running", "正在学习"
-            elif t == "ch_start":
-                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] not in ("done", "manual"):
-                    ch["status"] = "running"
-            elif t == "ch_end":
-                ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
-                if ch and ch["status"] not in ("done", "manual"):
-                    ch["status"] = STATUS_MAP.get(ev.get("result"), "retry")
-            elif t == "work_result":
-                key = ev.get("job_id") or f'{ev.get("course")}:{ev.get("chapter_id")}'
-                ch = self.chapter_index.get((ev.get("course"), ev.get("chapter_id")))
-                status = ev.get("status")
-                if status == "manual":
-                    item = {k: ev.get(k) for k in ("course", "course_title", "chapter_id", "name", "score",
-                                                     "target", "remaining", "code", "reason")}
-                    item["chapter_title"] = ch["title"] if ch else ""
-                    self.manual[key] = item
-                    if ch:
-                        ch["prev_status"] = ch.get("prev_status") or ch["status"]
-                        ch["status"] = "manual"
-                elif status in ("pass", "redoing"):
-                    self.manual.pop(key, None)
-                    if ch and ch["status"] == "manual":
-                        ch["status"] = ch.pop("prev_status", "done")
-                    if ch and status == "redoing":
-                        ch["prev_status"] = ch.get("prev_status") or ch["status"]
-                        ch["status"] = "redoing"
-                    elif ch and ch["status"] == "redoing":
-                        ch["status"] = ch.pop("prev_status", "done")
-            elif t == "job_start":
-                job = {k: ev.get(k) for k in ("jid", "kind", "name", "course", "chapter")}
-                job.update(n=0, total=0, started=time.time())
-                self.jobs[ev["jid"]] = job
-            elif t == "progress":
-                job = self.jobs.get(ev.get("jid"))
-                if job:
-                    job["n"], job["total"] = ev.get("n", 0), ev.get("total", 0)
-                    job["unit"], job["waiting"] = ev.get("unit"), bool(ev.get("waiting"))
-            elif t == "job_end":
-                job = self.jobs.pop(ev.get("jid"), None)
-                if job:
-                    job.update(result=ev.get("result"), ended=time.time())
-                    self.recent.appendleft(job)
-            elif t == "final":
-                for item in ev.get("chapters", []):
-                    ch = self.chapter_index.get((item["course"], item["id"]))
-                    if ch and ch["status"] not in ("done", "manual"):
-                        ch["status"] = FINAL_MAP.get(item["result"], "failed")
-                self.jobs.clear()
-            elif t == "done":
-                self.status, self.phase, self.ended = "done", "全部完成", time.time()
-            elif t == "error":
-                self.status, self.ended = "error", time.time()
-                self.error = ev.get("msg") or "未知错误"
+        """处理刷课进程上报的一条事件，更新运行状态."""
+        handler = self.HANDLERS.get(ev.get("t"))
+        if handler:
+            with self.lock:
+                handler(self, ev)
+
+    def _on_log(self, ev: dict):
+        self.add_log(ev.get("level", "INFO"), ev.get("msg", ""), ev.get("ts"))
+
+    def _on_phase(self, ev: dict):
+        self.phase = ev.get("msg", "")
+        if "学习次数" in self.phase:
+            self.status = "counting"
+
+    def _on_plan(self, ev: dict):
+        self.courses, self.chapter_index = [], {}
+        for c in ev.get("courses", []):
+            chapters = [{"id": ch["id"], "title": ch["title"],
+                         "status": "done" if ch.get("finished") else "pending"}
+                        for ch in c.get("chapters", [])]
+            self.courses.append({"key": c["key"], "title": c["title"],
+                                 "teacher": c.get("teacher", ""), "chapters": chapters})
+            for ch in chapters:
+                self.chapter_index[(c["key"], ch["id"])] = ch
+        self.status, self.phase = "running", "正在学习"
+
+    def _on_ch_start(self, ev: dict):
+        ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
+        if ch and ch["status"] not in ("done", "manual"):
+            ch["status"] = "running"
+
+    def _on_ch_end(self, ev: dict):
+        ch = self.chapter_index.get((ev.get("course"), ev.get("id")))
+        if ch and ch["status"] not in ("done", "manual"):
+            ch["status"] = STATUS_MAP.get(ev.get("result"), "retry")
+
+    def _on_work_result(self, ev: dict):
+        key = ev.get("job_id") or f'{ev.get("course")}:{ev.get("chapter_id")}'
+        ch = self.chapter_index.get((ev.get("course"), ev.get("chapter_id")))
+        status = ev.get("status")
+        if status == "manual":
+            self._mark_manual(key, ch, ev)
+        elif status in ("pass", "redoing"):
+            self._clear_manual(key, ch, status == "redoing")
+
+    def _mark_manual(self, key: str, ch: dict | None, ev: dict):
+        item = {k: ev.get(k) for k in ("course", "course_title", "chapter_id", "name", "score",
+                                         "target", "remaining", "code", "reason")}
+        item["chapter_title"] = ch["title"] if ch else ""
+        self.manual[key] = item
+        if ch:
+            ch["prev_status"] = ch.get("prev_status") or ch["status"]
+            ch["status"] = "manual"
+
+    def _clear_manual(self, key: str, ch: dict | None, redoing: bool):
+        self.manual.pop(key, None)
+        if not ch:
+            return
+        if ch["status"] == "manual":
+            ch["status"] = ch.pop("prev_status", "done")
+        if redoing:
+            ch["prev_status"] = ch.get("prev_status") or ch["status"]
+            ch["status"] = "redoing"
+        elif ch["status"] == "redoing":
+            ch["status"] = ch.pop("prev_status", "done")
+
+    def _on_job_start(self, ev: dict):
+        job = {k: ev.get(k) for k in ("jid", "kind", "name", "course", "chapter")}
+        job.update(n=0, total=0, started=time.time())
+        self.jobs[ev["jid"]] = job
+
+    def _on_progress(self, ev: dict):
+        job = self.jobs.get(ev.get("jid"))
+        if job:
+            job["n"], job["total"] = ev.get("n", 0), ev.get("total", 0)
+            job["unit"], job["waiting"] = ev.get("unit"), bool(ev.get("waiting"))
+
+    def _on_job_end(self, ev: dict):
+        job = self.jobs.pop(ev.get("jid"), None)
+        if job:
+            job.update(result=ev.get("result"), ended=time.time())
+            self.recent.appendleft(job)
+
+    def _on_final(self, ev: dict):
+        for item in ev.get("chapters", []):
+            ch = self.chapter_index.get((item["course"], item["id"]))
+            if ch and ch["status"] not in ("done", "manual"):
+                ch["status"] = FINAL_MAP.get(item["result"], "failed")
+        self.jobs.clear()
+
+    def _on_done(self, _ev: dict):
+        self.status, self.phase, self.ended = "done", "全部完成", time.time()
+
+    def _on_error(self, ev: dict):
+        self.status, self.ended = "error", time.time()
+        self.error = ev.get("msg") or "未知错误"
+
+    HANDLERS = {
+        "log": _on_log, "phase": _on_phase, "plan": _on_plan, "ch_start": _on_ch_start, "ch_end": _on_ch_end,
+        "work_result": _on_work_result, "job_start": _on_job_start, "progress": _on_progress,
+        "job_end": _on_job_end, "final": _on_final, "done": _on_done, "error": _on_error,
+    }
 
     def launch(self):
         acct = self.acct
@@ -280,7 +308,7 @@ class Run:
             open(acct.log_path, "w").close()  # 每次运行重新开始；以追加方式写入，日志清理时可以安全地原地裁剪
             err = open(acct.log_path, "a", encoding="utf8")
             try:
-                proc = subprocess.Popen(
+                proc = subprocess.Popen(  # nosec B603  # 参数是固定命令和本程序生成的值，不经过 shell
                     [sys.executable, "-u", "-m", "gui.worker"], cwd=ROOT,
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
                     env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
@@ -320,7 +348,7 @@ class Run:
             finished, total = self.counts()
         try:
             maintain_logs(force=True)
-        except Exception:
+        except Exception:  # nosec B110  # 辅助功能失败时忽略，不影响刷课
             pass
         who = self.acct.display()
         if status == "done":
@@ -374,10 +402,11 @@ def _safe_name(phone: str) -> str:
 
 class Acct:
     def __init__(self, phone: str, name: str = "", selected=None):
+        """记录账号手机号、名称和选中的课程."""
         self.phone = phone
         self.name = name
         self.selected: list[str] = list(selected or [])
-        self.password = ""  # 只保存在内存中
+        self.password = ""  # 只保存在内存中  # nosec B105  # 不是硬编码密码，只是内存中的初始值
         self.auth = "unknown"  # unknown / checking / ok / failed
         self.auth_msg = ""
         self.courses: list[dict] = []
@@ -472,13 +501,13 @@ def do_login(acct: Acct, password: str, use_cookies: bool) -> tuple[bool, str]:
             name = Chaoxing.get_name()
             if name:
                 acct.name = name
-        except Exception:
+        except Exception:  # nosec B110  # 辅助功能失败时忽略，不影响刷课
             pass
     return True, "登录成功"
 
 
 def check_login(acct: Acct):
-    """用保存的 cookie 或钥匙串密码自动登录。"""
+    """用保存的 cookie 或钥匙串密码自动登录."""
     acct.auth, acct.auth_msg = "checking", ""
     pwd = acct.password or keychain.load_password(acct.phone) or ""
     has_cookie = acct.cookies_path.exists()
@@ -621,7 +650,7 @@ def prepare_search(run: "Run", cfg: dict):
             run.phase = "正在启动本地搜索服务…"
         if SEARCH_PROC is None or SEARCH_PROC.poll() is not None:
             log = open(LOG_DIR / "searxng.log", "a", encoding="utf8")
-            SEARCH_PROC = subprocess.Popen([command], cwd=str(Path(command).parent), stdout=log, stderr=log)
+            SEARCH_PROC = subprocess.Popen([command], cwd=str(Path(command).parent), stdout=log, stderr=log)  # nosec B603  # 参数是固定命令和本程序生成的值，不经过 shell
             log.close()
         for _ in range(60):
             if _search_alive(url):
@@ -634,7 +663,7 @@ def prepare_search(run: "Run", cfg: dict):
 
 
 def prepare_local_model(run: "Run", cfg: dict):
-    """题库使用本机 LM Studio 时，在启动刷课进程前确保模型已加载。"""
+    """题库使用本机 LM Studio 时，在启动刷课进程前确保模型已加载."""
     if not auto_manage_enabled(cfg):
         return
     target = llm_manager.local_target(cfg.get("tiku", {}))
@@ -674,7 +703,7 @@ def unload_local_model(backend: "llm_manager.LMStudio", model: str):
 
 
 def enqueue(acct: Acct, keys: list[str]) -> str | None:
-    """把账号加入排队，返回错误信息或 None。"""
+    """把账号加入排队，返回错误信息或 None."""
     if acct.auth != "ok":
         return "这个账号还没有登录成功"
     selected = [c for c in acct.courses if _course_key(c) in set(keys)]
@@ -725,7 +754,7 @@ def api_state():
 
 @app.post("/api/accounts")
 def api_add_account():
-    """添加账号或重新登录已有账号。"""
+    """添加账号或重新登录已有账号."""
     data = request.get_json(force=True) or {}
     phone = str(data.get("phone", "")).strip()
     password = str(data.get("password", ""))
@@ -978,7 +1007,7 @@ def common_from_config(cfg: dict) -> dict:
 
 @app.post("/api/client_log")
 def api_client_log():
-    """界面与后台的连接中断恢复后上报的情况，写入 server.log 便于排查。"""
+    """界面与后台的连接中断恢复后上报的情况，写入 server.log 便于排查."""
     data = request.get_json(force=True) or {}
     failures = data.get("failures") or []
     paths = sorted({str(f.get("path", ""))[:60] for f in failures})
@@ -1017,7 +1046,7 @@ def _shutdown(*_):
     for backend, model in UNLOADER.take_all():  # 刷课用过的本地模型随应用退出一起卸载
         try:
             backend.unload(model)
-        except Exception:
+        except Exception:  # nosec B110  # 辅助功能失败时忽略，不影响刷课
             pass
     os._exit(0)
 

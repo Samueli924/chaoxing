@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成应用图标 iconset（蓝色圆角方块 + 白色学士帽）。用法: python make_icon.py 输出目录.iconset"""
+"""生成应用图标 iconset（蓝色圆角方块 + 白色学士帽）。用法: python make_icon.py 输出目录.iconset."""
 import os
 import sys
 

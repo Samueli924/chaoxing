@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-把登录密码存进系统凭据库，而不是明文写在配置文件里。
-macOS 使用钥匙串（security 命令）；其他系统在安装了 keyring 库时使用它
-（Windows 凭据管理器 / Linux Secret Service），否则不保存密码，只靠 cookie 自动登录。
-"""
-import subprocess
+"""把登录密码存进系统凭据库，而不是明文写在配置文件里."""
+# macOS 使用钥匙串（security 命令）；其他系统在安装了 keyring 库时使用它
+# （Windows 凭据管理器 / Linux Secret Service），否则不保存密码，只靠 cookie 自动登录。
+import subprocess  # nosec B404  # 只用来调用固定的系统命令
 import sys
 
 SERVICE = "chaoxing-gui"
@@ -32,7 +30,7 @@ def save_password(account: str, password: str) -> bool:
         # 通过 security -i 从标准输入传命令，避免密码出现在进程参数里
         cmd = f"add-generic-password -U -a {_quote(account)} -s {_quote(SERVICE)} -w {_quote(password)}\n"
         try:
-            r = subprocess.run(["/usr/bin/security", "-i"], input=cmd, text=True,
+            r = subprocess.run(["/usr/bin/security", "-i"], input=cmd, text=True,  # nosec B603  # 参数是固定命令和本程序生成的值，不经过 shell
                                capture_output=True, timeout=10)
             return r.returncode == 0
         except Exception:
@@ -51,7 +49,7 @@ def load_password(account: str) -> str | None:
         return None
     if IS_MAC:
         try:
-            r = subprocess.run(
+            r = subprocess.run(  # nosec B603  # 参数是固定命令和本程序生成的值，不经过 shell
                 ["/usr/bin/security", "find-generic-password", "-a", account, "-s", SERVICE, "-w"],
                 capture_output=True, text=True, timeout=10,
             )
@@ -71,12 +69,12 @@ def delete_password(account: str) -> None:
         return
     if IS_MAC:
         try:
-            subprocess.run(["/usr/bin/security", "delete-generic-password", "-a", account, "-s", SERVICE],
+            subprocess.run(["/usr/bin/security", "delete-generic-password", "-a", account, "-s", SERVICE],  # nosec B603  # 参数是固定命令和本程序生成的值，不经过 shell
                            capture_output=True, timeout=10)
-        except Exception:
+        except Exception:  # nosec B110  # 辅助功能失败时忽略，不影响刷课
             pass
     elif _keyring:
         try:
             _keyring.delete_password(SERVICE, account)
-        except Exception:
+        except Exception:  # nosec B110  # 辅助功能失败时忽略，不影响刷课
             pass

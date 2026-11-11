@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-后台刷课进程：由 gui/server.py 启动，从标准输入读取一行 JSON 配置，
-复用项目原有的 main.py / api 逻辑完成任务点，并把进度以事件行的形式写到标准输出。
-
-运行方式（工作目录为项目根目录）: python -m gui.worker
-"""
+"""后台刷课进程：由 gui/server.py 启动，从标准输入读取一行 JSON 配置."""
+# 复用项目原有的 main.py / api 逻辑完成任务点，并把进度以事件行的形式写到标准输出。
+#
+# 运行方式（工作目录为项目根目录）: python -m gui.worker
 import itertools
 import json
 import sys
@@ -62,6 +60,7 @@ def course_key(course: dict) -> str:
 # ---- 把进度条换成事件上报 -------------------------------------------------
 class GuiBar:
     def __init__(self, total=0, initial=0, desc="", **_kw):
+        """记录进度条的总量、当前值和描述."""
         self.total = total or 0
         self.n = initial or 0
         self.leave = False

@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-日志清理：只保留最近的日志，过期的自动删除，所有日志加起来不超过上限。
-
-- 超过保留天数没有更新过的日志文件直接删除
-- 总量超过上限时，先删最旧的、当前没有在写的日志；还超出就把最大的日志裁掉前面一半（保留最新的内容）
-- 正在写入的日志（后台、搜索服务、正在刷课的账号）只裁剪不删除；它们都以追加方式打开，原地裁剪是安全的
-"""
-import os
+"""日志清理：只保留最近的日志，过期的自动删除，所有日志加起来不超过上限."""
+# - 超过保留天数没有更新过的日志文件直接删除
+# - 总量超过上限时，先删最旧的、当前没有在写的日志；还超出就把最大的日志裁掉前面一半（保留最新的内容）
+# - 正在写入的日志（后台、搜索服务、正在刷课的账号）只裁剪不删除；它们都以追加方式打开，原地裁剪是安全的
 import time
 from pathlib import Path
 from typing import Iterable
@@ -35,10 +31,8 @@ def trim_keep_tail(path: Path, keep_bytes: int) -> None:
 
 def enforce(files: Iterable[Path], max_bytes: int = 10 * MB, keep_days: float = 7,
             active: Iterable[Path] = (), now: float | None = None, prefer_delete: Iterable[Path] = ()) -> dict:
-    """对给定的日志文件执行保留策略，返回 {"deleted": [...], "trimmed": [...], "total": 字节数}.
-
-    prefer_delete：超出上限时优先删除的文件（如已不再写入的旧日志），删完它们再按时间从旧到新删除其他日志。
-    """
+    """对给定的日志文件执行保留策略，返回 {"deleted": [...], "trimmed": [...], "total": 字节数}."""
+    # prefer_delete：超出上限时优先删除的文件（如已不再写入的旧日志），删完它们再按时间从旧到新删除其他日志。
     now = time.time() if now is None else now
     active = {Path(p).resolve() for p in active}
     prefer = {Path(p).resolve() for p in prefer_delete}

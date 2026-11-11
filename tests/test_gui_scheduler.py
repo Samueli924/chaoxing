@@ -12,6 +12,7 @@ from gui.scheduler import Scheduler  # noqa: E402
 
 class FakeClock:
     def __init__(self):
+        """从 0 开始计时."""
         self.t = 1000.0
 
     def __call__(self):
@@ -21,7 +22,7 @@ class FakeClock:
 class SchedulerTest(unittest.TestCase):
     def make(self, max_parallel=2, stagger=(60, 120)):
         self.clock = FakeClock()
-        return Scheduler(max_parallel, stagger, clock=self.clock, rng=random.Random(1))
+        return Scheduler(max_parallel, stagger, clock=self.clock, rng=random.Random(1))  # nosec B311  # 只用于错开启动时间，不涉及安全
 
     def test_first_starts_immediately(self):
         s = self.make()

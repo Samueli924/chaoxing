@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""读写 config.ini：只替换指定键的值，保留原有注释和顺序，方便命令行版继续使用同一份配置。"""
+"""读写 config.ini：只替换指定键的值，保留原有注释和顺序，方便命令行版继续使用同一份配置."""
 import configparser
 import os
 import re
@@ -26,7 +26,7 @@ _SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
 
 
 def update_config(path: str, updates: dict[str, dict[str, object]]) -> None:
-    """把 updates 中的 {section: {key: value}} 写回文件，不存在的键追加到对应小节末尾。"""
+    """把 updates 中的 {section: {key: value}} 写回文件，不存在的键追加到对应小节末尾."""
     with _lock:
         lines: list[str] = []
         if os.path.exists(path):

@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-多账号排队调度：限制同时运行的账号数量，并让相邻两次启动之间随机间隔一段时间。
-纯逻辑，不涉及进程和网络，方便单元测试。
-"""
+"""多账号排队调度：限制同时运行的账号数量，并让相邻两次启动之间随机间隔一段时间."""
+# 纯逻辑，不涉及进程和网络，方便单元测试。
 import random
 import threading
 import time
@@ -12,9 +10,10 @@ from typing import Callable, Optional
 class Scheduler:
     def __init__(self, max_parallel: int = 2, stagger: tuple[float, float] = (120, 300),
                  clock: Callable[[], float] = time.time, rng: Optional[random.Random] = None):
+        """设置同时运行的账号上限、启动间隔范围、时钟和随机数生成器."""
         self._lock = threading.RLock()
         self._clock = clock
-        self._rng = rng or random.Random()
+        self._rng = rng or random.Random()  # nosec B311  # 只用于错开启动时间，不涉及安全
         self.queue: list[str] = []
         self.last_start: Optional[float] = None
         self.gap = 0.0  # 上次启动后需要等待的秒数（启动时随机生成）
@@ -49,7 +48,7 @@ class Scheduler:
             return 0.0 if self.last_start is None else self.last_start + self.gap
 
     def due(self, active: int) -> list[str]:
-        """返回现在应该启动的账号（会从队列中移除）。active 为正在运行的账号数。"""
+        """返回现在应该启动的账号（会从队列中移除）。active 为正在运行的账号数."""
         with self._lock:
             started: list[str] = []
             now = self._clock()
@@ -60,10 +59,8 @@ class Scheduler:
             return started
 
     def estimate(self, item: str, active: int) -> Optional[dict]:
-        """
-        估计排队账号的启动时间。
-        返回 {"position": 第几位(从1开始), "eta": 预计时间戳或 None}；eta 为 None 表示要等别的账号学完腾出位置。
-        """
+        """估计排队账号的启动时间."""
+        # 返回 {"position": 第几位(从1开始), "eta": 预计时间戳或 None}；eta 为 None 表示要等别的账号学完腾出位置。
         with self._lock:
             if item not in self.queue:
                 return None
