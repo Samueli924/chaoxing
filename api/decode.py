@@ -154,7 +154,7 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
     return point_list
 
 
-def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def decode_course_card(html_text: str, include_passed_work: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     解析任务点列表页面，提取任务点信息
     
@@ -186,7 +186,14 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
+    job_info["attachmentCount"] = len(cards)
+    submitted = set()
+    if include_passed_work:
+        cards, submitted = _reopen_submitted_works(cards)
     job_list = _process_attachment_cards(cards)
+    for job in job_list:
+        if job.get("jobid") in submitted:
+            job["submitted"] = True
 
     return job_list, job_info
 
@@ -215,6 +222,19 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
         "qnenc": defaults.get("qnenc", ""),
         "knowledgeid": defaults.get("knowledgeid", "")
     }
+
+
+def _reopen_submitted_works(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], set]:
+    """回查成绩时，把已通过或已提交的章节检测卡片当作待处理任务，返回 (卡片列表, 这些检测的 jobid)."""
+    # 已提交的章节检测卡片没有 job 字段（只有未完成的任务才有），原有逻辑会把它当作阅读任务丢弃
+    result, submitted = [], set()
+    for card in cards:
+        is_work = card.get("type", "").lower() == "workid" and card.get("jobid")
+        if is_work and (card.get("isPassed") or card.get("job") is None):
+            card = {**card, "isPassed": False, "job": True}
+            submitted.add(card["jobid"])
+        result.append(card)
+    return result, submitted
 
 
 def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -539,5 +559,10 @@ def _extract_choices(element, font_decoder=None) -> str:
     cleaned_content = cleaned_content.strip()
     if cleaned_content.endswith("选择"):
         cleaned_content = cleaned_content[:-2].rstrip()
+
+    # 选项内容是图片（如数学公式）时，文字里只剩选项字母，把图片也带上，便于识图作答
+    images = [f'<img src="{img.get("src")}">' for img in element.find_all("img") if img.get("src")]
+    if images and "<img" not in cleaned_content:
+        cleaned_content += "".join(images)
 
     return cleaned_content

@@ -154,6 +154,13 @@ def load_config_from_file(config_path):
             common_config["work_max_retries"] = 3
         if "work_redo_enabled" in common_config:
             common_config["work_redo_enabled"] = str_to_bool(common_config["work_redo_enabled"])
+        if "work_recheck_finished" in common_config:
+            common_config["work_recheck_finished"] = str_to_bool(common_config["work_recheck_finished"])
+        if "work_min_score" in common_config:
+            try:
+                common_config["work_min_score"] = float(common_config["work_min_score"])
+            except ValueError:
+                common_config["work_min_score"] = 100.0
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
         if "add_learning_count" in common_config:
@@ -258,6 +265,8 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
         query_delay=query_delay,
         work_max_retries=work_max_retries,
         work_redo_enabled=work_redo_enabled,
+        work_min_score=common_config.get("work_min_score", 100.0),
+        work_recheck_finished=common_config.get("work_recheck_finished", False),
     )
 
     return chaoxing
@@ -478,6 +487,65 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
     return ChapterResult.SUCCESS
 
 
+def recheck_courses(chaoxing: Chaoxing, courses: list[dict[str, Any]], progress=None) -> dict[str, int]:
+    """开始刷课前回查所选课程所有已提交的章节检测，返回统计 {chapters, works, manual}."""
+    # 成绩低于目标分数且还有重做机会的，开启思考重新作答（见 Chaoxing.recheck_work）；
+    # 只剩最后一次机会、没有机会或重做后仍未达标的，标注「需手动完成」；未提交的检测留到刷课阶段作答。
+    # 已确认达标的检测和章节会写入缓存，下次跳过。progress 为可选回调 progress(课程名, 第几章, 章节总数)。
+    stats = {"chapters": 0, "works": 0, "manual": 0}
+    original_callback = chaoxing.work_result_callback
+    chaoxing.work_result_callback = _counting_callback(stats, original_callback)
+    try:
+        logger.info(f"开始回查所选 {len(courses)} 门课程的章节检测成绩")
+        for course in courses:
+            points = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])["points"]
+            for index, point in enumerate(points, 1):
+                if progress:
+                    progress(course["title"], index, len(points))
+                _recheck_chapter(chaoxing, course, point, stats)
+    finally:
+        chaoxing.work_result_callback = original_callback
+    logger.info(f'章节检测回查完成：检查了 {stats["chapters"]} 个章节、{stats["works"]} 个检测，'
+                f'需手动完成 {stats["manual"]} 个')
+    return stats
+
+
+def _counting_callback(stats: dict[str, int], forward):
+    """包装章节检测结果回调：统计需手动完成的数量，并转交给原来的回调."""
+    def callback(result):
+        if result.get("status") == "manual":
+            stats["manual"] += 1
+        if forward:
+            forward(result)
+    return callback
+
+
+def _recheck_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], stats: dict[str, int]) -> None:
+    """回查一个章节里已提交的章节检测，并更新统计和缓存."""
+    chapter_key = f'chapter:{course["courseId"]}:{point["id"]}'
+    if chaoxing.work_cache_get(chapter_key):
+        return  # 已确认没有检测或检测都已达标
+    chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
+    jobs, job_info = chaoxing.get_job_list(course, point, include_passed_work=True, study_empty=False)
+    if job_info.get("notOpen", False):
+        return
+    stats["chapters"] += 1
+    works = [job for job in jobs if job.get("type") == "workid"]
+    if not works:
+        # 只对已完成的章节记住「没有检测」：未完成章节的检测可能要解锁后才出现
+        if point.get("has_finished"):
+            chaoxing.work_cache_set(chapter_key, "no-work")
+        return
+    for job in works:
+        stats["works"] += 1
+        try:
+            chaoxing.recheck_work(course, job, job_info)
+        except Exception as e:
+            logger.error(f'回查章节检测出错（{course["title"]} - {point["title"]}）: {e}')
+    if all(chaoxing.work_cache_get("work:" + job["jobid"]) is not None for job in works):
+        chaoxing.work_cache_set(chapter_key, "ok")
+
+
 def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict):
     """处理单个课程"""
     logger.info(f"开始学习课程: {course['title']}")
@@ -586,6 +654,10 @@ def main():
 
         _old_format_sizeof = tqdm.format_sizeof
         tqdm.format_sizeof = format_time
+
+        # 开始刷新内容前，先回查所选课程已提交的章节检测（低于目标分数的开启思考重做）
+        if common_config.get("work_recheck_finished"):
+            recheck_courses(chaoxing, course_task)
 
         tasks = []
         for course in course_task:
