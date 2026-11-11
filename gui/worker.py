@@ -44,6 +44,11 @@ def _log_sink(message):
     emit("log", level=r["level"].name, msg=r["message"], ts=r["time"].strftime("%H:%M:%S"))
 
 
+# 刷课进程的日志只写到本账号的运行日志（标准错误），不再写原项目的 chaoxing.log（TRACE 级别，含整页网页源码，体积很大）
+from api.logger import tqdm_sink  # noqa: E402
+
+logger.remove()
+logger.add(tqdm_sink, colorize=True, enqueue=True)
 logger.add(_log_sink, level="INFO", format="{message}")
 
 _ctx = threading.local()

@@ -42,8 +42,13 @@ from flask import Flask, abort, jsonify, request, send_from_directory  # noqa: E
 from werkzeug.serving import make_server  # noqa: E402
 
 from api.base import Account, Chaoxing, SessionManager  # noqa: E402
+from api.logger import logger as _cx_logger  # noqa: E402
+
+# 后台只把 INFO 及以上的日志写到 server.log，不再写原项目的 chaoxing.log（TRACE 级别，体积很大）
+_cx_logger.remove()
+_cx_logger.add(sys.stderr, level="INFO", colorize=False)
 from api.config import GlobalConst  # noqa: E402
-from gui import configio, keychain, llm_manager, platform_utils  # noqa: E402
+from gui import configio, keychain, llm_manager, logmaint, platform_utils  # noqa: E402
 from gui.scheduler import Scheduler  # noqa: E402
 
 CONFIG = ROOT / "config.ini"
@@ -272,7 +277,8 @@ class Run:
         with self.lock:
             self.phase = "正在启动…"
             self.speed = common["speed"]
-            err = open(acct.log_path, "w", encoding="utf8")
+            open(acct.log_path, "w").close()  # 每次运行重新开始；以追加方式写入，日志清理时可以安全地原地裁剪
+            err = open(acct.log_path, "a", encoding="utf8")
             try:
                 proc = subprocess.Popen(
                     [sys.executable, "-u", "-m", "gui.worker"], cwd=ROOT,
@@ -312,6 +318,10 @@ class Run:
                     self.error = f"刷课进程意外退出（代码 {code}），详情见日志"
             status, error = self.status, self.error
             finished, total = self.counts()
+        try:
+            maintain_logs(force=True)
+        except Exception:
+            pass
         who = self.acct.display()
         if status == "done":
             platform_utils.notify("刷课助手", f"{who} 学习完成：{finished}/{total} 个章节已完成")
@@ -512,8 +522,41 @@ def active_count() -> int:
     return sum(1 for a in ACCOUNTS.values() if a.run.status in ACTIVE)
 
 
+LOG_CHECK_INTERVAL = 300
+_last_log_check = 0.0
+
+
+def maintain_logs(force: bool = False):
+    """日志清理：超过保留天数的删除，总量超过上限时删最旧的、裁剪最大的（见 gui/logmaint.py）."""
+    global _last_log_check
+    if not force and time.time() - _last_log_check < LOG_CHECK_INTERVAL:
+        return
+    _last_log_check = time.time()
+    g = configio.read_config(str(CONFIG)).get("gui", {})
+    max_mb = max(1.0, min(1000.0, _num(g.get("log_max_mb"), float, 10)))
+    keep_days = max(1.0, min(365.0, _num(g.get("log_keep_days"), float, 7)))
+    # 包括原项目在根目录留下的 chaoxing*.log（图形界面不再写入它们）
+    files = list(LOG_DIR.glob("*.log")) + list(ROOT.glob("chaoxing*.log"))
+    active = [LOG_DIR / "server.log"]
+    if SEARCH_PROC is not None and SEARCH_PROC.poll() is None:
+        active.append(LOG_DIR / "searxng.log")
+    active += [a.log_path for a in list(ACCOUNTS.values()) if a.run.status in ACTIVE]
+    try:
+        res = logmaint.enforce(files, max_bytes=int(max_mb * logmaint.MB), keep_days=keep_days, active=active)
+    except Exception as e:
+        sys.stderr.write(f"日志清理失败: {e}\n")
+        return
+    if res["deleted"] or res["trimmed"]:
+        sys.stderr.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 日志清理：删除 {len(res['deleted'])} 个、"
+                         f"裁剪 {len(res['trimmed'])} 个，当前共 {res['total'] / logmaint.MB:.1f} MB\n")
+
+
 def _scheduler_loop():
     while True:
+        try:
+            maintain_logs()
+        except Exception as e:
+            sys.stderr.write(f"log maintenance error: {e}\n")
         try:
             for phone in SCHED.due(active_count()):
                 acct = ACCOUNTS.get(phone)
@@ -882,7 +925,7 @@ EDITABLE = {
              "ai_disable_thinking", "ai_search_url", "ai_search_results"},
     "notification": {"provider", "url", "tg_chat_id"},
     "gui": {"max_parallel_accounts", "stagger_min_minutes", "stagger_max_minutes", "auto_manage_local_model",
-            "searxng_command"},
+            "searxng_command", "log_max_mb", "log_keep_days"},
 }
 
 
@@ -896,7 +939,9 @@ def api_settings():
     settings["gui"] = {"max_parallel_accounts": str(max_parallel),
                        "stagger_min_minutes": f"{lo:g}", "stagger_max_minutes": f"{hi:g}",
                        "auto_manage_local_model": "true" if auto_manage_enabled(cfg) else "false",
-                       "searxng_command": cfg.get("gui", {}).get("searxng_command", "")}
+                       "searxng_command": cfg.get("gui", {}).get("searxng_command", ""),
+                       "log_max_mb": cfg.get("gui", {}).get("log_max_mb", "") or "10",
+                       "log_keep_days": cfg.get("gui", {}).get("log_keep_days", "") or "7"}
     return ok(settings=settings)
 
 
@@ -995,6 +1040,7 @@ def main():
 
     load_accounts()
     apply_scheduler_settings()
+    maintain_logs(force=True)
     threading.Thread(target=_auto_login_all, daemon=True).start()
     threading.Thread(target=_scheduler_loop, daemon=True).start()
 

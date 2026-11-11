@@ -1139,6 +1139,10 @@ async function openSettings(focus) {
         <div class="group"><h4>其他</h4><div class="card">
           <div class="row-item col">
             <div class="lbl"><span class="hint">学习、题库和通知设置保存在项目的 config.ini 中，命令行版也会读取同一份配置。</span></div>
+          </div>
+          ${F.number('gui', 'log_max_mb', '日志最多占用（MB）', { min: 1, max: 1000, def: 10, hint: '超出时自动删除最旧的日志、裁掉较早的内容，只保留最近的' })}
+          ${F.number('gui', 'log_keep_days', '日志保留天数', { min: 1, max: 365, def: 7, hint: '超过这个天数没有更新的日志自动删除' })}
+          <div class="row-item col">
             <div class="links">
               <button class="btn" data-reveal="config">显示配置文件</button>
               <button class="btn" data-reveal="logs">显示日志文件夹</button>
