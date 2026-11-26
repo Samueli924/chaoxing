@@ -236,6 +236,13 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
 
         # 处理无job字段的特殊任务
         if card.get("job") is None:
+            # 部分课程的作业(workid)卡片没有 job 字段，作业ID藏在 property._jobid 中。
+            # 若不处理，这类作业会在解析阶段被丢弃，导致章节"标记已完成但作业从未提交"。
+            if card.get("type", "").lower() == "workid":
+                work_job = _process_work_task(card)
+                if work_job:
+                    job_list.append(work_job)
+                continue
             # 尝试识别阅读任务
             read_job = _process_read_task(card)
             if read_job:
@@ -369,9 +376,13 @@ def _process_document_task(card: Dict[str, Any]) -> Dict[str, Any]:
 
 def _process_work_task(card: Dict[str, Any]) -> Dict[str, Any]:
     """处理作业类型任务"""
+    property_data = card.get("property", {}) or {}
+    # 作业ID通常在 card["jobid"]，但部分课程（无 job 字段的卡片）藏在 property 中：
+    # _jobid = "work-<workid>"，workid 为纯ID。优先用带 work- 前缀的 _jobid。
+    jobid = card.get("jobid") or property_data.get("_jobid") or property_data.get("workid") or ""
     return {
         "type": "workid",
-        "jobid": card.get("jobid", ""),
+        "jobid": jobid,
         "otherinfo": card.get("otherInfo", ""),
         "mid": card.get("mid", ""),
         "enc": card.get("enc", ""),
