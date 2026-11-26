@@ -111,6 +111,7 @@ class JobProcessorTestCase(unittest.TestCase):
 
     def test_success_does_not_retry(self):
         # 已完成章节直接 SUCCESS，不应有任何重试。
+        # 用"任务列表为空、非未开放"的替身，模拟所有任务 isPassed 的场景。
         course = {"title": "课程"}
         point = {"title": "章节", "has_finished": True}
         task = main.ChapterTask(index=0, point=point, course=course)
@@ -120,11 +121,30 @@ class JobProcessorTestCase(unittest.TestCase):
             "notopen_action": "retry",
             "retry_interval": 0.01,
         }
-        processor = main.JobProcessor(DummyChaoxing(self._not_open_job_info()), [task], config)
+        finished_job_info = {"jobs": [], "job_info": {}}
+        processor = main.JobProcessor(DummyChaoxing(finished_job_info), [task], config)
         processor.max_tries = 3
         self._run_with_timeout(processor)
         self.assertEqual(task.tries, 0)
         self.assertTrue(processor.retry_queue.empty())
+
+    def test_has_finished_but_jobs_exist_still_processed(self):
+        """has_finished=True 但仍有未完成任务时，必须继续处理而非跳过（防止假完成）."""
+        course = {"title": "课程"}
+        point = {"title": "章节", "has_finished": True}
+        task = main.ChapterTask(index=0, point=point, course=course)
+        config = {
+            "speed": 1.0,
+            "jobs": 1,
+            "notopen_action": "retry",
+            "retry_interval": 0.01,
+        }
+        # 任务列表非空（有 unknown 任务会走 ERROR 分支）
+        processor = main.JobProcessor(DummyChaoxing(self._error_job_info()), [task], config)
+        processor.max_tries = 1
+        self._run_with_timeout(processor)
+        # 如果该章节被错误跳过，task.tries 会是 0；现在应被处理走 ERROR 重试
+        self.assertGreaterEqual(task.tries, 1)
 
 
 if __name__ == "__main__":

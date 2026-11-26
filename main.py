@@ -447,20 +447,23 @@ class JobProcessor:
 def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str, Any], speed: float) -> ChapterResult:
     """处理单个章节"""
     logger.info(f'当前章节: {point["title"]}')
-    if point["has_finished"]:
-        logger.info(f'章节：{point["title"]} 已完成所有任务点')
-        return ChapterResult.SUCCESS
 
     # 随机等待，避免请求过快
     chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
 
     # 获取当前章节的所有任务点
+    # 注意: 不依赖章节列表的 has_finished 标记(它只表示"访问过"，不代表作业已提交)。
+    # decode_course_card 会过滤掉 isPassed 的任务，因此 jobs 为空才是"真正完成"的可靠信号。
     job_info = None
     jobs, job_info = chaoxing.get_job_list(course, point)
 
     # 发现未开放章节, 根据配置处理
     if job_info.get("notOpen", False):
         return ChapterResult.NOT_OPEN
+
+    if point.get("has_finished") and not jobs:
+        logger.info(f'章节：{point["title"]} 已完成所有任务点')
+        return ChapterResult.SUCCESS
 
     # 已经默认处理空任务，此处不需要判断
     if not jobs:
